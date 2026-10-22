@@ -33,7 +33,7 @@
 <ul class="tasks">
   {% for t in r.done %}
   <li class="task"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
-    <span class="meta">{% if t.project_title %}<span>{{ t.project_title }}</span>{% endif %}<span class="date">{{ (t.completed_at or '')[:10] }}</span></span></li>
+    <span class="meta">{% if t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>{% endif %}<span class="date">{{ (t.completed_at or '')[:10] }}</span></span></li>
   {% endfor %}
 </ul>
 {% endif %}

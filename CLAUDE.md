@@ -56,6 +56,7 @@ There is no build step, linter config or JS bundler.
 
 - **Task statuses:** `inbox | next | waiting | someday | done`.
 - **Project statuses:** `active | someday | done`.
+  - A task page links up to its project and can move the whole project to someday from there.
 - **Projects are always parallel.** Every `next` task shows in Next Actions. A project with no `next` task is "stalled" (⚠).
 - **One context per task.** Contexts live in the `contexts` table (managed at the bottom of the Horizons page), not in code, because the repo is public.
   - Any context used by an open task is re-added on every `connect()`, so the list and the tasks can't disagree.

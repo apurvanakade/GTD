@@ -231,7 +231,8 @@ def project_view(id):
     p = db.get_project(c, id) or abort(404)
     if request.method == "POST":
         fields = {k: form_value(k) for k in ("title", "notes") if k in request.form}
-        fields["notes"] = fields.get("notes") or ""
+        if "notes" in fields:
+            fields["notes"] = fields["notes"] or ""
         fields["title"] = fields.get("title") or p["title"]
         status = request.form.get("status")
         if status == "done" and db.project_tasks(c, id):
@@ -239,6 +240,8 @@ def project_view(id):
         elif status in ("active", "someday", "done"):
             fields["status"] = status
         db.update_project(c, id, **fields)
+        if fields.get("status") == "someday":
+            flash(f"Moved “{fields['title']}” to someday / maybe.")
         if fields.get("status") in ("done", "someday"):
             return redirect(url_for("projects_view"))
         return redirect(url_for("project_view", id=id))

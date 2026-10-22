@@ -71,7 +71,7 @@ button:hover, .button:hover { border-color: var(--muted); }
 }
 .task .title { color: var(--fg); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: .85rem; color: var(--muted); }
-.task .proj { color: var(--muted); }
+.task .proj, .task .ctx { color: var(--muted); }
 .task .proj::before { content: "▸ "; }
 .task form { margin: 0; }
 .task.overdue { background: var(--overdue); }

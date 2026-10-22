@@ -2,6 +2,8 @@
 {% from "_task.html" import row, context_select with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block body %}
+{% set up = ('someday', 'Someday / maybe') if p.status == 'someday' else ('projects_view', 'Projects') %}
+<p><a href="{{ url_for(up[0]) }}">← {{ up[1] }}</a>{% if p.status != 'active' %} · <span class="hint">{{ p.status }}</span>{% endif %}</p>
 {% if processing and counts.inbox %}<p><a class="button" href="{{ url_for('process') }}">← Back to processing ({{ counts.inbox }} left)</a></p>{% endif %}
 <form method="post" class="project">
   <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">

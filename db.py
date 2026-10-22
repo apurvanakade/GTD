@@ -50,7 +50,7 @@ INSERT OR IGNORE INTO contexts SELECT DISTINCT context FROM tasks
 
 TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "waiting_on"}
 PROJECT_FIELDS = {"title", "notes", "status"}
-TASK_SELECT = "SELECT t.*, p.title AS project_title FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
+TASK_SELECT = "SELECT t.*, p.title AS project_title, p.status AS project_status FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
 # Recurring tasks stay out of Next Actions until their due day.
 VISIBLE_NEXT = "t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
 

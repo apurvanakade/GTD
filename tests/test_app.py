@@ -98,6 +98,27 @@ def test_all_pages_render(client, conn):
         assert client.get(url).status_code == 200, url
 
 
+def test_crosslinks(client, conn):
+    pid = db.add_project(conn, "Garden")
+    tid = db.add_task(conn, "dig", status="next", context="@home", project_id=pid)
+    assert f'href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert 'href="/projects"' in client.get(f"/projects/{pid}").get_data(as_text=True)
+    db.update_project(conn, pid, status="someday")
+    assert 'href="/someday"' in client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert 'href="/next?ctx=' in client.get(f"/projects/{pid}").get_data(as_text=True)
+
+
+def test_move_project_to_someday_from_task(client, conn):
+    pid = db.add_project(conn, "Garden")
+    db.update_project(conn, pid, notes="seed list")
+    tid = db.add_task(conn, "dig", status="next", context="@home", project_id=pid)
+    assert "Move project to someday" in client.get(f"/tasks/{tid}").get_data(as_text=True)
+    client.post(f"/projects/{pid}", data={"status": "someday"})
+    p = db.get_project(conn, pid)
+    assert (p["status"], p["title"], p["notes"]) == ("someday", "Garden", "seed list")  # notes kept
+    assert "Move project to someday" not in client.get(f"/tasks/{tid}").get_data(as_text=True)
+
+
 # --- recurring + projects --------------------------------------------------
 
 def test_recurring_complete_spawns_hidden_next(client, conn):

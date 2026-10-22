@@ -3,7 +3,7 @@
   <form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>
   <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
   <span class="meta">
-    {% if context and t.context %}<span class="ctx">{{ t.context }}</span>{% endif %}
+    {% if context and t.context %}<a class="ctx" href="{{ url_for('next_view', ctx=t.context) }}">{{ t.context }}</a>{% endif %}
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>{% endif %}
     {% if t.waiting_on %}<span>⏳ {{ t.waiting_on }}</span>{% endif %}
     {% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}

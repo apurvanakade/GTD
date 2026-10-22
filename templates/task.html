@@ -2,6 +2,10 @@
 {% from "_task.html" import context_select with context %}
 {% block title %}{{ t.title }}{% endblock %}
 {% block body %}
+{% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="row">
+  <a href="{{ url_for('project_view', id=t.project_id) }}">← {{ t.project_title }}</a> <span class="hint">project</span>
+  {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
+</form>{% endif %}
 <form method="post" class="edit">
   <input type="hidden" name="next" value="{{ back or '' }}">
   <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
