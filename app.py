@@ -97,7 +97,7 @@ def process():
     if not items:
         flash("Inbox zero.")
         return redirect(url_for("inbox"))
-    return render_template("process.html", t=items[0], remaining=len(items), projects=db.projects(conn()))
+    return render_template("process.html", t=items[0], remaining=len(items), projects=db.open_projects(conn()))
 
 
 @app.post("/process/<int:id>")
@@ -113,7 +113,8 @@ def process_item(id):
         db.update_task(c, id, title=title, notes=notes)
         db.complete_task(c, id, today())
     elif action == "someday":
-        db.update_task(c, id, title=title, notes=notes, status="someday")
+        db.add_project(c, title, notes=notes, status="someday")
+        db.delete_task(c, id)
     elif action == "project":
         pid = db.add_project(c, title, notes=notes)
         db.delete_task(c, id)
@@ -128,6 +129,10 @@ def process_item(id):
         if action == "waiting" and not fields.get("waiting_on"):
             flash("Who are you waiting on?")
             return redirect(url_for("process"))
+        pid = fields.get("project_id")
+        if action == "next" and pid and db.project_next(c, pid):
+            fields["status"] = "later"
+            flash(f"“{db.get_project(c, pid)['title']}” already has a next action, so this was added as a later step.")
         db.update_task(c, id, **fields)
     else:
         abort(400)
@@ -151,13 +156,12 @@ def next_view():
 @app.route("/waiting")
 def waiting():
     return render_template("list.html", title="Waiting for", tasks=db.tasks_with_status(conn(), "waiting"),
-                           empty="Nothing delegated.")
+                           projects=db.projects(conn(), "waiting"), empty="Nothing delegated.")
 
 
 @app.route("/someday")
 def someday():
-    return render_template("someday.html", tasks=db.tasks_with_status(conn(), "someday"),
-                           projects=db.projects(conn(), "someday"))
+    return render_template("someday.html", projects=db.projects(conn(), "someday"))
 
 
 @app.route("/review")
@@ -182,14 +186,30 @@ def task_view(id):
         fields = task_fields_from_form()
         if not fields.get("title"):
             fields.pop("title", None)
-        db.update_task(c, id, **fields)
+        project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
+        if fields.get("status", t["status"]) == "later" and not project_id:
+            fields["status"] = "inbox"
+            flash("Only project steps can be “later”, so this went back to the inbox.")
+        flash_demoted(db.update_task(c, id, **fields))
         return redirect(request.form.get("next") or url_for("task_view", id=id))
-    return render_template("task.html", t=t, projects=db.projects(c), back=request.referrer)
+    return render_template("task.html", t=t, projects=db.open_projects(c), back=request.referrer)
+
+
+def flash_demoted(titles):
+    if titles:
+        flash(f"One next action per project: moved {', '.join(f'“{t}”' for t in titles)} to later.")
 
 
 @app.post("/tasks/<int:id>/complete")
 def complete(id):
-    db.complete_task(conn(), id, today())
+    c = conn()
+    t = db.get_task(c, id) or abort(404)
+    db.complete_task(c, id, today())
+    p = t["project_id"] and db.get_project(c, t["project_id"])
+    if p and p["status"] == "active" and not db.project_next(c, p["id"]):
+        # Ask which step comes next (the page's fetch follows this redirect and navigates).
+        flash(f"Done. What's the next action for “{p['title']}”?")
+        return redirect(url_for("project_view", id=p["id"]))
     return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
 
 
@@ -199,15 +219,15 @@ def delete(id):
     return redirect(request.form.get("next") or url_for("next_view"))
 
 
-@app.post("/tasks/<int:id>/activate")
-def activate(id):
+@app.post("/tasks/<int:id>/make-next")
+def make_next(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
-    db.update_task(c, id, status="next")
+    flash_demoted(db.update_task(c, id, status="next"))
     if not t["context"]:
-        flash("Activated – pick a context.")
+        flash("Pick a context for the next action.")
         return redirect(url_for("task_view", id=id))
-    return back("someday")
+    return back()
 
 
 # --- projects --------------------------------------------------------------
@@ -237,15 +257,15 @@ def project_view(id):
         status = request.form.get("status")
         if status == "done" and db.project_tasks(c, id):
             flash("Finish, move or delete the project's open tasks first.")
-        elif status in ("active", "someday", "done"):
+        elif status in ("active", "waiting", "someday", "done"):
             fields["status"] = status
         db.update_project(c, id, **fields)
         if fields.get("status") == "someday":
             flash(f"Moved “{fields['title']}” to someday / maybe.")
-        if fields.get("status") in ("done", "someday"):
+        if fields.get("status") in ("done", "waiting", "someday"):
             return redirect(url_for("projects_view"))
         return redirect(url_for("project_view", id=id))
-    return render_template("project.html", p=p, tasks=db.project_tasks(c, id),
+    return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
                            processing=request.args.get("processing"))
 
 
@@ -255,7 +275,7 @@ def project_add_task(id):
     db.get_project(c, id) or abort(404)
     fields = task_fields_from_form()
     if fields.get("title"):
-        fields.setdefault("status", "next")
+        fields.setdefault("status", "later" if db.project_next(c, id) else "next")
         db.add_task(c, fields.pop("title"), project_id=id, **fields)
     return redirect(url_for("project_view", id=id, processing=request.args.get("processing")))
 

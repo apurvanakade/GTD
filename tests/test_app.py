@@ -80,7 +80,8 @@ def test_process_other_actions(client, conn):
     client.post(f"/process/{ids[3]}", data={"action": "waiting", "waiting_on": "Bob"})
     r = client.post(f"/process/{ids[4]}", data={"action": "project", "title": "Fix porch"})
     assert db.get_task(conn, ids[0]) is None
-    assert db.get_task(conn, ids[1])["status"] == "someday"
+    assert db.get_task(conn, ids[1]) is None
+    assert [p["title"] for p in db.projects(conn, "someday")] == ["b"]
     assert db.get_task(conn, ids[2])["status"] == "done"
     assert db.get_task(conn, ids[3])["waiting_on"] == "Bob"
     assert db.get_task(conn, ids[4]) is None
@@ -140,7 +141,72 @@ def test_project_cannot_complete_with_open_tasks(client, conn):
     assert db.get_project(conn, pid)["status"] == "done"
 
 
-# --- calendar + horizons -------------------------------------------------
+def test_one_next_action_per_project(client, conn):
+    pid = db.add_project(conn, "P")
+    a = db.add_task(conn, "a", status="next", context="@home", project_id=pid)
+    b = db.add_task(conn, "b", status="next", context="@home", project_id=pid)  # b takes over
+    assert [db.get_task(conn, i)["status"] for i in (a, b)] == ["later", "next"]
+    client.post(f"/projects/{pid}/tasks", data={"title": "c"})  # project has a next, so c is later
+    c = db.get_task(conn, b + 1)
+    assert (c["title"], c["status"]) == ("c", "later")
+    client.post(f"/tasks/{a}/make-next")
+    assert [db.get_task(conn, i)["status"] for i in (a, b)] == ["next", "later"]
+    # finishing the next action asks for the next one, even via fetch
+    r = client.post(f"/tasks/{a}/complete", headers={"X-Requested-With": "fetch"})
+    assert r.status_code == 302 and r.headers["Location"].endswith(f"/projects/{pid}")
+    assert db.project_next(conn, pid) is None and [p["title"] for p in db.stalled_projects(conn)] == ["P"]
+    assert b"Make next" in client.get(f"/projects/{pid}").data
+
+
+def test_process_next_into_project_with_next_becomes_later(client, conn):
+    pid = db.add_project(conn, "P")
+    db.add_task(conn, "a", status="next", context="@home", project_id=pid)
+    tid = db.add_task(conn, "b")
+    client.post(f"/process/{tid}", data={"action": "next", "context": "@home", "project_id": str(pid)})
+    assert db.get_task(conn, tid)["status"] == "later"
+
+
+def test_waiting_and_someday_projects_hide_their_tasks(client, conn):
+    pid = db.add_project(conn, "P")
+    db.add_task(conn, "a", status="next", context="@home", project_id=pid)
+    for status, page in (("waiting", "/waiting"), ("someday", "/someday")):
+        client.post(f"/projects/{pid}", data={"title": "P", "status": status})
+        assert db.next_actions(conn, TODAY) == [] and db.stalled_projects(conn) == []
+        assert b"P</a>" in client.get(page).data
+    client.post(f"/projects/{pid}", data={"title": "P", "status": "active"})
+    assert [t["title"] for t in db.next_actions(conn, TODAY)] == ["a"]
+
+
+def test_later_needs_a_project(client, conn):
+    tid = db.add_task(conn, "loose", status="next", context="@home")
+    client.post(f"/tasks/{tid}", data={"status": "later", "project_id": ""})
+    assert db.get_task(conn, tid)["status"] == "inbox"
+
+
+def test_migrates_someday_tasks(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript("""
+      CREATE TABLE projects (id INTEGER PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'someday', 'done')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT);
+      CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'someday', 'done')),
+        context TEXT, project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL, due_date TEXT, recur TEXT,
+        waiting_on TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT);
+      INSERT INTO projects (id, title) VALUES (1, 'P');
+      INSERT INTO tasks (title, status, project_id) VALUES ('in project', 'someday', 1), ('loose', 'someday', NULL),
+        ('n', 'next', 1);""")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    got = {r["title"]: (r["status"], r["project_id"]) for r in c.execute("SELECT * FROM tasks")}
+    assert got == {"in project": ("later", 1), "loose": ("inbox", None), "n": ("next", 1)}
+    db.update_project(c, 1, status="waiting")  # new CHECK is in place
+    c.close()
+    db.connect(path).close()  # second connect is a no-op
+
 
 def test_occurrences_do_not_drift():
     assert list(recur.occurrences("monthly", date(2026, 1, 31), date(2026, 4, 30))) == [

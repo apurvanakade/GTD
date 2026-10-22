@@ -4,3 +4,4 @@ reference.md
 .venv/
 __pycache__/
 server.log
+.server-started

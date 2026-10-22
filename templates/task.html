@@ -12,7 +12,7 @@
   <textarea name="notes" rows="4" placeholder="Notes">{{ t.notes }}</textarea>
   <label>Status
     <select name="status">
-      {% for s in ['inbox', 'next', 'waiting', 'someday'] %}<option{% if s == t.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
+      {% for s in ['inbox', 'next', 'waiting', 'later'] %}<option{% if s == t.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
       {% if t.status == 'done' %}<option selected>done</option>{% endif %}
     </select>
   </label>
@@ -20,7 +20,7 @@
   <label>Project
     <select name="project_id">
       <option value="">none</option>
-      {% for p in projects %}<option value="{{ p.id }}"{% if p.id == t.project_id %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
+      {% for p in projects %}<option value="{{ p.id }}"{% if p.id == t.project_id %} selected{% endif %}>{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
     </select>
   </label>
   <label>Due <input type="date" name="due_date" value="{{ t.due_date or '' }}"></label>

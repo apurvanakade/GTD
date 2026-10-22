@@ -59,7 +59,8 @@ document.addEventListener('submit', async e => {
   if (!f.classList.contains('done')) return;
   e.preventDefault();
   const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}});
-  if (r.ok) f.closest('li').classList.add('gone');
+  if (r.redirected) location = r.url;  // finished a project's next action: pick the next one
+  else if (r.ok) f.closest('li').classList.add('gone');
 });
 </script>
 </body>

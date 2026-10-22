@@ -6,20 +6,24 @@ import recur
 
 DB_PATH = os.environ.get("GTD_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db"))
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS projects (
+# Someday and waiting are project statuses only. An active project has exactly one next action;
+# its other open steps are "later".
+PROJECTS_TABLE = """
+CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'someday', 'done')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
-);
-CREATE TABLE IF NOT EXISTS tasks (
+)
+"""
+TASKS_TABLE = """
+CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'someday', 'done')),
+  status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'later', 'done')),
   context TEXT,
   project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
   due_date TEXT,
@@ -27,7 +31,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   waiting_on TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
-);
+)
+"""
+
+SCHEMA = """
+{projects};
+{tasks};
 CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS tasks_due ON tasks(due_date);
@@ -46,21 +55,43 @@ CREATE TABLE IF NOT EXISTS contexts (name TEXT PRIMARY KEY);
 -- Any context an open task uses is always on the list.
 INSERT OR IGNORE INTO contexts SELECT DISTINCT context FROM tasks
   WHERE context IS NOT NULL AND context != '' AND status != 'done';
-"""
+""".replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
 TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "waiting_on"}
 PROJECT_FIELDS = {"title", "notes", "status"}
 TASK_SELECT = "SELECT t.*, p.title AS project_title, p.status AS project_status FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
-# Recurring tasks stay out of Next Actions until their due day.
-VISIBLE_NEXT = "t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
+# Recurring tasks stay out of Next Actions until their due day; so do tasks of waiting/someday projects.
+VISIBLE_NEXT = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)
+  AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))"""
 
 
 def connect(path=None):
     c = sqlite3.connect(path or DB_PATH)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    _migrate(c)
     c.executescript(SCHEMA)
     return c
+
+
+def _migrate(c):
+    """Rebuild tables whose status CHECK predates the current one (SQLite can't alter a CHECK)."""
+    old = dict(c.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'").fetchall())
+    steps = []
+    if "projects" in old and "'waiting'" not in old["projects"]:
+        steps += [PROJECTS_TABLE.format(name="projects_new"), "INSERT INTO projects_new SELECT * FROM projects",
+                  "DROP TABLE projects", "ALTER TABLE projects_new RENAME TO projects"]
+    if "tasks" in old and "'someday'" in old["tasks"]:
+        # Someday tasks inside a project become later steps; loose ones go back to the inbox.
+        steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new SELECT id, title, notes,
+            CASE WHEN status != 'someday' THEN status WHEN project_id IS NULL THEN 'inbox' ELSE 'later' END,
+            context, project_id, due_date, recur, waiting_on, created_at, completed_at FROM tasks""",
+                  "DROP TABLE tasks", "ALTER TABLE tasks_new RENAME TO tasks"]
+    if steps:
+        # Foreign keys off, or dropping projects would null every task's project_id.
+        c.execute("PRAGMA foreign_keys = OFF")
+        c.executescript("BEGIN; " + "; ".join(steps) + "; COMMIT;")
+        c.execute("PRAGMA foreign_keys = ON")
 
 
 def _insert(c, table, allowed, fields):
@@ -85,11 +116,32 @@ def _update(c, table, allowed, id, fields):
 # --- tasks -----------------------------------------------------------------
 
 def add_task(c, title, **fields):
-    return _insert(c, "tasks", TASK_FIELDS, {"title": title, **fields})
+    id = _insert(c, "tasks", TASK_FIELDS, {"title": title, **fields})
+    _one_next(c, id)
+    return id
 
 
 def update_task(c, id, **fields):
+    """Returns the titles of project tasks demoted to later because this one became next."""
     _update(c, "tasks", TASK_FIELDS, id, fields)
+    return _one_next(c, id)
+
+
+def _one_next(c, id):
+    """A project has at most one next action: if this task is it, the project's other next tasks become later.
+    Returns the titles it demoted."""
+    t = get_task(c, id)
+    if not t or t["status"] != "next" or not t["project_id"]:
+        return []
+    others = c.execute("SELECT id, title FROM tasks WHERE project_id = ? AND status = 'next' AND id != ?",
+                       (t["project_id"], id)).fetchall()
+    c.executemany("UPDATE tasks SET status = 'later' WHERE id = ?", [(o["id"],) for o in others])
+    c.commit()
+    return [o["title"] for o in others]
+
+
+def project_next(c, project_id):
+    return c.execute("SELECT * FROM tasks WHERE project_id = ? AND status = 'next'", (project_id,)).fetchone()
 
 
 def get_task(c, id):
@@ -138,7 +190,7 @@ def overdue(c, today):
 
 def project_tasks(c, project_id):
     return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.status != 'done'
-        ORDER BY CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'inbox' THEN 2 ELSE 3 END,
+        ORDER BY CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END,
         t.created_at, t.id""", (project_id,)).fetchall()
 
 
@@ -147,9 +199,9 @@ def counts(c, today):
     return {
         "inbox": one("SELECT count(*) FROM tasks WHERE status = 'inbox'"),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_NEXT}", today.isoformat()),
-        "waiting": one("SELECT count(*) FROM tasks WHERE status = 'waiting'"),
-        "someday": one("SELECT count(*) FROM tasks WHERE status = 'someday'")
-                   + one("SELECT count(*) FROM projects WHERE status = 'someday'"),
+        "waiting": one("SELECT count(*) FROM tasks WHERE status = 'waiting'")
+                   + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
+        "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'"),
         "stalled": len(stalled_projects(c)),
     }
 
@@ -202,6 +254,12 @@ def projects(c, status="active"):
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'next') AS next_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS open_count
         FROM projects p WHERE p.status = ? ORDER BY lower(p.title)""", (status,)).fetchall()
+
+
+def open_projects(c):
+    """Active then someday projects, for pickers."""
+    return c.execute("""SELECT * FROM projects WHERE status != 'done'
+        ORDER BY status, lower(title)""").fetchall()
 
 
 def stalled_projects(c):

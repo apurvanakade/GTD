@@ -2,29 +2,15 @@
 {% block title %}Someday / maybe{% endblock %}
 {% block body %}
 <h1>Someday / maybe</h1>
-{% if projects %}
-<h2>Projects</h2>
 <ul class="tasks">
   {% for p in projects %}
   <li class="task">
     <a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>
+    <span class="meta">{{ p.open_count }} open</span>
     <form method="post" action="{{ url_for('project_view', id=p.id) }}"><input type="hidden" name="title" value="{{ p.title }}"><input type="hidden" name="notes" value="{{ p.notes }}"><button name="status" value="active">Activate</button></form>
   </li>
+  {% else %}
+  <li class="empty">Nothing parked here.</li>
   {% endfor %}
 </ul>
-{% endif %}
-<h2>Tasks</h2>
-{% if tasks %}
-<ul class="tasks">
-  {% for t in tasks %}
-  <li class="task">
-    <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
-    <span class="meta">{% if t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>{% endif %}</span>
-    <form method="post" action="{{ url_for('activate', id=t.id) }}"><button>Activate</button></form>
-  </li>
-  {% endfor %}
-</ul>
-{% else %}
-<p class="empty">Nothing parked here.</p>
-{% endif %}
 {% endblock %}

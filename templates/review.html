@@ -20,7 +20,7 @@
   <li class="{{ 'ok' if not stalled }}">
     <h2>Every project has a next action</h2>
     {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>
-    <p class="hint">Add a next action, move it to someday, or mark it done.</p>
+    <p class="hint">Pick its one next action, mark it waiting or someday, or mark it done.</p>
     {% else %}<p>✓ No stalled projects.</p>{% endif %}
   </li>
   <li>
@@ -33,7 +33,7 @@
   </li>
   <li>
     <h2>Scan someday / maybe</h2>
-    <p><a href="{{ url_for('someday') }}">Someday ({{ counts.someday }})</a>: activate anything whose time has come.</p>
+    <p><a href="{{ url_for('someday') }}">Someday projects ({{ counts.someday }})</a>: activate anything whose time has come.</p>
   </li>
   <li>
     <h2>Look ahead</h2>

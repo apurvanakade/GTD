@@ -2,7 +2,7 @@
 {% from "_task.html" import row, context_select with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block body %}
-{% set up = ('someday', 'Someday / maybe') if p.status == 'someday' else ('projects_view', 'Projects') %}
+{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for')}.get(p.status, ('projects_view', 'Projects')) %}
 <p><a href="{{ url_for(up[0]) }}">← {{ up[1] }}</a>{% if p.status != 'active' %} · <span class="hint">{{ p.status }}</span>{% endif %}</p>
 {% if processing and counts.inbox %}<p><a class="button" href="{{ url_for('process') }}">← Back to processing ({{ counts.inbox }} left)</a></p>{% endif %}
 <form method="post" class="project">
@@ -11,18 +11,20 @@
   <div class="row">
     <button class="primary">Save</button>
     {% if p.status != 'active' %}<button name="status" value="active">Activate</button>{% endif %}
+    {% if p.status != 'waiting' %}<button name="status" value="waiting">Waiting</button>{% endif %}
     {% if p.status != 'someday' %}<button name="status" value="someday">Move to someday</button>{% endif %}
     {% if p.status != 'done' %}<button name="status" value="done">Mark complete</button>{% endif %}
   </div>
 </form>
 
-<h2>Tasks{% if p.status == 'active' and not tasks|selectattr('status', 'equalto', 'next')|list %} <span class="warn">⚠ no next action</span>{% endif %}</h2>
-<ul class="tasks">{% for t in tasks %}{{ row(t, project=False, context=True) }}{% endfor %}</ul>
+{% if p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
+<h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}</h2>
+<ul class="tasks">{% for t in tasks %}{{ row(t, project=False, context=True, make_next=(t.status == 'later')) }}{% endfor %}</ul>
 <form method="post" action="{{ url_for('project_add_task', id=p.id, processing=processing) }}" class="row">
-  <input name="title" placeholder="Add a next action" required>
+  <input name="title" placeholder="Add a step" required>
   {{ context_select(none) }}
   <select name="status" aria-label="Status">
-    <option value="next">next</option><option value="waiting">waiting</option><option value="someday">someday</option>
+    {% for s in ['next', 'later', 'waiting'] %}<option{% if s == ('later' if has_next else 'next') %} selected{% endif %}>{{ s }}</option>{% endfor %}
   </select>
   <button>Add</button>
 </form>

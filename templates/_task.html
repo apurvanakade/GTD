@@ -1,4 +1,4 @@
-{% macro row(t, project=True, context=False) %}
+{% macro row(t, project=True, context=False, make_next=False) %}
 <li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}">
   <form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>
   <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
@@ -8,7 +8,9 @@
     {% if t.waiting_on %}<span>⏳ {{ t.waiting_on }}</span>{% endif %}
     {% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}
     {% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}
+    {% if t.status == 'later' %}<span>later</span>{% endif %}
   </span>
+  {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}"><button>Make next</button></form>{% endif %}
 </li>
 {% endmacro %}
 
