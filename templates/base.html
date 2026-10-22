@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}GTD{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav>
+  {% set ep = request.endpoint %}
+  <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep in ('inbox', 'process') }}">Inbox{% if counts.inbox %} <b>{{ counts.inbox }}</b>{% endif %}</a>
+  <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next <b>{{ counts.next }}</b></a>
+  <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{% if counts.stalled %} <b class="warn">{{ counts.stalled }}</b>{% endif %}</a>
+  <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{% if counts.waiting %} <b>{{ counts.waiting }}</b>{% endif %}</a>
+  <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
+  <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
+  <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
+  <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
+</nav>
+<form class="capture" method="post" action="{{ url_for('capture') }}">
+  <input name="title" placeholder="Capture to inbox…  ( / )" autocomplete="off" required>
+</form>
+<main>
+  {% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}
+  {% block body %}{% endblock %}
+</main>
+<script>
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    e.preventDefault(); document.querySelector('.capture input').focus();
+  }
+});
+// Tick off a task in place instead of reloading the page.
+document.addEventListener('submit', async e => {
+  const f = e.target;
+  if (!f.classList.contains('done')) return;
+  e.preventDefault();
+  const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}});
+  if (r.ok) f.closest('li').classList.add('gone');
+});
+</script>
+</body>
+</html>

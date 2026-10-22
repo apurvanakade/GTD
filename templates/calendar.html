@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_task.html" import context_select with context %}
+{% block title %}Calendar{% endblock %}
+{% block body %}
+<div class="cal-head">
+  <h1>{{ first.strftime('%B %Y') }}</h1>
+  <div class="row">
+    <a class="button" href="{{ url_for('calendar_view', m=prev) }}" aria-label="Previous month">←</a>
+    <a class="button" href="{{ url_for('calendar_view') }}">Today</a>
+    <a class="button" href="{{ url_for('calendar_view', m=next) }}" aria-label="Next month">→</a>
+  </div>
+</div>
+<form method="post" class="row" id="cal-add">
+  <input name="title" placeholder="Add a dated next action" required>
+  <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
+  {{ context_select(none) }}
+  <button>Add</button>
+</form>
+<table class="cal">
+  <thead><tr>{% for d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for week in weeks %}
+  <tr>
+    {% for d in week %}{% set iso = d.isoformat() %}
+    <td class="{% if d.month != first.month %}out{% endif %}{% if iso == today %} today{% endif %}">
+      <button type="button" class="day" data-date="{{ iso }}" title="Add on {{ iso }}">{{ d.day }}</button>
+      {% for t, ghost in by_day.get(iso, []) %}
+      <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}{% if t.context %} · {{ t.context }}{% endif %}"
+         class="ev{% if ghost %} ghost{% elif iso < today %} overdue{% endif %}{% if t.status == 'waiting' %} waiting{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>
+      {% endfor %}
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<script>
+document.querySelectorAll('.cal .day').forEach(b => b.addEventListener('click', () => {
+  const f = document.getElementById('cal-add');
+  f.due_date.value = b.dataset.date;
+  f.title.focus();
+}));
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "_task.html" import row with context %}
+{% block title %}Inbox{% endblock %}
+{% block body %}
+<h1>Inbox</h1>
+{% if tasks %}
+<p><a class="button primary" href="{{ url_for('process') }}">Process {{ tasks|length }} item{{ 's' if tasks|length != 1 }} →</a></p>
+<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
+{% else %}
+<p class="empty">Empty. Capture anything on your mind with the box above.</p>
+{% endif %}
+{% endblock %}

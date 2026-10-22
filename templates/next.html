@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_task.html" import row with context %}
+{% block title %}Next actions{% endblock %}
+{% block body %}
+<h1>Next actions</h1>
+<div class="chips">
+  <a href="{{ url_for('next_view') }}" class="{{ 'on' if not ctx }}">All</a>
+  {% for c in CONTEXTS %}{% if by_ctx.get(c) %}
+  <a href="{{ url_for('next_view', ctx=c) }}" class="{{ 'on' if ctx == c }}">{{ c }} <b>{{ by_ctx[c]|length }}</b></a>
+  {% endif %}{% endfor %}
+</div>
+{% for name, tasks in groups.items() %}
+<h2>{{ name }}</h2>
+<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
+{% else %}
+<p class="empty">No next actions. Process the inbox or check stalled projects.</p>
+{% endfor %}
+{% if upcoming and not ctx %}
+<details class="upcoming">
+  <summary>Upcoming repeating tasks ({{ upcoming|length }})</summary>
+  <ul class="tasks">{% for t in upcoming %}{{ row(t, context=True) }}{% endfor %}</ul>
+</details>
+{% endif %}
+{% endblock %}

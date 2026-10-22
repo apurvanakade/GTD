@@ -1,0 +1,6 @@
+gtd.db*
+backups/
+reference.md
+.venv/
+__pycache__/
+server.log

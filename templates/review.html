@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Weekly review{% endblock %}
+{% block body %}
+<h1>Weekly review</h1>
+<ol class="review">
+  <li>
+    <h2>Mind sweep</h2>
+    <p>Capture every open loop in your head with the box above, then check your physical inbox, email and notes.</p>
+  </li>
+  <li class="{{ 'ok' if not counts.inbox }}">
+    <h2>Get the inbox to zero</h2>
+    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('process') }}">Process {{ counts.inbox }} item{{ 's' if counts.inbox != 1 }} →</a></p>
+    {% else %}<p>✓ Inbox is empty.</p>{% endif %}
+  </li>
+  <li class="{{ 'ok' if not overdue }}">
+    <h2>Overdue</h2>
+    {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>
+    {% else %}<p>✓ Nothing overdue.</p>{% endif %}
+  </li>
+  <li class="{{ 'ok' if not stalled }}">
+    <h2>Every project has a next action</h2>
+    {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>
+    <p class="hint">Add a next action, move it to someday, or mark it done.</p>
+    {% else %}<p>✓ No stalled projects.</p>{% endif %}
+  </li>
+  <li>
+    <h2>Scan next actions</h2>
+    <p><a href="{{ url_for('next_view') }}">Next actions ({{ counts.next }})</a>: tick off what's done, delete what's dead.</p>
+  </li>
+  <li>
+    <h2>Chase waiting-fors</h2>
+    <p><a href="{{ url_for('waiting') }}">Waiting for ({{ counts.waiting }})</a>: nudge anyone who's overdue.</p>
+  </li>
+  <li>
+    <h2>Scan someday / maybe</h2>
+    <p><a href="{{ url_for('someday') }}">Someday ({{ counts.someday }})</a>: activate anything whose time has come.</p>
+  </li>
+  <li>
+    <h2>Look ahead</h2>
+    <p><a href="{{ url_for('calendar_view') }}">Calendar</a>: what's due in the next few weeks needs prep now?</p>
+  </li>
+  <li>
+    <h2>Check horizons</h2>
+    <p><a href="{{ url_for('horizons_view') }}">Horizons</a>: do your projects serve your goals and areas? Anything missing?</p>
+  </li>
+</ol>
+{% endblock %}

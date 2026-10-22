@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_task.html" import context_select with context %}
+{% block title %}{{ t.title }}{% endblock %}
+{% block body %}
+<form method="post" class="edit">
+  <input type="hidden" name="next" value="{{ back or '' }}">
+  <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
+  <textarea name="notes" rows="4" placeholder="Notes">{{ t.notes }}</textarea>
+  <label>Status
+    <select name="status">
+      {% for s in ['inbox', 'next', 'waiting', 'someday'] %}<option{% if s == t.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
+      {% if t.status == 'done' %}<option selected>done</option>{% endif %}
+    </select>
+  </label>
+  <label>Context {{ context_select(t.context) }}</label>
+  <label>Project
+    <select name="project_id">
+      <option value="">none</option>
+      {% for p in projects %}<option value="{{ p.id }}"{% if p.id == t.project_id %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Due <input type="date" name="due_date" value="{{ t.due_date or '' }}"></label>
+  <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 6 months…"></label>
+  <label>Waiting on <input name="waiting_on" value="{{ t.waiting_on or '' }}"></label>
+  <div class="row">
+    <button class="primary">Save</button>
+    <button formaction="{{ url_for('complete', id=t.id) }}">✓ Done</button>
+    <button formaction="{{ url_for('delete', id=t.id) }}" class="danger" onclick="return confirm('Delete this task?')">Delete</button>
+  </div>
+</form>
+{% endblock %}

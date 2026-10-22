@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Projects{% endblock %}
+{% block body %}
+<h1>Projects</h1>
+<form method="post" action="{{ url_for('project_create') }}" class="row">
+  <input name="title" placeholder="New project – describe the outcome" required>
+  <button>Add</button>
+</form>
+<ul class="tasks">
+  {% for p in projects %}
+  <li class="task{% if not p.next_count %} stalled{% endif %}">
+    <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
+    <span class="meta">{{ p.next_count }} next · {{ p.open_count }} open</span>
+  </li>
+  {% else %}
+  <li class="empty">No active projects.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

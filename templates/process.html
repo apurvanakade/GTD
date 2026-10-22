@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Process inbox{% endblock %}
+{% block body %}
+<h1>Process inbox <small>{{ remaining }} left</small></h1>
+<form method="post" action="{{ url_for('process_item', id=t.id) }}" class="process">
+  <input name="title" value="{{ t.title }}" class="big" aria-label="Title">
+  <textarea name="notes" rows="2" placeholder="Notes">{{ t.notes }}</textarea>
+
+  <h2>Not actionable?</h2>
+  <div class="row">
+    <button name="action" value="trash">Trash</button>
+    <button name="action" value="someday">Someday / maybe</button>
+  </div>
+
+  <h2>Under 2 minutes? Do it now.</h2>
+  <div class="row"><button name="action" value="done">✓ Did it</button></div>
+
+  <h2>Needs more than one step?</h2>
+  <div class="row"><button name="action" value="project">Make it a project →</button></div>
+
+  <h2>Next action</h2>
+  <div class="row">
+    <select name="context" aria-label="Context">
+      <option value="">context…</option>
+      {% for c in CONTEXTS %}<option>{{ c }}</option>{% endfor %}
+    </select>
+    <select name="project_id" aria-label="Project">
+      <option value="">no project</option>
+      {% for p in projects %}<option value="{{ p.id }}">{{ p.title }}</option>{% endfor %}
+    </select>
+    <input type="date" name="due_date" aria-label="Due date">
+    <button name="action" value="next" class="primary">→ Next actions</button>
+  </div>
+
+  <h2>Someone else's move?</h2>
+  <div class="row">
+    <input name="waiting_on" placeholder="Waiting on whom?">
+    <button name="action" value="waiting">→ Waiting for</button>
+  </div>
+</form>
+{% endblock %}

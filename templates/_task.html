@@ -1,0 +1,20 @@
+{% macro row(t, project=True, context=False) %}
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}">
+  <form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>
+  <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+  <span class="meta">
+    {% if context and t.context %}<span class="ctx">{{ t.context }}</span>{% endif %}
+    {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>{% endif %}
+    {% if t.waiting_on %}<span>⏳ {{ t.waiting_on }}</span>{% endif %}
+    {% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}
+    {% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}
+  </span>
+</li>
+{% endmacro %}
+
+{% macro context_select(selected) %}
+<select name="context" aria-label="Context">
+  <option value="">context…</option>
+  {% for c in CONTEXTS %}<option{% if c == selected %} selected{% endif %}>{{ c }}</option>{% endfor %}
+</select>
+{% endmacro %}
