@@ -79,6 +79,8 @@ def capture():
     title = form_value("title")
     if title:
         db.add_task(conn(), title, status="inbox")
+        if not (request.referrer or "").endswith(url_for("inbox")):  # the inbox list already shows it
+            flash(f"Added to inbox: {title}")
     return back()
 
 

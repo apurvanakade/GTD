@@ -19,13 +19,26 @@
   <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
 </nav>
 <div class="bar">
+  {% if ep == 'inbox' %}
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <input name="title" placeholder="Capture to inbox…  ( / )" autocomplete="off" required>
   </form>
+  {% else %}
+  <button type="button" class="add-inbox" title="Add to inbox ( / )">+ Inbox</button>
+  {% endif %}
   <form class="search" action="{{ url_for('search') }}">
     <input type="search" name="q" value="{{ q or '' }}" placeholder="Search…  ( f )" aria-label="Search" required>
   </form>
 </div>
+{% if ep != 'inbox' %}
+<dialog class="capture-dialog">
+  <form class="capture" method="post" action="{{ url_for('capture') }}">
+    <h2>Add to inbox</h2>
+    <input name="title" placeholder="What's on your mind?" autocomplete="off" required>
+    <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
+  </form>
+</dialog>
+{% endif %}
 <main>
   {% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}
   {% block body %}{% endblock %}
@@ -33,9 +46,13 @@
 <script>
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+  const dialog = document.querySelector('.capture-dialog');
+  if (e.key === '/' && dialog) { e.preventDefault(); dialog.showModal(); return; }
   const box = {'/': '.capture input', 'f': '.search input'}[e.key];
   if (box) { e.preventDefault(); document.querySelector(box).select(); }
 });
+// Off the Inbox page, capture happens in a dialog.
+document.querySelector('.add-inbox')?.addEventListener('click', () => document.querySelector('.capture-dialog').showModal());
 // Tick off a task in place instead of reloading the page.
 document.addEventListener('submit', async e => {
   const f = e.target;

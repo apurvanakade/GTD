@@ -41,6 +41,13 @@ button:hover, .button:hover { border-color: var(--muted); }
 
 .bar { display: flex; gap: 8px; }
 .capture { flex: 3 1 0; }
+.add-inbox { white-space: nowrap; }
+.capture-dialog {
+  width: min(480px, calc(100vw - 32px)); padding: 16px;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
+}
+.capture-dialog::backdrop { background: rgb(0 0 0 / .35); }
+.capture-dialog h2 { margin-top: 0; }
 .search { flex: 1 1 0; min-width: 120px; }
 .capture input, .search input { padding: 10px 12px; }
 .flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }

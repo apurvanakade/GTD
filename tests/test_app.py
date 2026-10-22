@@ -60,6 +60,18 @@ def test_capture_and_process_to_next(client, conn):
     assert b"Call dentist" in client.get("/next?ctx=@calls").data
 
 
+def test_capture_box_only_on_inbox(client, conn):
+    tid = db.add_task(conn, "x")
+    pid = db.add_project(conn, "P")
+    assert b'<input name="title" placeholder="Capture' in client.get("/inbox").data
+    assert b"<dialog" not in client.get("/inbox").data
+    for url in ("/next", f"/tasks/{tid}", f"/projects/{pid}", "/process"):
+        page = client.get(url).data
+        assert b"<dialog" in page and b"Capture to inbox" not in page, url
+    r = client.post("/capture", data={"title": "buy milk"}, headers={"Referer": "/next"}, follow_redirects=True)
+    assert b"Added to inbox: buy milk" in r.data
+
+
 def test_process_other_actions(client, conn):
     ids = [db.add_task(conn, n) for n in ("a", "b", "c", "d", "e")]
     client.post(f"/process/{ids[0]}", data={"action": "trash"})
