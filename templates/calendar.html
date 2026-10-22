@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import context_select with context %}
+{% from "_task.html" import context_select, project_select with context %}
 {% block title %}Calendar{% endblock %}
 {% block body %}
 <div class="cal-head">
@@ -14,6 +14,8 @@
   <input name="title" placeholder="Add a dated next action" required>
   <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
   {{ context_select(none) }}
+  {{ project_select(projects) }}
+  <input name="recur" placeholder="repeats…" aria-label="Repeats">
   <button>Add</button>
 </form>
 <table class="cal">

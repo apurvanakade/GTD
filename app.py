@@ -54,7 +54,10 @@ def task_fields_from_form():
     if "notes" in fields:
         fields["notes"] = fields["notes"] or ""
     if "project_id" in request.form:
-        fields["project_id"] = int(request.form["project_id"]) if request.form["project_id"] else None
+        # The picker offers "h0": ground level, a deliberate choice of no project.
+        raw = request.form["project_id"]
+        fields["ground"] = int(raw == "h0")
+        fields["project_id"] = int(raw) if raw.isdigit() else None
     if "status" in request.form:
         fields["status"] = request.form["status"]
     if fields.get("recur") and not recur.parse(fields["recur"]):
@@ -63,6 +66,13 @@ def task_fields_from_form():
     if fields.get("recur") and not fields.get("due_date"):
         fields["due_date"] = today().isoformat()
     return fields
+
+
+def orphaned(status, project_id, ground):
+    """Open tasks need a project unless marked H0 (ground level); later steps always need one."""
+    if project_id:
+        return False
+    return status == "later" or (status in ("next", "waiting") and not ground)
 
 
 def back(default="next_view"):
@@ -113,8 +123,16 @@ def process_item(id):
         db.update_task(c, id, title=title, notes=notes)
         db.complete_task(c, id, today())
     elif action == "someday":
-        db.add_project(c, title, notes=notes, status="someday")
-        db.delete_task(c, id)
+        # Ask where it goes: its own new someday project, or a later step of an existing project.
+        target = request.form.get("someday_target") or ""
+        if target == "new":
+            db.add_project(c, title, notes=notes, status="someday")
+            db.delete_task(c, id)
+        elif target.isdigit() and db.get_project(c, int(target)):
+            db.update_task(c, id, title=title, notes=notes, status="later", project_id=int(target), ground=0)
+        else:
+            flash("Someday / maybe: make it a new someday project, or add it to an existing project?")
+            return redirect(url_for("process"))
     elif action == "project":
         pid = db.add_project(c, title, notes=notes)
         db.delete_task(c, id)
@@ -130,6 +148,9 @@ def process_item(id):
             flash("Who are you waiting on?")
             return redirect(url_for("process"))
         pid = fields.get("project_id")
+        if orphaned(action, pid, fields.get("ground")):
+            flash("Pick a project, or H0 · ground level if it really belongs to none.")
+            return redirect(url_for("process"))
         if action == "next" and pid and db.project_next(c, pid):
             fields["status"] = "later"
             flash(f"“{db.get_project(c, pid)['title']}” already has a next action, so this was added as a later step.")
@@ -167,7 +188,8 @@ def someday():
 @app.route("/review")
 def review():
     c = conn()
-    return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()))
+    return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()),
+                           orphans=db.orphans(c))
 
 
 @app.route("/search")
@@ -187,9 +209,10 @@ def task_view(id):
         if not fields.get("title"):
             fields.pop("title", None)
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
-        if fields.get("status", t["status"]) == "later" and not project_id:
+        ground = fields["ground"] if "ground" in fields else t["ground"]
+        if orphaned(fields.get("status", t["status"]), project_id, ground):
             fields["status"] = "inbox"
-            flash("Only project steps can be “later”, so this went back to the inbox.")
+            flash("No project and not H0 · ground level (later steps always need a project), so this went back to the inbox.")
         flash_demoted(db.update_task(c, id, **fields))
         return redirect(request.form.get("next") or url_for("task_view", id=id))
     return render_template("task.html", t=t, projects=db.open_projects(c), back=request.referrer)
@@ -287,7 +310,12 @@ def calendar_view():
     if request.method == "POST":
         fields = task_fields_from_form()
         if fields.get("title"):
-            db.add_task(conn(), fields.pop("title"), status="next", **fields)
+            pid = fields.get("project_id")
+            status = "later" if pid and db.project_next(conn(), pid) else "next"
+            if orphaned(status, pid, fields.get("ground")):
+                status = "inbox"
+                flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
+            db.add_task(conn(), fields.pop("title"), status=status, **fields)
         return redirect(url_for("calendar_view", m=(fields.get("due_date") or "")[:7] or None))
     try:
         first = date.fromisoformat(request.args.get("m", "") + "-01")
@@ -305,7 +333,7 @@ def calendar_view():
                 if d >= start:
                     by_day[d.isoformat()].append((t, True))
     weeks = [[start + timedelta(days=7 * w + i) for i in range(7)] for w in range(((end - start).days + 1) // 7)]
-    return render_template("calendar.html", first=first, weeks=weeks, by_day=by_day,
+    return render_template("calendar.html", first=first, projects=db.open_projects(conn()), weeks=weeks, by_day=by_day,
                            prev=recur.add_months(first, -1).strftime("%Y-%m"),
                            next=recur.add_months(first, 1).strftime("%Y-%m"))
 
@@ -315,7 +343,7 @@ def calendar_view():
 @app.route("/horizons")
 def horizons_view():
     return render_template("horizons.html", levels=HORIZON_LEVELS, items=db.horizons(conn()),
-                           project_count=len(db.projects(conn())))
+                           projects=db.projects(conn()), ground=db.ground_level(conn()))
 
 
 @app.post("/contexts")

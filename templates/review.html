@@ -23,6 +23,12 @@
     <p class="hint">Pick its one next action, mark it waiting or someday, or mark it done.</p>
     {% else %}<p>✓ No stalled projects.</p>{% endif %}
   </li>
+  <li class="{{ 'ok' if not orphans }}">
+    <h2>Every task has a project</h2>
+    {% if orphans %}<ul class="plain">{% for t in orphans %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.status }}</span></li>{% endfor %}</ul>
+    <p class="hint">Give each a project, make it repeat, finish it or delete it.</p>
+    {% else %}<p>✓ Only repeating tasks stand alone.</p>{% endif %}
+  </li>
   <li>
     <h2>Scan next actions</h2>
     <p><a href="{{ url_for('next_view') }}">Next actions ({{ counts.next }})</a>: tick off what's done, delete what's dead.</p>

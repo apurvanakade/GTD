@@ -4,7 +4,8 @@
   <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
   <span class="meta">
     {% if context and t.context %}<a class="ctx" href="{{ url_for('next_view', ctx=t.context) }}">{{ t.context }}</a>{% endif %}
-    {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>{% endif %}
+    {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
+    {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
     {% if t.waiting_on %}<span>⏳ {{ t.waiting_on }}</span>{% endif %}
     {% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}
     {% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}
@@ -18,5 +19,13 @@
 <select name="context" aria-label="Context">
   <option value="">context…</option>
   {% for c in CONTEXTS %}<option{% if c == selected %} selected{% endif %}>{{ c }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro project_select(projects, selected=none) %}
+<select name="project_id" aria-label="Project">
+  <option value="">project…</option>
+  <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
+  {% for p in projects %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
 </select>
 {% endmacro %}

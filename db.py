@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS {name} (
   due_date TEXT,
   recur TEXT,
   waiting_on TEXT,
+  ground INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 )
@@ -57,10 +58,13 @@ INSERT OR IGNORE INTO contexts SELECT DISTINCT context FROM tasks
   WHERE context IS NOT NULL AND context != '' AND status != 'done';
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
-TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "waiting_on"}
+TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "waiting_on", "ground"}
 PROJECT_FIELDS = {"title", "notes", "status"}
 TASK_SELECT = "SELECT t.*, p.title AS project_title, p.status AS project_status FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
 # Recurring tasks stay out of Next Actions until their due day; so do tasks of waiting/someday projects.
+# Open tasks need a project unless deliberately marked H0 (ground level); later steps always need one.
+# Inbox items aren't processed yet.
+ORPHAN = """t.project_id IS NULL AND (t.status = 'later' OR (t.status IN ('next', 'waiting') AND NOT t.ground))"""
 VISIBLE_NEXT = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)
   AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))"""
 
@@ -83,7 +87,8 @@ def _migrate(c):
                   "DROP TABLE projects", "ALTER TABLE projects_new RENAME TO projects"]
     if "tasks" in old and "'someday'" in old["tasks"]:
         # Someday tasks inside a project become later steps; loose ones go back to the inbox.
-        steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new SELECT id, title, notes,
+        steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new (id, title, notes, status,
+            context, project_id, due_date, recur, waiting_on, created_at, completed_at) SELECT id, title, notes,
             CASE WHEN status != 'someday' THEN status WHEN project_id IS NULL THEN 'inbox' ELSE 'later' END,
             context, project_id, due_date, recur, waiting_on, created_at, completed_at FROM tasks""",
                   "DROP TABLE tasks", "ALTER TABLE tasks_new RENAME TO tasks"]
@@ -92,6 +97,10 @@ def _migrate(c):
         c.execute("PRAGMA foreign_keys = OFF")
         c.executescript("BEGIN; " + "; ".join(steps) + "; COMMIT;")
         c.execute("PRAGMA foreign_keys = ON")
+    if "tasks" in old and "ground" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
+        # Before the H0 flag, open repeating tasks without a project were ground level implicitly.
+        c.executescript("""BEGIN; ALTER TABLE tasks ADD COLUMN ground INTEGER NOT NULL DEFAULT 0;
+            UPDATE tasks SET ground = 1 WHERE recur IS NOT NULL AND project_id IS NULL AND status != 'done'; COMMIT;""")
 
 
 def _insert(c, table, allowed, fields):
@@ -163,7 +172,7 @@ def complete_task(c, id, today):
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
         new_id = add_task(c, t["title"], notes=t["notes"], status=t["status"], context=t["context"],
-                          project_id=t["project_id"], recur=t["recur"],
+                          project_id=t["project_id"], ground=t["ground"], recur=t["recur"],
                           due_date=recur.next_due(t["recur"], due, today).isoformat())
     c.commit()
     return new_id
@@ -186,6 +195,16 @@ def upcoming_recurring(c, today):
 def overdue(c, today):
     return c.execute(f"""{TASK_SELECT} WHERE t.status IN ('next', 'waiting') AND t.due_date < ?
         ORDER BY t.due_date""", (today.isoformat(),)).fetchall()
+
+
+def orphans(c):
+    return c.execute(f"{TASK_SELECT} WHERE {ORPHAN} ORDER BY t.created_at, t.id").fetchall()
+
+
+def ground_level(c):
+    """H0: open tasks deliberately kept outside any project."""
+    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND t.ground
+        ORDER BY t.due_date IS NULL, t.due_date, lower(t.title)""").fetchall()
 
 
 def project_tasks(c, project_id):

@@ -53,8 +53,9 @@ def test_capture_and_process_to_next(client, conn):
     # context is required for a next action
     client.post(f"/process/{t['id']}", data={"action": "next", "title": "call dentist", "context": ""})
     assert db.get_task(conn, t["id"])["status"] == "inbox"
+    pid = db.add_project(conn, "Teeth")
     client.post(f"/process/{t['id']}", data={"action": "next", "title": "Call dentist", "context": "@calls",
-                                             "project_id": "", "due_date": ""})
+                                             "project_id": str(pid), "due_date": ""})
     row = db.get_task(conn, t["id"])
     assert (row["status"], row["context"], row["title"]) == ("next", "@calls", "Call dentist")
     assert b"Call dentist" in client.get("/next?ctx=@calls").data
@@ -75,9 +76,12 @@ def test_capture_box_only_on_inbox(client, conn):
 def test_process_other_actions(client, conn):
     ids = [db.add_task(conn, n) for n in ("a", "b", "c", "d", "e")]
     client.post(f"/process/{ids[0]}", data={"action": "trash"})
-    client.post(f"/process/{ids[1]}", data={"action": "someday"})
+    client.post(f"/process/{ids[1]}", data={"action": "someday"})  # must say where it goes
+    assert db.get_task(conn, ids[1])["status"] == "inbox"
+    client.post(f"/process/{ids[1]}", data={"action": "someday", "someday_target": "new"})
     client.post(f"/process/{ids[2]}", data={"action": "done"})
-    client.post(f"/process/{ids[3]}", data={"action": "waiting", "waiting_on": "Bob"})
+    pid = db.add_project(conn, "Deck")
+    client.post(f"/process/{ids[3]}", data={"action": "waiting", "waiting_on": "Bob", "project_id": str(pid)})
     r = client.post(f"/process/{ids[4]}", data={"action": "project", "title": "Fix porch"})
     assert db.get_task(conn, ids[0]) is None
     assert db.get_task(conn, ids[1]) is None
@@ -86,7 +90,16 @@ def test_process_other_actions(client, conn):
     assert db.get_task(conn, ids[3])["waiting_on"] == "Bob"
     assert db.get_task(conn, ids[4]) is None
     assert "/projects/" in r.headers["Location"]
-    assert [p["title"] for p in db.stalled_projects(conn)] == ["Fix porch"]
+    assert [p["title"] for p in db.stalled_projects(conn)] == ["Deck", "Fix porch"]
+
+
+def test_process_someday_into_existing_project(client, conn):
+    pid = db.add_project(conn, "Garden", status="someday")
+    tid = db.add_task(conn, "build a pond")
+    client.post(f"/process/{tid}", data={"action": "someday", "someday_target": str(pid), "title": "Build a pond"})
+    t = db.get_task(conn, tid)
+    assert (t["title"], t["status"], t["project_id"]) == ("Build a pond", "later", pid)
+    assert [p["title"] for p in db.projects(conn, "someday")] == ["Garden"]  # no new project
 
 
 def test_all_pages_render(client, conn):
@@ -102,7 +115,9 @@ def test_all_pages_render(client, conn):
 def test_crosslinks(client, conn):
     pid = db.add_project(conn, "Garden")
     tid = db.add_task(conn, "dig", status="next", context="@home", project_id=pid)
+    gid = db.add_task(conn, "stretch", status="next", ground=1)
     assert f'href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert 'href="/horizons"' in client.get(f"/tasks/{gid}").get_data(as_text=True)
     assert 'href="/projects"' in client.get(f"/projects/{pid}").get_data(as_text=True)
     db.update_project(conn, pid, status="someday")
     assert 'href="/someday"' in client.get(f"/projects/{pid}").get_data(as_text=True)
@@ -177,10 +192,36 @@ def test_waiting_and_someday_projects_hide_their_tasks(client, conn):
     assert [t["title"] for t in db.next_actions(conn, TODAY)] == ["a"]
 
 
-def test_later_needs_a_project(client, conn):
-    tid = db.add_task(conn, "loose", status="next", context="@home")
-    client.post(f"/tasks/{tid}", data={"status": "later", "project_id": ""})
-    assert db.get_task(conn, tid)["status"] == "inbox"
+def test_tasks_need_a_project_or_h0(client, conn):
+    pid = db.add_project(conn, "P")
+    tid = db.add_task(conn, "loose", status="next", context="@home", project_id=pid)
+    for status in ("next", "waiting", "later"):
+        db.update_task(conn, tid, status=status, project_id=pid)
+        client.post(f"/tasks/{tid}", data={"status": status, "project_id": "", "recur": "weekly"})
+        assert db.get_task(conn, tid)["status"] == "inbox"  # repeating doesn't exempt it
+    client.post(f"/tasks/{tid}", data={"status": "later", "project_id": "h0"})
+    assert db.get_task(conn, tid)["status"] == "inbox"  # later steps always need a project
+    client.post(f"/tasks/{tid}", data={"status": "next", "project_id": "h0"})
+    t = db.get_task(conn, tid)
+    assert (t["status"], t["ground"], t["project_id"]) == ("next", 1, None)
+    assert b">H0</a>" in client.get("/next").data
+    client.post(f"/tasks/{tid}", data={"status": "next", "project_id": str(pid)})
+    assert db.get_task(conn, tid)["ground"] == 0  # picking a project clears H0
+
+    item = db.add_task(conn, "inbox item")
+    for action in ("next", "waiting"):
+        client.post(f"/process/{item}", data={"action": action, "context": "@home", "waiting_on": "Bob",
+                                              "project_id": "", "recur": "monthly"})
+        assert db.get_task(conn, item)["status"] == "inbox"
+    client.post(f"/process/{item}", data={"action": "next", "context": "@home", "project_id": "h0"})
+    assert db.get_task(conn, item)["status"] == "next"
+    assert [t["id"] for t in db.ground_level(conn)] == [item]
+    html = client.get("/horizons").data.decode()
+    assert "inbox item" in html and f'href="/projects/{pid}">P</a>' in html  # H0 tasks and H1 projects
+
+    orphan = db.add_task(conn, "legacy", status="next")  # e.g. from before the rule
+    assert [t["id"] for t in db.orphans(conn)] == [orphan]
+    assert b"legacy" in client.get("/review").data
 
 
 def test_migrates_someday_tasks(tmp_path):
@@ -208,6 +249,25 @@ def test_migrates_someday_tasks(tmp_path):
     db.connect(path).close()  # second connect is a no-op
 
 
+def test_migration_marks_projectless_repeats_h0(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + db.TASKS_TABLE.format(name="tasks")
+                      .replace("ground INTEGER NOT NULL DEFAULT 0,", "") + """;
+      INSERT INTO projects (id, title) VALUES (1, 'P');
+      INSERT INTO tasks (title, status, recur, project_id) VALUES ('bins', 'next', 'weekly', NULL),
+        ('in project', 'next', 'weekly', 1), ('one-off', 'next', NULL, NULL), ('old', 'done', 'weekly', NULL);""")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    assert {r["title"]: r["ground"] for r in c.execute("SELECT * FROM tasks")} == {
+        "bins": 1, "in project": 0, "one-off": 0, "old": 0}
+    c.close()
+
+
+# --- calendar + horizons -------------------------------------------------
+
 def test_occurrences_do_not_drift():
     assert list(recur.occurrences("monthly", date(2026, 1, 31), date(2026, 4, 30))) == [
         date(2026, 2, 28), date(2026, 3, 31), date(2026, 4, 30)]
@@ -225,10 +285,19 @@ def test_calendar_shows_dated_and_projected_repeats(client, conn):
 
 
 def test_calendar_add(client, conn):
-    r = client.post("/calendar", data={"title": "file taxes", "due_date": "2027-04-15", "context": "@computer"})
+    pid = db.add_project(conn, "Taxes")
+    r = client.post("/calendar", data={"title": "file taxes", "due_date": "2027-04-15", "context": "@computer",
+                                       "project_id": str(pid)})
     assert r.headers["Location"].endswith("m=2027-04")
     (t,) = db.tasks_with_status(conn, "next")
     assert (t["title"], t["due_date"], t["context"]) == ("file taxes", "2027-04-15", "@computer")
+    client.post("/calendar", data={"title": "send forms", "due_date": "2027-04-01", "project_id": str(pid)})
+    assert db.get_task(conn, t["id"])["status"] == "next"  # existing next action is kept
+    assert [x["title"] for x in db.tasks_with_status(conn, "later")] == ["send forms"]
+    client.post("/calendar", data={"title": "loose", "due_date": "2027-04-02"})
+    assert [x["title"] for x in db.tasks_with_status(conn, "inbox")] == ["loose"]
+    client.post("/calendar", data={"title": "bins", "due_date": "2027-04-02", "recur": "weekly", "project_id": "h0"})
+    assert db.tasks_with_status(conn, "next")[-1]["title"] == "bins"
 
 
 def test_horizons(client, conn):

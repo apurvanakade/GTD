@@ -58,10 +58,16 @@ There is no build step, linter config or JS bundler.
 ## GTD rules encoded in the code
 
 - **Task statuses:** `inbox | next | waiting | later | done`.
-  - `later` means a project step that isn't the next action yet. It needs a project; the task form sends a `later` task with no project back to the inbox.
+  - `later` means a project step that isn't the next action yet.
+- **No orphaned tasks:** a `next`/`waiting` task needs a project unless it is deliberately marked H0, "ground level" (`tasks.ground`); a `later` task always needs a project. See `ORPHAN` in `db.py` and `orphaned()` in `app.py`.
+  - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. A repeat rule doesn't exempt a task.
+  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag.
+  - The `ground` column was added by `_migrate()`, which marked the open repeating tasks that had no project as H0.
+  - Process refuses next/waiting with neither. The task form and the calendar add form send such a task to the inbox instead.
+  - Existing orphans are listed on the weekly review; nothing moves them automatically.
 - **Project statuses:** `active | waiting | someday | done`. Someday and waiting exist only on projects, never on tasks.
-  - A task page links up to its project and can move the whole project to someday from there.
-  - Process → "Someday / maybe" turns the item into a new someday project.
+  - A task page links up to its project (or Horizons for H0) and can move the whole project to someday from there.
+  - Process → "Someday / maybe" asks where the item goes: a new someday project, or a `later` step of an existing project. Nothing happens until you pick.
 - **One next action per project.** `db.update_task`/`add_task` enforce it: when a project task becomes `next`, the project's other `next` tasks become `later`.
   - When a project's next action is finished, the complete route redirects to the project page so you can choose which `later` task becomes next ("Make next"). Nothing is promoted automatically.
   - Adding a step to a project that already has a next action makes it `later` by default, and so does processing an inbox item into such a project.

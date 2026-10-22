@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_task.html" import project_select with context %}
 {% block title %}Process inbox{% endblock %}
 {% block body %}
 <h1>Process inbox <small>{{ remaining }} left</small></h1>
@@ -9,7 +10,12 @@
   <h2>Not actionable?</h2>
   <div class="row">
     <button name="action" value="trash">Trash</button>
-    <button name="action" value="someday">Someday / maybe project</button>
+    <select name="someday_target" aria-label="Someday / maybe goes to">
+      <option value="">someday / maybe into…</option>
+      <option value="new">a new someday project</option>
+      {% for p in projects %}<option value="{{ p.id }}">{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
+    </select>
+    <button name="action" value="someday">Someday / maybe</button>
   </div>
 
   <h2>Under 2 minutes? Do it now.</h2>
@@ -18,17 +24,18 @@
   <h2>Needs more than one step?</h2>
   <div class="row"><button name="action" value="project">Make it a project →</button></div>
 
+  <h2>Part of which project?</h2>
+  <div class="row">{{ project_select(projects) }}</div>
+  <p class="hint">Next actions and waiting-fors need one. Pick H0 · ground level only if it truly belongs to no project.</p>
+
   <h2>Next action</h2>
   <div class="row">
     <select name="context" aria-label="Context">
       <option value="">context…</option>
       {% for c in CONTEXTS %}<option>{{ c }}</option>{% endfor %}
     </select>
-    <select name="project_id" aria-label="Project">
-      <option value="">no project</option>
-      {% for p in projects %}<option value="{{ p.id }}">{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
-    </select>
     <input type="date" name="due_date" aria-label="Due date">
+    <input name="recur" placeholder="repeats…" aria-label="Repeats">
     <button name="action" value="next" class="primary">→ Next actions</button>
   </div>
 
