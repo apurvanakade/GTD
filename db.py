@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import date
+from datetime import date, datetime, timezone
 
 import recur
 
@@ -56,6 +56,15 @@ CREATE TABLE IF NOT EXISTS contexts (name TEXT PRIMARY KEY);
 -- Any context an open task uses is always on the list.
 INSERT OR IGNORE INTO contexts SELECT DISTINCT context FROM tasks
   WHERE context IS NOT NULL AND context != '' AND status != 'done';
+-- Time tracking: every entry belongs to a task. Times are UTC ISO-8601; no end_time means running.
+CREATE TABLE IF NOT EXISTS time_entries (
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  start_time TEXT NOT NULL,
+  end_time TEXT
+);
+CREATE INDEX IF NOT EXISTS time_entries_task ON time_entries(task_id);
+CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
 TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "waiting_on", "ground"}
@@ -97,6 +106,9 @@ def _migrate(c):
         c.execute("PRAGMA foreign_keys = OFF")
         c.executescript("BEGIN; " + "; ".join(steps) + "; COMMIT;")
         c.execute("PRAGMA foreign_keys = ON")
+    if "time_entries" in old and "task_id" not in old["time_entries"]:
+        # The first timer kept free-text task names; that history was dropped when entries became tasks' time.
+        c.execute("DROP TABLE time_entries")
     if "tasks" in old and "ground" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
         # Before the H0 flag, open repeating tasks without a project were ground level implicitly.
         c.executescript("""BEGIN; ALTER TABLE tasks ADD COLUMN ground INTEGER NOT NULL DEFAULT 0;
@@ -162,11 +174,14 @@ def delete_task(c, id):
     c.commit()
 
 
-def complete_task(c, id, today):
-    """Mark done; a recurring task spawns its next instance. Returns the new task id or None."""
+def complete_task(c, id, today, now=None):
+    """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None."""
     t = get_task(c, id)
     if t is None or t["status"] == "done":
         return None
+    running = timer_running(c)
+    if running and running["task_id"] == id:
+        timer_stop(c, now or datetime.now(timezone.utc))
     c.execute("UPDATE tasks SET status = 'done', completed_at = datetime('now') WHERE id = ?", (id,))
     new_id = None
     if recur.parse(t["recur"]):
@@ -357,3 +372,74 @@ def delete_context(c, name):
         c.execute("DELETE FROM contexts WHERE name = ?", (name,))
         c.commit()
     return used
+
+
+# --- timer -----------------------------------------------------------------
+
+ENTRY_FIELDS = {"task_id", "start_time", "end_time"}
+ENTRY_SELECT = """SELECT e.*, t.title, t.status AS task_status, t.ground, t.project_id, p.title AS project_title
+  FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id"""
+SECONDS = "(julianday(coalesce(e.end_time, ?)) - julianday(e.start_time)) * 86400"
+
+
+def iso(dt):
+    return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def timer_running(c):
+    return c.execute(f"{ENTRY_SELECT} WHERE e.end_time IS NULL").fetchone()
+
+
+def time_entries(c, limit=200):
+    """The running entry first, then the rest, newest first."""
+    return c.execute(f"{ENTRY_SELECT} ORDER BY e.end_time IS NOT NULL, e.start_time DESC LIMIT ?", (limit,)).fetchall()
+
+
+def get_entry(c, id):
+    return c.execute("SELECT * FROM time_entries WHERE id = ?", (id,)).fetchone()
+
+
+def timer_start(c, task_id, now):
+    """Start timing a task, stopping whatever was running. Returns the new entry's id."""
+    timer_stop(c, now)
+    return _insert(c, "time_entries", ENTRY_FIELDS, {"task_id": task_id, "start_time": iso(now)})
+
+
+def timer_stop(c, now):
+    c.execute("UPDATE time_entries SET end_time = ? WHERE end_time IS NULL", (iso(now),))
+    c.commit()
+
+
+def update_entry(c, id, **fields):
+    _update(c, "time_entries", ENTRY_FIELDS, id, fields)
+
+
+def delete_entry(c, id):
+    c.execute("DELETE FROM time_entries WHERE id = ?", (id,))
+    c.commit()
+
+
+def task_seconds(c, task_id, now):
+    return c.execute(f"SELECT coalesce(sum({SECONDS}), 0) FROM time_entries e WHERE e.task_id = ?",
+                     (iso(now), task_id)).fetchone()[0]
+
+
+def project_seconds(c, project_id, now):
+    """Time on all of a project's tasks, done ones included."""
+    return c.execute(f"""SELECT coalesce(sum({SECONDS}), 0) FROM time_entries e JOIN tasks t ON t.id = e.task_id
+        WHERE t.project_id = ?""", (iso(now), project_id)).fetchone()[0]
+
+
+def week_totals(c, since, now):
+    """[(project title, or H0 / inbox / no project, seconds)] for entries started since `since`, most time first."""
+    rows = c.execute(f"""SELECT CASE WHEN p.title IS NOT NULL THEN p.title WHEN t.ground THEN 'H0 · ground level'
+          WHEN t.status = 'inbox' THEN 'Inbox (unprocessed)' ELSE '(no project)' END AS label, sum({SECONDS}) AS secs
+        FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id
+        WHERE e.start_time >= ? GROUP BY label ORDER BY secs DESC""", (iso(now), iso(since))).fetchall()
+    return [(r["label"], round(r["secs"])) for r in rows]
+
+
+def open_tasks(c):
+    """Every open task, for the timer's picker: next actions first."""
+    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' ORDER BY
+        CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END, lower(t.title)""").fetchall()

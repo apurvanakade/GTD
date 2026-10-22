@@ -11,6 +11,8 @@
     {% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}
     {% if t.status == 'later' %}<span>later</span>{% endif %}
   </span>
+  {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
+  {% elif t.status != 'done' %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
   {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}"><button>Make next</button></form>{% endif %}
 </li>
 {% endmacro %}

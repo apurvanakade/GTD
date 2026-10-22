@@ -1,5 +1,5 @@
 import sys
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import jinja2
@@ -11,11 +11,12 @@ import db  # noqa: E402
 from app import app  # noqa: E402
 
 TODAY = date(2026, 10, 22)
+NOW = datetime(2026, 10, 22, 16, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def client(tmp_path):
-    app.config.update(TESTING=True, DB_PATH=str(tmp_path / "t.db"), TODAY=TODAY)
+    app.config.update(TESTING=True, DB_PATH=str(tmp_path / "t.db"), TODAY=TODAY, NOW=NOW)
     app.jinja_env.undefined = jinja2.StrictUndefined  # a typo in a template fails instead of rendering blank
     with app.test_client() as c:
         yield c
@@ -52,4 +53,7 @@ def seed(c):
     db.add_horizon(c, "goal", "Ship the kitchen")
     area = db.add_horizon(c, "area", "Home")
     db.update_horizon(c, area, notes="Clean and calm\nsecond line")
+    db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
+    db.timer_stop(c, NOW - timedelta(hours=1))
+    db.timer_start(c, 7, NOW - timedelta(minutes=10))  # "call mum", still running
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done}

@@ -53,6 +53,15 @@ There is no build step, linter config or JS bundler.
   - That JS submits `form.done` with the header `X-Requested-With: fetch`. The complete route returns `204` for that header, and the row fades out in place. If the response was redirected, the JS navigates there instead.
   - Search (`/search?q=`, `db.search()`) is a plain case-insensitive `LIKE`: every word must appear in a task's title/notes/context/waiting-on, or a project's or horizon's title/notes. Done tasks are included, newest 50 only.
   - Task rows come from the `row()` macro in `_task.html`. The context dropdown comes from its `context_select()` macro.
+- **Timer** (`/timer`) replaced a standalone time tracker on 2026-10-22. Every time entry belongs to a task.
+  - Table `time_entries` (`task_id` → `tasks`, `ON DELETE CASCADE`; `start_time`, `end_time` as UTC ISO-8601 to the second, written by `db.iso()`). No `end_time` means running. A partial unique index allows only one running entry.
+  - `now()` in `app.py` reads `app.config["NOW"]` (pinned in tests), like `today()`. Never call `datetime.now()` in a route. Forms show and take local time (`local_input()`).
+  - `db.timer_start()` stops whatever is running first. `complete_task()` stops the task's timer.
+  - ▶ on every open task row (`row()` macro) and the task page starts it. The running timer shows as a bar under the nav on every page; its clock is the only timer JS (in `base.html`).
+  - The Timer page's start box matches an open task by title (case-insensitive), or captures what you typed to the inbox and times that, so everything timed is in the system.
+  - Editing an entry saves only fields that differ from what the form showed, so untouched times keep their seconds. Setting an end on the running entry stops it.
+  - Totals: time spent on the task page, the project total on the project page (done steps included), and per project this week on the Timer page (`db.week_totals()`).
+  - `_migrate()` dropped the first timer's free-text `time_entries` table.
 - **`import_mindwtr.py`** was a one-off migration from Mindwtr's Local API, already applied on 2026-10-22.
   - `plan()` is a pure function and is tested.
   - `--apply` refuses to run if the DB already has tasks.

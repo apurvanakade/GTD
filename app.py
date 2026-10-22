@@ -1,6 +1,6 @@
 import os
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, url_for
@@ -36,9 +36,14 @@ def today():
     return app.config.get("TODAY") or date.today()
 
 
+def now():
+    return app.config.get("NOW") or datetime.now(timezone.utc)
+
+
 @app.context_processor
 def template_globals():
-    return {"counts": db.counts(conn(), today()), "CONTEXTS": db.contexts(conn()), "today": today().isoformat()}
+    return {"counts": db.counts(conn(), today()), "CONTEXTS": db.contexts(conn()), "today": today().isoformat(),
+            "timer": db.timer_running(conn())}
 
 
 def form_value(name):
@@ -122,7 +127,7 @@ def process_item(id):
         db.delete_task(c, id)
     elif action == "done":
         db.update_task(c, id, title=title, notes=notes)
-        db.complete_task(c, id, today())
+        db.complete_task(c, id, today(), now())
     elif action == "someday":
         # Ask where it goes: its own new someday project, or a later step of an existing project.
         target = request.form.get("someday_target") or ""
@@ -216,7 +221,8 @@ def task_view(id):
             flash("No project and not H0 · ground level (later steps always need a project), so this went back to the inbox.")
         flash_demoted(db.update_task(c, id, **fields))
         return redirect(request.form.get("next") or url_for("task_view", id=id))
-    return render_template("task.html", t=t, projects=db.open_projects(c), back=request.referrer)
+    return render_template("task.html", t=t, projects=db.open_projects(c), back=request.referrer,
+                           seconds=db.task_seconds(c, id, now()))
 
 
 def flash_demoted(titles):
@@ -228,7 +234,7 @@ def flash_demoted(titles):
 def complete(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
-    db.complete_task(c, id, today())
+    db.complete_task(c, id, today(), now())
     p = t["project_id"] and db.get_project(c, t["project_id"])
     if p and p["status"] == "active" and not db.project_next(c, p["id"]):
         # Ask which step comes next (the page's fetch follows this redirect and navigates).
@@ -293,7 +299,7 @@ def project_view(id):
             return redirect(url_for("projects_view"))
         return redirect(url_for("project_view", id=id))
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
-                           processing=request.args.get("processing"))
+                           processing=request.args.get("processing"), seconds=db.project_seconds(c, id, now()))
 
 
 @app.post("/projects/<int:id>/tasks")
@@ -340,6 +346,101 @@ def calendar_view():
     return render_template("calendar.html", first=first, projects=db.open_projects(conn()), weeks=weeks, by_day=by_day,
                            prev=recur.add_months(first, -1).strftime("%Y-%m"),
                            next=recur.add_months(first, 1).strftime("%Y-%m"))
+
+
+# --- timer -----------------------------------------------------------------
+# Every time entry belongs to a task. Times are stored in UTC and shown in local time.
+
+def local_input(iso):
+    """A stored UTC time as the local "YYYY-MM-DDTHH:MM" a datetime-local input shows."""
+    return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%dT%H:%M")
+
+
+@app.template_filter("hm")
+def hm(seconds):
+    m = round(seconds or 0) // 60
+    return f"{m // 60}h {m % 60:02d}m"
+
+
+@app.template_filter("elapsed")
+def elapsed(iso):
+    s = max(0, int((now() - datetime.fromisoformat(iso)).total_seconds()))
+    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}"
+
+
+@app.template_filter("epoch_ms")
+def epoch_ms(iso):
+    return int(datetime.fromisoformat(iso).timestamp() * 1000)
+
+
+@app.route("/timer")
+def timer_view():
+    c = conn()
+    monday = datetime.combine(today() - timedelta(days=today().weekday()), datetime.min.time()).astimezone()
+    return render_template("timer.html", entries=db.time_entries(c), open_tasks=db.open_tasks(c),
+                           week=db.week_totals(c, monday, now()), local_input=local_input)
+
+
+@app.post("/timer/start")
+def timer_start():
+    """Time the open task with this title, or capture it to the inbox first: everything timed is in the system."""
+    c, title = conn(), form_value("title")
+    if not title:
+        return back("timer_view")
+    t = next((t for t in db.open_tasks(c) if t["title"].lower() == title.lower()), None)
+    if t:
+        tid = t["id"]
+    else:
+        tid = db.add_task(c, title, status="inbox")
+        flash(f"Captured to inbox: {title}")
+    db.timer_start(c, tid, now())
+    return back("timer_view")
+
+
+@app.post("/tasks/<int:id>/start")
+def task_start(id):
+    t = db.get_task(conn(), id) or abort(404)
+    if t["status"] != "done":
+        db.timer_start(conn(), id, now())
+    return back()
+
+
+@app.post("/timer/stop")
+def timer_stop():
+    db.timer_stop(conn(), now())
+    return back("timer_view")
+
+
+@app.post("/timer/<int:id>")
+def entry_edit(id):
+    """Only fields changed from what the form showed are saved, so untouched times keep their seconds.
+    Setting an end time on the running entry stops it."""
+    c = conn()
+    e = db.get_entry(c, id) or abort(404)
+    fields = {}
+    try:
+        for name, col in (("start", "start_time"), ("end", "end_time")):
+            raw = form_value(name)
+            if raw and raw != (e[col] and local_input(e[col])):
+                t = datetime.fromisoformat(raw).astimezone()  # the form's time is local
+                if t > now():
+                    raise ValueError("That time is in the future.")
+                fields[col] = db.iso(t)
+    except ValueError as err:
+        flash(str(err) if "future" in str(err) else "Didn't understand that time.")
+        return back("timer_view")
+    start, end = fields.get("start_time", e["start_time"]), fields.get("end_time", e["end_time"])
+    if end and end < start:
+        flash("The end is before the start.")
+        return back("timer_view")
+    db.update_entry(c, id, **fields)
+    return back("timer_view")
+
+
+@app.post("/timer/<int:id>/delete")
+def entry_delete(id):
+    db.delete_entry(conn(), id)
+    return back("timer_view")
 
 
 # --- horizons --------------------------------------------------------------

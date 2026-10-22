@@ -1,12 +1,12 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
 import db
 import import_mindwtr
 import recur
-from app import app
-from conftest import TODAY
+from app import app, local_input
+from conftest import NOW, TODAY
 
 
 # --- recur -----------------------------------------------------------------
@@ -496,3 +496,112 @@ def test_next_due_skipping_ahead_does_not_drift():
     assert recur.next_due("monthly", date(2026, 1, 31), TODAY) == date(2026, 10, 31)
     assert recur.next_due("every 2 years", date(2024, 2, 29), TODAY) == date(2028, 2, 29)
     assert recur.next_due("yearly", date(2024, 2, 29), TODAY) == date(2027, 2, 28)
+
+
+
+# --- timer -----------------------------------------------------------------
+
+def iso(dt):
+    return dt.isoformat(timespec="seconds")
+
+
+def test_timer_starts_from_a_task_and_starting_another_stops_it(client, conn):
+    a = db.add_task(conn, "write", status="next", context="@home", ground=1)
+    b = db.add_task(conn, "read", status="next", context="@home", ground=1)
+    assert b'action="/tasks/%d/start"' % a in client.get("/next").data  # ▶ on task rows
+    client.post(f"/tasks/{a}/start", headers={"Referer": "/next"})
+    assert db.timer_running(conn)["task_id"] == a
+    page = client.get("/inbox").get_data(as_text=True)  # the running timer shows on every page
+    assert 'class="running-timer"' in page and "write" in page and "0:00" in page
+    client.post(f"/tasks/{b}/start")
+    entries = db.time_entries(conn)
+    assert [(e["task_id"], e["end_time"] is None) for e in entries] == [(b, True), (a, False)]
+    client.post("/timer/stop")
+    assert db.timer_running(conn) is None and 'class="running-timer"' not in client.get("/inbox").get_data(as_text=True)
+    assert client.post("/tasks/999/start").status_code == 404
+
+
+def test_timer_page_start_uses_a_task_or_captures_to_inbox(client, conn):
+    t = db.add_task(conn, "Write report", status="next", context="@home", ground=1)
+    client.post("/timer/start", data={"title": "write REPORT "})
+    assert db.timer_running(conn)["task_id"] == t
+    r = client.post("/timer/start", data={"title": "Yoga"}, follow_redirects=True)
+    (yoga,) = db.tasks_with_status(conn, "inbox")
+    assert yoga["title"] == "Yoga" and db.timer_running(conn)["task_id"] == yoga["id"]
+    assert "Captured to inbox: Yoga" in r.get_data(as_text=True)
+    client.post("/timer/start", data={"title": " "})
+    assert db.timer_running(conn)["task_id"] == yoga["id"]  # blank: nothing changes
+
+
+def test_completing_the_running_task_stops_its_timer(client, conn):
+    t = db.add_task(conn, "bins", status="next", context="@home", ground=1, recur="weekly", due_date="2026-10-22")
+    other = db.add_task(conn, "x", status="next", context="@home", ground=1)
+    client.post(f"/tasks/{t}/start")
+    client.post(f"/tasks/{other}/complete")
+    assert db.timer_running(conn)["task_id"] == t  # another task: timer keeps running
+    client.post(f"/tasks/{t}/complete")
+    assert db.timer_running(conn) is None
+    assert db.get_entry(conn, db.time_entries(conn)[0]["id"])["end_time"] == iso(NOW)
+
+
+def test_deleting_a_task_deletes_its_time(client, conn):
+    t = db.add_task(conn, "x", status="next", context="@home", ground=1)
+    client.post(f"/tasks/{t}/start")
+    client.post(f"/tasks/{t}/delete")
+    assert db.time_entries(conn) == []
+
+
+def test_edit_and_delete_time_entries(client, conn):
+    t = db.add_task(conn, "x", status="next", context="@home", ground=1)
+    eid = db.timer_start(conn, t, NOW - timedelta(hours=2, seconds=-17))
+    db.timer_stop(conn, NOW - timedelta(hours=1, seconds=-5))
+    before = dict(db.get_entry(conn, eid))
+    start, end = (local_input(before[k]) for k in ("start_time", "end_time"))
+    client.post(f"/timer/{eid}", data={"start": start, "end": end})
+    assert dict(db.get_entry(conn, eid)) == before  # an unchanged save keeps the seconds
+    for bad in ({"start": start, "end": local_input(iso(NOW - timedelta(hours=3)))},  # end before start
+                {"start": local_input(iso(NOW + timedelta(hours=1))), "end": end},   # in the future
+                {"start": "nonsense", "end": end}):
+        r = client.post(f"/timer/{eid}", data=bad, follow_redirects=True)
+        assert r.status_code == 200 and dict(db.get_entry(conn, eid)) == before, bad
+    new_start = local_input(iso(NOW - timedelta(hours=4)))
+    client.post(f"/timer/{eid}", data={"start": new_start, "end": end})
+    assert local_input(db.get_entry(conn, eid)["start_time"]) == new_start
+    running = db.timer_start(conn, t, NOW - timedelta(minutes=5))
+    client.post(f"/timer/{running}", data={"start": local_input(iso(NOW - timedelta(minutes=5))),
+                                           "end": local_input(iso(NOW - timedelta(minutes=1)))})
+    assert db.timer_running(conn) is None  # an end time stops it
+    client.post(f"/timer/{eid}/delete")
+    assert db.get_entry(conn, eid) is None
+    assert client.post("/timer/999", data={}).status_code == 404
+
+
+def test_time_totals_on_task_project_and_timer_pages(client, conn):
+    pid = db.add_project(conn, "Kitchen")
+    a = db.add_task(conn, "measure", status="next", context="@home", project_id=pid)
+    b = db.add_task(conn, "tile", status="later", project_id=pid)
+    h0 = db.add_task(conn, "stretch", status="next", context="@home", ground=1)
+    db.timer_start(conn, h0, NOW - timedelta(days=30))  # last month: not this week
+    db.timer_stop(conn, NOW - timedelta(days=30) + timedelta(minutes=5))
+    db.timer_start(conn, a, NOW - timedelta(minutes=90))
+    db.timer_start(conn, b, NOW - timedelta(minutes=30))  # stops a after 60 min
+    db.complete_task(conn, a, TODAY, NOW)  # done tasks still count toward the project
+    db.timer_start(conn, h0, NOW - timedelta(minutes=10))  # stops b after 20 min
+    assert "1h 00m" in client.get(f"/tasks/{a}").get_data(as_text=True)
+    assert "1h 20m" in client.get(f"/projects/{pid}").get_data(as_text=True)
+    page = client.get("/timer").get_data(as_text=True)
+    assert "Kitchen" in page and "1h 20m" in page and "H0 · ground level" in page and "0h 10m" in page
+    assert db.week_totals(conn, NOW - timedelta(days=1), NOW) == [("Kitchen", 4800), ("H0 · ground level", 600)]
+
+
+def test_old_time_entries_table_is_replaced(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE time_entries (id INTEGER PRIMARY KEY, task TEXT, area TEXT, start_time TEXT, end_time TEXT)")
+    old.execute("INSERT INTO time_entries (task, area, start_time) VALUES ('x', '', '2026-10-22T10:00:00+00:00')")
+    old.commit()
+    old.close()
+    c = db.connect(str(path))
+    assert "task_id" in [r[1] for r in c.execute("PRAGMA table_info(time_entries)")]
+    assert db.time_entries(c) == []

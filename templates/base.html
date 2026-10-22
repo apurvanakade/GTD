@@ -17,6 +17,7 @@
   <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
   <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
   <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
+  <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
 </nav>
 <div class="bar">
   {% if ep == 'inbox' %}
@@ -30,6 +31,13 @@
     <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search…  ( f )" aria-label="Search" required>
   </form>
 </div>
+{% if timer %}
+<form class="running-timer" method="post" action="{{ url_for('timer_stop') }}">
+  <span class="clock" data-start="{{ timer.start_time|epoch_ms }}">{{ timer.start_time|elapsed }}</span>
+  <a href="{{ url_for('task_view', id=timer.task_id) }}">{{ timer.title }}</a>
+  <button title="Stop the timer">■ Stop</button>
+</form>
+{% endif %}
 {% if ep != 'inbox' %}
 <dialog class="capture-dialog">
   <form class="capture" method="post" action="{{ url_for('capture') }}">
@@ -53,6 +61,12 @@ document.addEventListener('keydown', e => {
 });
 // Off the Inbox page, capture happens in a dialog.
 document.querySelector('.add-inbox')?.addEventListener('click', () => document.querySelector('.capture-dialog').showModal());
+// The running timer's clock.
+const clock = document.querySelector('.running-timer .clock');
+if (clock) setInterval(() => {
+  const s = Math.max(0, Math.floor((Date.now() - clock.dataset.start) / 1000));
+  clock.textContent = `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}, 1000);
 // Tick off a task in place instead of reloading the page.
 document.addEventListener('submit', async e => {
   const f = e.target;
