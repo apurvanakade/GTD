@@ -164,6 +164,12 @@ def review():
     return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()))
 
 
+@app.route("/search")
+def search():
+    q = (request.args.get("q") or "").strip()
+    return render_template("search.html", q=q, results=db.search(conn(), q) if q else None)
+
+
 # --- tasks -----------------------------------------------------------------
 
 @app.route("/tasks/<int:id>", methods=["GET", "POST"])

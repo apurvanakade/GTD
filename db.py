@@ -154,6 +154,33 @@ def counts(c, today):
     }
 
 
+# --- search ----------------------------------------------------------------
+
+def _matching(q, cols):
+    """WHERE clause and args: every word of q appears (case-insensitive) in one of cols."""
+    words = q.split()
+    if not words:
+        return "0", []
+    hay = " || ' ' || ".join(f"coalesce({col}, '')" for col in cols)
+    like = lambda w: "%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    return " AND ".join(f"({hay}) LIKE ? ESCAPE '\\'" for _ in words), [like(w) for w in words]
+
+
+def search(c, q):
+    """Tasks (open, then the latest 50 done), projects and horizons whose text contains every word of q."""
+    where, args = _matching(q, ["t.title", "t.notes", "t.context", "t.waiting_on"])
+    tasks = c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND {where} ORDER BY
+        CASE t.status WHEN 'inbox' THEN 0 WHEN 'next' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END,
+        lower(t.title)""", args).fetchall()
+    done = c.execute(f"""{TASK_SELECT} WHERE t.status = 'done' AND {where}
+        ORDER BY t.completed_at DESC LIMIT 50""", args).fetchall()
+    where, args = _matching(q, ["title", "notes"])
+    projects = c.execute(f"""SELECT * FROM projects WHERE {where}
+        ORDER BY status = 'done', lower(title)""", args).fetchall()
+    horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title)", args).fetchall()
+    return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons}
+
+
 # --- projects --------------------------------------------------------------
 
 def add_project(c, title, **fields):

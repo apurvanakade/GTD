@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_task.html" import row with context %}
+{% block title %}Search{% endblock %}
+{% block body %}
+<h1>Search{% if q %} <small>“{{ q }}”</small>{% endif %}</h1>
+{% if results %}
+{% set r = results %}
+{% if r.projects %}
+<h2>Projects</h2>
+<ul class="tasks">
+  {% for p in r.projects %}
+  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.status != 'active' %}<span class="meta">{{ p.status }}</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% for status, label in [('inbox', 'Inbox'), ('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later')] %}
+{% set tasks = r.tasks|selectattr('status', 'equalto', status)|list %}
+{% if tasks %}
+<h2>{{ label }}</h2>
+<ul class="tasks">{% for t in tasks %}{{ row(t, context=True) }}{% endfor %}</ul>
+{% endif %}
+{% endfor %}
+{% if r.horizons %}
+<h2>Horizons</h2>
+<ul class="tasks">
+  {% for h in r.horizons %}
+  <li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) if h.level in ('goal', 'area') else url_for('horizons_view') }}">{{ h.title }}</a><span class="meta">{{ h.level }}</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% if r.done %}
+<h2>Done</h2>
+<ul class="tasks">
+  {% for t in r.done %}
+  <li class="task"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+    <span class="meta">{% if t.project_title %}<span>{{ t.project_title }}</span>{% endif %}<span class="date">{{ (t.completed_at or '')[:10] }}</span></span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% if not (r.projects or r.tasks or r.horizons or r.done) %}<p class="empty">Nothing matches.</p>{% endif %}
+{% else %}
+<p class="empty">Type in the search box above.</p>
+{% endif %}
+{% endblock %}

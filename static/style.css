@@ -39,7 +39,10 @@ button:hover, .button:hover { border-color: var(--muted); }
 .danger { color: var(--danger); }
 .big { font-size: 1.2rem; font-weight: 600; }
 
-.capture input { padding: 10px 12px; }
+.bar { display: flex; gap: 8px; }
+.capture { flex: 3 1 0; }
+.search { flex: 1 1 0; min-width: 120px; }
+.capture input, .search input { padding: 10px 12px; }
 .flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }
 .empty, .hint { color: var(--muted); }
 

@@ -201,3 +201,24 @@ def test_import_mapping():
     assert by["odd"]["recur"] is None and by["odd"]["title"].startswith("⚠")
     assert [r["title"] for r in ref] == ["ref"]
     assert len(warnings) == 2
+
+
+def test_search(client, conn):
+    pid = db.add_project(conn, "Kitchen remodel", notes="call the plumber")
+    db.add_task(conn, "Buy tiles", status="next", context="@errands", project_id=pid)
+    db.add_task(conn, "Pick tile grout", status="inbox")
+    done = db.add_task(conn, "Measure kitchen tiles", status="next", project_id=pid)
+    db.complete_task(conn, done, TODAY)
+    db.add_task(conn, "100% sure", status="inbox")
+    r = db.search(conn, "TILE")
+    assert [t["title"] for t in r["tasks"]] == ["Pick tile grout", "Buy tiles"]
+    assert [t["title"] for t in r["done"]] == ["Measure kitchen tiles"]
+    assert [t["title"] for t in db.search(conn, "tiles kitchen")["done"]] == ["Measure kitchen tiles"]
+    assert [p["title"] for p in db.search(conn, "plumber")["projects"]] == ["Kitchen remodel"]
+    assert [t["title"] for t in db.search(conn, "errands")["tasks"]] == ["Buy tiles"]
+    assert db.search(conn, "0%")["tasks"][0]["title"] == "100% sure"
+    assert db.search(conn, "_")["tasks"] == []
+    page = client.get("/search?q=tile").data
+    assert b"Pick tile grout" in page and b"Measure kitchen tiles" in page
+    assert b"Nothing matches" in client.get("/search?q=zzz").data
+    assert client.get("/search").status_code == 200

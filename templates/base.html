@@ -18,18 +18,23 @@
   <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
   <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
 </nav>
-<form class="capture" method="post" action="{{ url_for('capture') }}">
-  <input name="title" placeholder="Capture to inbox…  ( / )" autocomplete="off" required>
-</form>
+<div class="bar">
+  <form class="capture" method="post" action="{{ url_for('capture') }}">
+    <input name="title" placeholder="Capture to inbox…  ( / )" autocomplete="off" required>
+  </form>
+  <form class="search" action="{{ url_for('search') }}">
+    <input type="search" name="q" value="{{ q or '' }}" placeholder="Search…  ( f )" aria-label="Search" required>
+  </form>
+</div>
 <main>
   {% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}
   {% block body %}{% endblock %}
 </main>
 <script>
 document.addEventListener('keydown', e => {
-  if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
-    e.preventDefault(); document.querySelector('.capture input').focus();
-  }
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+  const box = {'/': '.capture input', 'f': '.search input'}[e.key];
+  if (box) { e.preventDefault(); document.querySelector(box).select(); }
 });
 // Tick off a task in place instead of reloading the page.
 document.addEventListener('submit', async e => {
