@@ -26,8 +26,8 @@
   <li class="{{ 'ok' if not orphans }}">
     <h2>Every task has a project</h2>
     {% if orphans %}<ul class="plain">{% for t in orphans %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.status }}</span></li>{% endfor %}</ul>
-    <p class="hint">Give each a project, make it repeat, finish it or delete it.</p>
-    {% else %}<p>✓ Only repeating tasks stand alone.</p>{% endif %}
+    <p class="hint">Give each a project or mark it H0 · ground level, finish it or delete it.</p>
+    {% else %}<p>✓ Every open task has a project or is H0.</p>{% endif %}
   </li>
   <li>
     <h2>Scan next actions</h2>

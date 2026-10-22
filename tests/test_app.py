@@ -1,31 +1,12 @@
-import sys
 from datetime import date
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import db  # noqa: E402
-import import_mindwtr  # noqa: E402
-import recur  # noqa: E402
-from app import app  # noqa: E402
-
-TODAY = date(2026, 10, 22)
-
-
-@pytest.fixture
-def client(tmp_path):
-    app.config.update(TESTING=True, DB_PATH=str(tmp_path / "t.db"), TODAY=TODAY)
-    with app.test_client() as c:
-        yield c
-
-
-@pytest.fixture
-def conn(client):
-    c = db.connect(app.config["DB_PATH"])
-    yield c
-    c.close()
+import db
+import import_mindwtr
+import recur
+from app import app
+from conftest import TODAY
 
 
 # --- recur -----------------------------------------------------------------
@@ -33,6 +14,7 @@ def conn(client):
 @pytest.mark.parametrize("rule,expected", [
     ("weekly", (1, "week")), ("every 2 weeks", (2, "week")), ("every 6 months", (6, "month")),
     ("Daily", (1, "day")), ("every year", (1, "year")), ("every 0 days", None), ("fortnightly", None),
+    ("every 12 months", (12, "month")), ("Every  10  Days ", (10, "day")),
 ])
 def test_parse(rule, expected):
     assert recur.parse(rule) == expected
@@ -220,7 +202,9 @@ def test_tasks_need_a_project_or_h0(client, conn):
     assert "inbox item" in html and f'href="/projects/{pid}">P</a>' in html  # H0 tasks and H1 projects
 
     orphan = db.add_task(conn, "legacy", status="next")  # e.g. from before the rule
-    assert [t["id"] for t in db.orphans(conn)] == [orphan]
+    stray = db.add_task(conn, "stray wait", status="waiting", waiting_on="Ann")
+    db.add_task(conn, "h0 wait", status="waiting", waiting_on="Ann", ground=1)
+    assert [t["id"] for t in db.orphans(conn)] == [orphan, stray]
     assert b"legacy" in client.get("/review").data
 
 
@@ -390,3 +374,125 @@ def test_search(client, conn):
     assert b"Pick tile grout" in page and b"Measure kitchen tiles" in page
     assert b"Nothing matches" in client.get("/search?q=zzz").data
     assert client.get("/search").status_code == 200
+
+
+# --- edges -----------------------------------------------------------------
+
+def test_delete_from_task_page_after_saving(client, conn):
+    tid = db.add_task(conn, "x", status="next", context="@home", ground=1)
+    # After a save the task page is its own referrer, so its back link points at itself.
+    r = client.post(f"/tasks/{tid}/delete", data={"next": f"http://localhost/tasks/{tid}"})
+    assert db.get_task(conn, tid) is None and r.headers["Location"] == "/next"
+    r = client.post(f"/tasks/{tid + 1}/delete", data={"next": "/waiting"})
+    assert r.headers["Location"] == "/waiting"
+
+
+def test_review_orphan_wording(client, conn):
+    html = client.get("/review").get_data(as_text=True)
+    assert "Every open task has a project or is H0" in html and "repeat" not in html
+    db.add_task(conn, "legacy", status="next")
+    assert "mark it H0" in client.get("/review").get_data(as_text=True)
+
+
+def test_task_form_edges(client, conn):
+    tid = db.add_task(conn, "t", status="next", context="@home", ground=1, notes="old", recur="weekly",
+                      due_date="2026-10-22")
+    r = client.post(f"/tasks/{tid}", data={"title": "", "notes": "", "recur": "fortnightly"}, follow_redirects=True)
+    t = db.get_task(conn, tid)
+    assert (t["title"], t["notes"], t["recur"]) == ("t", "", "weekly")  # blank title kept, bad rule ignored
+    assert "understand repeat rule “fortnightly”" in r.get_data(as_text=True)
+    client.post(f"/tasks/{tid}", data={"recur": "every 3 days", "due_date": ""})
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-22"  # a repeat needs a due date: today
+    assert client.get("/tasks/999").status_code == 404
+    assert client.post("/tasks/999/complete").status_code == 404
+
+
+def test_make_next_without_context_asks_for_one(client, conn):
+    pid = db.add_project(conn, "P")
+    a = db.add_task(conn, "a", status="later", project_id=pid)
+    r = client.post(f"/tasks/{a}/make-next", headers={"Referer": f"/projects/{pid}"})
+    assert db.get_task(conn, a)["status"] == "next" and r.headers["Location"] == f"/tasks/{a}"
+    b = db.add_task(conn, "b", status="later", context="@home", project_id=pid)
+    r = client.post(f"/tasks/{b}/make-next", headers={"Referer": f"/projects/{pid}"})
+    assert r.headers["Location"] == f"/projects/{pid}"
+    assert [db.get_task(conn, i)["status"] for i in (a, b)] == ["later", "next"]
+
+
+def test_complete_twice_is_harmless(client, conn):
+    tid = db.add_task(conn, "bins", status="next", context="@home", ground=1, recur="weekly", due_date="2026-10-22")
+    client.post(f"/tasks/{tid}/complete")
+    client.post(f"/tasks/{tid}/complete")  # e.g. a double click
+    assert len(db.tasks_with_status(conn, "next")) == 1  # only one new instance
+
+
+def test_process_edges(client, conn):
+    r = client.get("/process", follow_redirects=True)
+    assert r.request.path == "/inbox" and b"Inbox zero." in r.data
+    tid = db.add_task(conn, "x")
+    r = client.post(f"/process/{tid}", data={"action": "waiting", "project_id": "h0", "waiting_on": " "},
+                    follow_redirects=True)
+    assert db.get_task(conn, tid)["status"] == "inbox" and b"Who are you waiting on?" in r.data
+    assert client.post(f"/process/{tid}", data={"action": "bogus"}).status_code == 400
+    assert client.post(f"/process/{tid}", data={}).status_code == 400
+    assert client.post("/process/999", data={"action": "trash"}).status_code == 404
+    client.post(f"/process/{tid}", data={"action": "someday", "someday_target": "999"})
+    assert db.get_task(conn, tid)["status"] == "inbox"  # unknown project: asks again
+
+
+def test_projects_create_and_status(client, conn):
+    assert client.post("/projects", data={"title": "  "}).headers["Location"] == "/projects"
+    r = client.post("/projects", data={"title": "Paint fence"})
+    pid = int(r.headers["Location"].rsplit("/", 1)[1])
+    assert db.get_project(conn, pid)["title"] == "Paint fence"
+    client.post(f"/projects/{pid}", data={"title": "", "notes": "", "status": "bogus"})
+    p = db.get_project(conn, pid)
+    assert (p["title"], p["status"]) == ("Paint fence", "active")  # blank title and unknown status ignored
+    client.post(f"/projects/{pid}", data={"status": "done"})
+    assert db.get_project(conn, pid)["completed_at"]
+    assert client.get("/projects/999").status_code == 404
+    assert client.post("/projects/999/tasks", data={"title": "x"}).status_code == 404
+
+
+def test_project_step_without_title_is_ignored(client, conn):
+    pid = db.add_project(conn, "P")
+    client.post(f"/projects/{pid}/tasks", data={"title": " "})
+    assert db.project_tasks(conn, pid) == []
+    client.post(f"/projects/{pid}/tasks", data={"title": "first"})
+    assert db.project_tasks(conn, pid)[0]["status"] == "next"  # no next yet, so the first step is it
+
+
+def test_capture_on_inbox_has_no_flash_and_blank_is_ignored(client, conn):
+    r = client.post("/capture", data={"title": "milk"}, headers={"Referer": "http://localhost/inbox"},
+                    follow_redirects=True)
+    assert b"Added to inbox" not in r.data and b"milk" in r.data
+    client.post("/capture", data={"title": "   "})
+    assert [t["title"] for t in db.tasks_with_status(conn, "inbox")] == ["milk"]
+
+
+def test_home_and_horizon_page(client, conn):
+    assert client.get("/").headers["Location"] == "/next"
+    gid = db.add_horizon(conn, "goal", "Run a marathon")
+    page = client.get(f"/horizons/{gid}").get_data(as_text=True)
+    assert "Run a marathon" in page and "H3 · Goals" in page and "Delete" in page
+    vision = db.horizons(conn)["vision"][0]["id"]
+    assert "Delete" not in client.get(f"/horizons/{vision}").get_data(as_text=True)
+    client.post(f"/horizons/{vision}", data={"notes": "big"})  # from the Horizons page: notes only
+    assert (db.get_horizon(conn, vision)["title"], db.get_horizon(conn, vision)["notes"]) == ("Vision", "big")
+    assert client.get("/horizons/999").status_code == 404
+    assert client.post("/horizons", data={"level": "goal", "title": " "}).status_code == 400
+    assert client.post("/contexts", data={"name": " @ "}).status_code == 400
+    assert client.post("/contexts/delete", data={}).status_code == 400
+
+
+def test_db_rejects_unknown_fields(conn):
+    tid = db.add_task(conn, "x")
+    with pytest.raises(ValueError):
+        db.update_task(conn, tid, colour="red")
+    assert db.search(conn, "   ") == {"tasks": [], "done": [], "projects": [], "horizons": []}
+
+
+def test_next_due_skipping_ahead_does_not_drift():
+    # Overdue month-end and leap-day tasks keep their day when several periods are skipped.
+    assert recur.next_due("monthly", date(2026, 1, 31), TODAY) == date(2026, 10, 31)
+    assert recur.next_due("every 2 years", date(2024, 2, 29), TODAY) == date(2028, 2, 29)
+    assert recur.next_due("yearly", date(2024, 2, 29), TODAY) == date(2027, 2, 28)

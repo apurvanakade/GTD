@@ -27,7 +27,7 @@
   <button type="button" class="add-inbox" title="Add to inbox ( / )">+ Inbox</button>
   {% endif %}
   <form class="search" action="{{ url_for('search') }}">
-    <input type="search" name="q" value="{{ q or '' }}" placeholder="Search…  ( f )" aria-label="Search" required>
+    <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search…  ( f )" aria-label="Search" required>
   </form>
 </div>
 {% if ep != 'inbox' %}

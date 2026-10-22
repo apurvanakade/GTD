@@ -46,8 +46,9 @@ There is no build step, linter config or JS bundler.
   - `task_fields_from_form()` is the single place that turns form input into task fields; it validates the repeat rule.
 - **`recur.py`** is pure date math.
   - Rules are `daily|weekly|monthly|yearly` or `every N day|week|month|year(s)`.
-  - `next_due()` steps forward from the old due date until it is after today.
-  - `occurrences()` steps from the original anchor by `n*k`, so month-end days don't drift. Use it for projections such as the calendar.
+  - Both step from their anchor by `n*k`, so month-end days don't drift.
+  - `next_due()` returns the first such date after today, stepping from the old due date.
+  - `occurrences()` yields every such date up to an end date. Use it for projections such as the calendar.
 - **Templates** extend `base.html`, which holds the nav, capture (an inline box on the Inbox page only; elsewhere a "+ Inbox" button opens a `<dialog>`; `/` does either), the search box (`f` focuses it) and the only JS on the page.
   - That JS submits `form.done` with the header `X-Requested-With: fetch`. The complete route returns `204` for that header, and the row fades out in place. If the response was redirected, the JS navigates there instead.
   - Search (`/search?q=`, `db.search()`) is a plain case-insensitive `LIKE`: every word must appear in a task's title/notes/context/waiting-on, or a project's or horizon's title/notes. Done tasks are included, newest 50 only.
@@ -89,7 +90,25 @@ There is no build step, linter config or JS bundler.
 
 ## Tests
 
-Tests are in `tests/test_app.py` and use the Flask test client with a temporary DB.
-- The `client` fixture pins `TODAY = 2026-10-22`.
-- The `conn` fixture opens a second connection to the same file, so assertions can go straight to `db.*`.
-- New date-dependent behavior should be tested against that fixed date.
+Every change must be verified before it is called done:
+1. Write or extend a test that fails without the change, and watch it fail first.
+2. Run the whole suite (`uv run pytest`, about 2s).
+3. For template or JS changes, also click through the real app (`GTD`) in the browser. JS behavior isn't exercised by the tests, only its contract with the HTML.
+
+Enforcement:
+- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail.
+- `.githooks/pre-commit` refuses commits while tests fail. It is enabled per clone with `git config core.hooksPath .githooks`.
+
+Layout (Flask test client, temporary DB):
+- `tests/conftest.py` holds the fixtures:
+  - `client` pins `TODAY = 2026-10-22` and makes Jinja undefined variables raise errors, so a template typo fails instead of rendering blank.
+  - `conn` opens a second connection to the same file, so assertions can go straight to `db.*`.
+  - `seed(c)` builds one of everything the UI can show (each task status, H0, repeats, waiting/someday/done projects, horizons, contexts). Its ids are deterministic.
+  - New date-dependent behavior should be tested against the fixed date.
+- `tests/test_app.py` holds the targeted tests: GTD rules, routes, recurrence, migrations, the import, edge cases.
+- `tests/test_crawl.py` holds the generic tests. They usually catch accidental bugs before anyone writes a targeted test for them:
+  - Every link reachable from `/` must load.
+  - Every form, with each submit button and each `<select>` option, must submit and land on a 200 page. Each submission gets a fresh copy of the seeded DB and sends its own page as the Referer.
+  - Saving any edit page without changing anything must leave the record unchanged.
+  - Task rows must match what the tick-off script expects.
+  - When you add a page, field or status, add it to `seed()` so the crawler reaches it.

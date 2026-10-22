@@ -1,0 +1,6 @@
+#!/bin/sh
+# Refuse to commit while the test suite fails. Enabled with: git config core.hooksPath .githooks
+cd "$(git rev-parse --show-toplevel)" && uv run pytest -q -x || {
+  echo "pre-commit: tests fail, commit refused (git commit --no-verify to override)." >&2
+  exit 1
+}

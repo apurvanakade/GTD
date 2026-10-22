@@ -35,11 +35,12 @@ def step(d, n, unit):
 
 
 def next_due(rule, due, today):
-    """Next due date after completing: step from the old due date until it is in the future."""
+    """Next due date after completing: step from the old due date until it is in the future.
+    Each step is taken from the old due date, so skipping several periods doesn't drift month-end days."""
     n, unit = parse(rule)
-    d = step(due or today, n, unit)
-    while d <= today:
-        d = step(d, n, unit)
+    k = 1
+    while (d := step(due or today, n * k, unit)) <= today:
+        k += 1
     return d
 
 

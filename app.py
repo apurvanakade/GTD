@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 from datetime import date, timedelta
+from urllib.parse import urlsplit
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, url_for
 
@@ -239,7 +240,10 @@ def complete(id):
 @app.post("/tasks/<int:id>/delete")
 def delete(id):
     db.delete_task(conn(), id)
-    return redirect(request.form.get("next") or url_for("next_view"))
+    nxt = request.form.get("next")
+    if nxt and urlsplit(nxt).path == url_for("task_view", id=id):  # e.g. after a save; the page is gone now
+        nxt = None
+    return redirect(nxt or url_for("next_view"))
 
 
 @app.post("/tasks/<int:id>/make-next")
