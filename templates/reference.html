@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_task.html" import add_form with context %}
+{% block title %}Reference{% endblock %}
+{% block body %}
+{{ add_form(url_for('reference_add'), 'File something to look up later…') }}
+<ul class="tasks">
+  {% for r in items %}
+  <li class="task">
+    <a class="title" href="{{ url_for('reference_view', id=r.id) }}">{{ r.title }}</a>
+    {% if r.notes %}<span class="meta">{{ r.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
+  </li>
+  {% else %}
+  <li class="empty">Nothing filed yet. Reference is information with no action attached.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

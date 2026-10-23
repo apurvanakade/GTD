@@ -1,13 +1,17 @@
 {% extends "base.html" %}
+{% from "_task.html" import add_form, peek_button, peek_steps with context %}
 {% block title %}Someday / maybe{% endblock %}
+{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
-<h1>Someday / maybe</h1>
+{{ add_form(url_for('someday_add'), 'Someday I might…') }}
 <ul class="tasks">
   {% for p in projects %}
   <li class="task">
+    {{ peek_button() }}
     <a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>
     <span class="meta">{{ p.open_count }} open</span>
-    <form method="post" action="{{ url_for('project_view', id=p.id) }}"><input type="hidden" name="title" value="{{ p.title }}"><input type="hidden" name="notes" value="{{ p.notes }}"><button name="status" value="active">Activate</button></form>
+    <form method="post" action="{{ url_for('project_view', id=p.id) }}" class="make-next"><input type="hidden" name="title" value="{{ p.title }}"><input type="hidden" name="notes" value="{{ p.notes }}"><button name="status" value="active">Activate</button></form>
+    {{ peek_steps(steps.get(p.id, [])) }}
   </li>
   {% else %}
   <li class="empty">Nothing parked here.</li>

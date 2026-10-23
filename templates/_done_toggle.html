@@ -1,0 +1,8 @@
+{# "Show completed" link plus, when on (?done=1), the done tasks newest first. Needs show_done and done_tasks. #}
+{% from "_task.html" import row with context %}
+<p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
+{% if show_done %}
+<h2>Completed</h2>
+{% if done_tasks %}<ul class="tasks done-list">{% for t in done_tasks %}{{ row(t) }}{% endfor %}</ul>
+{% else %}<p class="empty">Nothing completed here yet.</p>{% endif %}
+{% endif %}

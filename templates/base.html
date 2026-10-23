@@ -10,39 +10,46 @@
 <body>
 <nav>
   {% set ep = request.endpoint %}
-  <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep in ('inbox', 'process') }}">Inbox{% if counts.inbox %} <b>{{ counts.inbox }}</b>{% endif %}</a>
-  <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next <b>{{ counts.next }}</b></a>
-  <a href="{{ url_for('h0_view') }}" class="{{ 'on' if ep == 'h0_view' }}">H0{% if counts.h0 %} <b>{{ counts.h0 }}</b>{% endif %}</a>
-  <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{% if counts.stalled %} <b class="warn">{{ counts.stalled }}</b>{% endif %}</a>
-  <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{% if counts.waiting %} <b>{{ counts.waiting }}</b>{% endif %}</a>
-  <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
-  <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}">Done</a>
-  <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
-  <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
-  <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
-  <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
+  {# Three groups: working minute by minute, lists of tasks, lists of projects. #}
+  <span class="group">
+    <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
+    <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
+  </span>
+  <span class="group">
+    <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next <b>{{ counts.next }}</b></a>
+    <a href="{{ url_for('h0_view') }}" class="{{ 'on' if ep == 'h0_view' }}">H0{% if counts.h0 %} <b>{{ counts.h0 }}</b>{% endif %}</a>
+    <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{% if counts.waiting %} <b>{{ counts.waiting }}</b>{% endif %}</a>
+    <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep in ('inbox', 'process') }}">Inbox{% if counts.inbox %} <b>{{ counts.inbox }}</b>{% endif %}</a>
+  </span>
+  <span class="group">
+    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{% if counts.stalled %} <b class="warn">{{ counts.stalled }}</b>{% endif %}</a>
+    <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
+    <a href="{{ url_for('reference') }}" class="{{ 'on' if ep in ('reference', 'reference_view') }}">Reference</a>
+  </span>
+  {# Weekly-review pages: pushed right and muted, out of the daily tabs' way. #}
+  <span class="aux">
+    <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
+    <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
+    <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}">Done</a>
+  </span>
 </nav>
+{# The bar is identical on every page so switching tabs never moves it. #}
 <div class="bar">
-  {% if ep == 'inbox' %}
-  <form class="capture" method="post" action="{{ url_for('capture') }}">
-    <input name="title" placeholder="Capture to inbox…  ( / )" autocomplete="off" required>
-  </form>
-  {% else %}
-  <button type="button" class="add-inbox" title="Add to inbox ( / )">+ Inbox</button>
-  {% endif %}
+  <button type="button" class="add-inbox icon" title="Add to inbox ( / )" aria-label="Add to inbox">+</button>
   <form class="search" action="{{ url_for('search') }}">
-    <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search…  ( f )" aria-label="Search" required>
+    <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search  ( f )" aria-label="Search" autocomplete="off" required>
+    <div class="suggest" hidden></div>
   </form>
-  <button type="button" class="theme-toggle" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
+  <button type="button" class="theme-toggle icon" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
 </div>
 {% if timer %}
 <form class="running-timer" method="post" action="{{ url_for('timer_stop') }}">
+  <span class="pulse" aria-hidden="true"></span>
   <span class="clock" data-start="{{ timer.start_time|epoch_ms }}">{{ timer.start_time|elapsed }}</span>
   <a href="{{ url_for('task_view', id=timer.task_id) }}">{{ timer.title }}</a>
-  <button title="Stop the timer">■ Stop</button>
+  <button class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
 </form>
 {% endif %}
-{% if ep != 'inbox' %}
 <dialog class="capture-dialog">
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <h2>Add to inbox</h2>
@@ -50,21 +57,27 @@
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
-{% endif %}
 <main>
+  {# Every page: an optional back link, the heading with its few actions, then the page (add line, list). #}
+  <header class="page">
+    {% block crumb %}{% endblock %}
+    <div class="head">{% block heading %}<h1>{{ self.title() }}</h1>{% endblock %}<span class="actions">{% block actions %}{% endblock %}</span></div>
+  </header>
   {% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}
   {% block body %}{% endblock %}
 </main>
 <script>
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
-  const dialog = document.querySelector('.capture-dialog');
-  if (e.key === '/' && dialog) { e.preventDefault(); dialog.showModal(); return; }
-  const box = {'/': '.capture input', 'f': '.search input'}[e.key];
-  if (box) { e.preventDefault(); document.querySelector(box).select(); }
+  if (e.key === '/') { e.preventDefault(); capture(); }
+  if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
 });
-// Off the Inbox page, capture happens in a dialog.
-document.querySelector('.add-inbox')?.addEventListener('click', () => document.querySelector('.capture-dialog').showModal());
+// Capture goes to the Inbox page's own box, or elsewhere to the dialog.
+function capture() {
+  const inline = document.querySelector('main .capture input');
+  inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
+}
+document.querySelector('.add-inbox').addEventListener('click', capture);
 // 📅 opens the native date picker; its pick lands in the text box beside it.
 document.addEventListener('click', e => {
   const b = e.target.closest('.date-field .cal');
@@ -75,6 +88,20 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.matches('.date-field .picker')) e.target.closest('.date-field').querySelector('input[name]').value = e.target.value;
+});
+// A project row's ▸ folds its steps out below it; "Expand all" does every row.
+const peek = (b, open) => {
+  b.setAttribute('aria-expanded', open);
+  b.textContent = open ? '▾' : '▸';
+  b.closest('li').classList.toggle('open', open);
+};
+document.addEventListener('click', e => {
+  const b = e.target.closest('button.peek'), all = e.target.closest('button.peek-all');
+  if (b) peek(b, b.getAttribute('aria-expanded') !== 'true');
+  if (!all) return;
+  const open = all.textContent === 'Expand all';
+  document.querySelectorAll('button.peek').forEach(b => peek(b, open));
+  all.textContent = open ? 'Collapse all' : 'Expand all';
 });
 // Light / dark toggle; the pick overrides the system setting and is remembered.
 document.querySelector('.theme-toggle').addEventListener('click', () => {
@@ -119,14 +146,46 @@ document.querySelectorAll('ul[data-reorder]').forEach(list => {
     fetch(list.dataset.reorder, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams({ids})});
   });
 });
+// Search suggests fuzzy title matches as you type; Enter or a click opens the highlighted one.
+// With no suggestions, Enter falls back to the full-text results page.
+(() => {
+  const form = document.querySelector('.search'), input = form.querySelector('input'), box = form.querySelector('.suggest');
+  let items = [], active = 0, seq = 0, timer;
+  const esc = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
+  const show = () => {
+    box.innerHTML = items.map((s, i) => `<a href="${esc(s.url)}" class="${i === active ? 'on' : ''}"><span>${esc(s.title)}</span>`
+      + `<span class="meta">${esc([s.meta, s.kind].filter(Boolean).join(' · '))}</span></a>`).join('');
+    box.hidden = !items.length;
+  };
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const mine = ++seq, q = input.value.trim();
+      const found = q ? await (await fetch(`${form.action}/suggest?q=${encodeURIComponent(q)}`)).json() : [];
+      if (mine !== seq) return;  // a later keystroke already asked again
+      items = found; active = 0; show();
+    }, 80);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { items = []; show(); input.blur(); }
+    if (!items.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+      show();
+    }
+    if (e.key === 'Enter') { e.preventDefault(); location = items[active].url; }
+  });
+  input.addEventListener('focus', () => { if (items.length) box.hidden = false; });
+  document.addEventListener('pointerdown', e => { if (!form.contains(e.target)) box.hidden = true; });
+})();
 // Tick off a task in place instead of reloading the page.
 document.addEventListener('submit', async e => {
   const f = e.target;
   if (!f.classList.contains('done')) return;
   e.preventDefault();
   const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}});
-  if (r.redirected) location = r.url;  // finished a project's next action: pick the next one
-  else if (r.ok) f.closest('li').classList.add('gone');
+  if (r.ok) f.closest('li').classList.add('gone');
 });
 </script>
 </body>

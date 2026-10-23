@@ -1,37 +1,37 @@
 {% extends "base.html" %}
-{% from "_task.html" import context_select, project_select with context %}
+{% from "_task.html" import project_select, add_form with context %}
 {% block title %}Calendar{% endblock %}
+{% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
+{% block actions %}{% set p = 'w' if week else 'm' %}
+<span class="seg">
+  <a href="{{ url_for('calendar_view', **{p: prev}) }}" title="Previous {{ 'week' if week else 'month' }}" aria-label="Previous {{ 'week' if week else 'month' }}">‹</a>
+  <a href="{{ url_for('calendar_view', w=this_week) if week else url_for('calendar_view', m=this_month) }}">Today</a>
+  <a href="{{ url_for('calendar_view', **{p: next}) }}" title="Next {{ 'week' if week else 'month' }}" aria-label="Next {{ 'week' if week else 'month' }}">›</a>
+</span>
+<span class="seg">
+  <a href="{{ url_for('calendar_view', m=this_month) }}" {% if not week %}aria-current="page"{% endif %}>Month</a>
+  <a href="{{ url_for('calendar_view', w=this_week) }}" {% if week %}aria-current="page"{% endif %}>Week</a>
+</span>
+{% endblock %}
 {% block body %}
-{% set p = 'w' if week else 'm' %}
-<div class="cal-head">
-  <h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>
-  <div class="row">
-    <a class="button" href="{{ url_for('calendar_view') }}" {% if not week %}aria-current="page"{% endif %}>Month</a>
-    <a class="button" href="{{ url_for('calendar_view', w=this_week) }}" {% if week %}aria-current="page"{% endif %}>Week</a>
-    <a class="button" href="{{ url_for('calendar_view', **{p: prev}) }}" aria-label="Previous {{ 'week' if week else 'month' }}">←</a>
-    <a class="button" href="{{ url_for('calendar_view', w=this_week) if week else url_for('calendar_view') }}">Today</a>
-    <a class="button" href="{{ url_for('calendar_view', **{p: next}) }}" aria-label="Next {{ 'week' if week else 'month' }}">→</a>
-  </div>
-</div>
-<form method="post" class="row" id="cal-add">
-  <input name="title" placeholder="Add a dated next action" required>
+{% call add_form(url_for('calendar_view'), 'Add a dated next action…', id='cal-add') %}
   <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
-  {{ context_select(none) }}
   {{ project_select(projects) }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
-  <button>Add</button>
-</form>
+{% endcall %}
 <table class="cal{% if week %} week{% endif %}">
   <thead><tr>{% for d in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
   <tbody>
-  {% for week in weeks %}
+  {% for days in weeks %}
   <tr>
-    {% for d in week %}{% set iso = d.isoformat() %}
+    {% for d in days %}{% set iso = d.isoformat() %}
     <td class="{% if not week and d.month != first.month %}out{% endif %}{% if iso == today %} today{% endif %}">
-      <button type="button" class="day" data-date="{{ iso }}" title="Add on {{ iso }}">{% if week %}{{ d.strftime('%-d %b') }}{% else %}{{ d.day }}{% endif %}</button>
+      <button type="button" class="day" data-date="{{ iso }}" data-label="{{ d.strftime('%a %-d %b') }}" title="Add on {{ iso }}">{% if week %}{{ d.strftime('%-d %b') }}{% else %}{{ d.day }}{% endif %}</button>
       {% for t, ghost in by_day.get(iso, []) %}
-      <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}{% if t.context %} · {{ t.context }}{% endif %}"
-         class="ev{% if ghost %} ghost{% elif iso < today %} overdue{% endif %}{% if t.status == 'waiting' %} waiting{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>
+      {% set kind = 'h0' if t.ground else 'someday' if t.project_status == 'someday'
+                    else 'waiting' if 'waiting' in (t.status, t.project_status) else t.status %}
+      <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}"
+         class="ev k-{{ kind }}{% if ghost %} ghost{% elif iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>
       {% endfor %}
     </td>
     {% endfor %}
@@ -39,10 +39,12 @@
   {% endfor %}
   </tbody>
 </table>
+<p class="legend">{% for k, label in [('next', 'Next'), ('h0', 'H0'), ('later', 'Later step'), ('waiting', 'Waiting'), ('someday', 'Someday'), ('inbox', 'Inbox')] %}<span class="k-{{ k }}">{{ label }}</span>{% endfor %}</p>
 <script>
 document.querySelectorAll('.cal .day').forEach(b => b.addEventListener('click', () => {
   const f = document.getElementById('cal-add');
   f.due_date.value = b.dataset.date;
+  f.title.placeholder = `Add on ${b.dataset.label}…`;
   f.title.focus();
 }));
 </script>

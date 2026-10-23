@@ -1,19 +1,31 @@
 {% extends "base.html" %}
+{% from "_task.html" import add_form, peek_button, peek_steps with context %}
 {% block title %}Projects{% endblock %}
+{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
-<h1>Projects</h1>
-<form method="post" action="{{ url_for('project_create') }}" class="row">
-  <input name="title" placeholder="New project – describe the outcome" required>
-  <button>Add</button>
-</form>
+{{ add_form(url_for('project_create'), 'New project – describe the outcome') }}
 <ul class="tasks">
-  {% for p in projects %}
+  {% for p in projects %}{% set total = p.open_count + p.done_count %}
   <li class="task{% if not p.next_count %} stalled{% endif %}">
+    {{ peek_button() }}
     <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
-    <span class="meta">{{ p.next_count }} next · {{ p.open_count }} open</span>
+    <span class="meta">{{ p.open_count }} open</span>
+    <span class="progress" title="{{ p.done_count }} of {{ total }} steps done"><i style="width: {{ (100 * p.done_count / total)|round|int if total else 0 }}%"></i></span>
+    {{ peek_steps(steps.get(p.id, [])) }}
   </li>
   {% else %}
   <li class="empty">No active projects.</li>
   {% endfor %}
 </ul>
+<p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
+{% if show_done %}
+<h2>Completed</h2>
+<ul class="tasks">
+  {% for p in done_projects|sort(attribute='completed_at', reverse=True) %}
+  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at[:10] }}</span>{% endif %}</li>
+  {% else %}
+  <li class="empty">No finished projects.</li>
+  {% endfor %}
+</ul>
+{% endif %}
 {% endblock %}

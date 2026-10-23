@@ -1,30 +1,11 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, context_select with context %}
+{% from "_task.html" import row, add_form with context %}
 {% block title %}H0 · Ground level{% endblock %}
 {% block body %}
-<h1>H0 · Ground level</h1>
-<form method="post" action="{{ url_for('h0_add') }}" class="row">
-  <input name="title" placeholder="Add an H0 task" required>
-  {{ context_select(ctx) }}
-  <input name="recur" placeholder="repeats…" aria-label="Repeats" size="10">
-  <button>Add</button>
-</form>
-<div class="chips">
-  <a href="{{ url_for('h0_view') }}" class="{{ 'on' if not ctx }}">All</a>
-  {% for c in CONTEXTS %}{% if by_ctx.get(c) %}
-  <a href="{{ url_for('h0_view', ctx=c) }}" class="{{ 'on' if ctx == c }}">{{ c }} <b>{{ by_ctx[c]|length }}</b></a>
-  {% endif %}{% endfor %}
-</div>
-{% for name, tasks in groups.items() %}
-<h2>{{ name }}</h2>
-<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
-{% else %}
-<p class="empty">Nothing at ground level right now.</p>
-{% endfor %}
-{% if upcoming and not ctx %}
-<details class="upcoming">
-  <summary>Upcoming repeating tasks ({{ upcoming|length }})</summary>
-  <ul class="tasks">{% for t in upcoming %}{{ row(t, context=True) }}{% endfor %}</ul>
-</details>
-{% endif %}
+{% call add_form(url_for('h0_add'), 'Add an H0 task') %}
+  <input name="recur" placeholder="repeats: weekly, every 2 weeks…" aria-label="Repeats">
+{% endcall %}
+<ul class="tasks">{% for t in tasks %}{{ row(t, soon=True) }}{% else %}<li class="empty">Nothing at ground level right now.</li>{% endfor %}</ul>
+{% if tasks %}<p class="legend">{% for k, label in SOON %}<span class="s-{{ k }}">{{ label }}</span>{% endfor %}</p>{% endif %}
+{% include "_done_toggle.html" %}
 {% endblock %}

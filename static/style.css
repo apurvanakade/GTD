@@ -1,24 +1,31 @@
 :root {
-  --bg: #fafaf9; --fg: #1c1917; --muted: #78716c; --line: #e7e5e4; --card: #ffffff;
+  --bg: #fafaf9; --fg: #1c1917; --muted: #8a8580; --line: #ecebe9; --card: #ffffff; --soft: #f2f1ef;
   --accent: #2563eb; --accent-fg: #ffffff; --warn: #b45309; --overdue: #fef2f2; --due: #fffbeb;
   --danger: #b91c1c;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #1c1917; --fg: #e7e5e4; --muted: #a8a29e; --line: #44403c; --card: #292524;
+    --bg: #1c1917; --fg: #e7e5e4; --muted: #a29d98; --line: #35312e; --card: #262220; --soft: #2a2624;
     --accent: #60a5fa; --accent-fg: #0c0a09; --warn: #fbbf24; --overdue: #3b1d1d; --due: #3a2f12;
     --danger: #f87171;
   }
 }
 :root[data-theme="dark"] {
-    --bg: #1c1917; --fg: #e7e5e4; --muted: #a8a29e; --line: #44403c; --card: #292524;
+    --bg: #1c1917; --fg: #e7e5e4; --muted: #a29d98; --line: #35312e; --card: #262220; --soft: #2a2624;
     --accent: #60a5fa; --accent-fg: #0c0a09; --warn: #fbbf24; --overdue: #3b1d1d; --due: #3a2f12;
     --danger: #f87171;
 }
 :root { color-scheme: light dark; }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
-.theme-toggle { flex: none; }
+/* Task kinds (calendar stripes and legend dots). */
+.k-next { --k: #2563eb; } .k-h0 { --k: #16a34a; } .k-later { --k: #a8a29e; }
+.k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
+/* How soon a task is due (Next and H0 stripes and legend dots), hot to cool. */
+.s-overdue { --k: #dc2626; } .s-today { --k: #ea580c; } .s-week { --k: #eab308; }
+.s-month { --k: #0d9488; } .s-later { --k: #a8a29e; }
+.task[class*=" s-"] { box-shadow: inset 3px 0 0 var(--k); }
+
 * { box-sizing: border-box; }
 body {
   margin: 0 auto; max-width: 1000px; padding: 0 16px 48px;
@@ -26,124 +33,226 @@ body {
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 a { color: var(--accent); text-decoration: none; }
-h1 { font-size: 1.5rem; margin: 20px 0 12px; }
+h1 { font-size: 1.5rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
 h1 small { color: var(--muted); font-weight: normal; font-size: 1rem; }
-h2 { font-size: 1rem; margin: 20px 0 8px; color: var(--muted); }
+h2 { font-size: .8rem; margin: 28px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 
-nav { display: flex; gap: 4px; overflow-x: auto; padding: 12px 0 8px; position: sticky; top: 0; background: var(--bg); }
-nav a { padding: 6px 10px; border-radius: 8px; color: var(--fg); white-space: nowrap; }
-nav a.on { background: var(--card); box-shadow: 0 0 0 1px var(--line); }
-nav b, .chips b { font-weight: 600; color: var(--muted); font-size: .85em; }
+/* Nav: three groups of daily tabs, then the muted weekly-review pages on the right. */
+nav { display: flex; align-items: center; overflow-x: auto; padding: 14px 0 10px; position: sticky; top: 0; z-index: 5; background: var(--bg); }
+nav .group { display: flex; gap: 2px; }
+nav .group + .group { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--line); }
+nav a { padding: 4px 8px; color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
+nav a:hover { color: var(--fg); }
+nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
+nav .aux { display: flex; gap: 2px; margin-left: auto; padding-left: 16px; }
+nav .aux a { font-size: .85em; }
+nav b {
+  font-weight: 600; font-size: .7rem; color: var(--muted); background: var(--soft);
+  border-radius: 999px; padding: 1px 6px; vertical-align: 1px;
+}
 b.warn, .warn { color: var(--warn); }
 
+/* Controls: quiet by default. Only .primary is filled. */
 input, textarea, select, button, .button {
   font: inherit; color: var(--fg); background: var(--card);
-  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
 }
 input, textarea { width: 100%; }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; }
-button, .button { cursor: pointer; display: inline-block; }
-button:hover, .button:hover { border-color: var(--muted); }
-.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-.danger { color: var(--danger); }
-.big { font-size: 1.2rem; font-weight: 600; }
+button, .button {
+  cursor: pointer; display: inline-block; background: transparent; border-color: transparent; color: var(--muted);
+}
+button:hover, .button:hover { color: var(--fg); background: var(--soft); }
+.primary, .primary:hover { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.primary:hover { filter: brightness(1.08); }
+.danger, .danger:hover { color: var(--danger); }
+.icon { min-width: 34px; text-align: center; padding-left: 6px; padding-right: 6px; }
+.big { font-size: 1.4rem; font-weight: 650; border-color: transparent; background: transparent; padding-left: 0; }
+.big:hover { border-color: var(--line); }
+.big:focus { border-color: var(--accent); padding-left: 10px; }
+.end { margin-left: auto; }
 
-.bar { display: flex; gap: 8px; }
-.capture { flex: 3 1 0; }
-.add-inbox { white-space: nowrap; }
+/* Top bar: + capture, search, theme. Identical on every page. */
+.bar { display: flex; gap: 6px; align-items: center; }
+.add-inbox {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 1.3rem; line-height: 1;
+  color: var(--accent); border: 1px solid var(--accent);
+}
+.add-inbox:hover { background: var(--accent); color: var(--accent-fg); }
+.search { flex: 1 1 0; min-width: 120px; position: relative; }
+.search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
+.search input:focus { background: var(--card); border-color: var(--line); }
+.theme-toggle { flex: none; }
 .capture-dialog {
   width: min(480px, calc(100vw - 32px)); padding: 16px;
   background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
 }
 .capture-dialog::backdrop { background: rgb(0 0 0 / .35); }
 .capture-dialog h2 { margin-top: 0; }
-.search { flex: 1 1 0; min-width: 120px; }
-.capture input, .search input { padding: 10px 12px; }
+.suggest {
+  position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
+}
+.suggest[hidden] { display: none; }
+.suggest a { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: 6px; color: var(--fg); text-decoration: none; }
+.suggest a.on, .suggest a:hover { background: color-mix(in srgb, var(--accent) 14%, var(--card)); }
+.suggest .meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The running timer: a slim line under the bar. */
+.running-timer { display: flex; align-items: center; gap: 10px; margin: 8px 0 0; padding: 2px 0 2px 4px; }
+.running-timer .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+.running-timer .clock { font: 600 .95rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--accent); }
+.running-timer a { flex: 1 1 auto; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Every page: header (back link, heading, actions), add line, list. */
+header.page { margin: 24px 0 14px; }
+header.page .crumb { margin: 0 0 4px; color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+header.page .crumb button { font-size: .85rem; padding: 2px 8px; }
+header.page .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+header.page .head:empty, header.page .head:has(> .actions:empty:only-child) { display: none; }
+header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg a { padding: 4px 10px; color: var(--muted); }
+.seg a + a { border-left: 1px solid var(--line); }
+.seg a:hover { color: var(--fg); background: var(--soft); }
+.seg a[aria-current] { color: var(--fg); background: var(--soft); font-weight: 600; }
+
+/* The add line: one quiet title box; its extra fields show once it's in use. */
+.add {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 14px; padding: 2px 0 6px;
+  border-bottom: 1px solid var(--line);
+}
+.add:focus-within { border-bottom-color: var(--accent); }
+.add .plus { color: var(--accent); font-size: 1.25rem; line-height: 1; width: 20px; text-align: center; }
+.add input[name="title"] { flex: 1 1 200px; width: auto; min-width: 0; border-color: transparent; background: transparent; padding: 6px 4px; }
+.add > .primary { width: 30px; height: 30px; padding: 0; border-radius: 50%; visibility: hidden; }
+.add .add-more { flex: 1 0 100%; display: none; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 28px; }
+.add .add-more > * { flex: 0 1 160px; width: auto; min-width: 0; }
+.add .add-more input[name="recur"], .add .add-more input[name="notes"] { flex: 1 1 180px; }
+.add:focus-within > .primary, .add:has(input[name="title"]:not(:placeholder-shown)) > .primary { visibility: visible; }
+.add:focus-within .add-more, .add:has(input[name="title"]:not(:placeholder-shown)) .add-more { display: flex; }
+
+/* Picking "＋ New…" reveals the name box next to the select. */
+input[name="new_project"] { display: none; }
+select:has(option[value="__new__"]:checked) + input { display: block; }
+.add select:has(option[value="__new__"]:checked) + input, .row select:has(option[value="__new__"]:checked) + input { display: inline-block; }
+
 .flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }
 .empty, .hint { color: var(--muted); }
 
-.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
-.process textarea, .project textarea, .edit textarea { margin-top: 8px; }
-.edit label { display: block; margin: 10px 0; color: var(--muted); }
-.edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); }
+.process textarea, .project textarea, .edit textarea { margin-top: 6px; }
+.project textarea { field-sizing: content; min-height: 2.6em; }
+.edit label { display: block; margin: 10px 0; color: var(--muted); font-size: .9rem; }
+.edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }
+.edit label input[name="new_project"] { display: none; }
+.edit label select:has(option[value="__new__"]:checked) + input { display: block; }
+/* Reference page: the URLs in its notes, clickable (a textarea can't be). */
+ul.links { list-style: none; padding: 0; margin: 12px 0; }
+ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chips a { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg); }
-.chips a.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-.chips a.on b { color: inherit; }
-
+/* Rows. */
 .tasks { list-style: none; margin: 0; padding: 0; }
 .task {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
-  padding: 8px 10px; border-bottom: 1px solid var(--line);
+  min-height: 41px; padding: 8px 6px; border-bottom: 1px solid var(--line); border-radius: 0;
 }
+.task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
 .task .title { color: var(--fg); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: .85rem; color: var(--muted); }
-.task .proj, .task .ctx { color: var(--muted); }
+.task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: .8rem; color: var(--muted); }
+.task .proj { color: var(--muted); }
+.task .date { font-variant-numeric: tabular-nums; }
+.task .recur { width: 1em; text-align: center; }
 .task .proj::before { content: "▸ "; }
 .task form { margin: 0; }
-.task.overdue { background: var(--overdue); }
-.task.due { background: var(--due); }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
+.task.due .date { color: var(--warn); font-weight: 600; }
 .task.stalled .title { color: var(--warn); }
-.task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; }
+.task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
+.task:hover .grip { opacity: 1; }
 .task.dragging { opacity: .4; }
 .task.gone { opacity: .35; text-decoration: line-through; pointer-events: none; }
 .done button {
-  width: 20px; height: 20px; padding: 0; border-radius: 50%;
-  border: 2px solid var(--muted); background: transparent;
+  width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  border: 1.5px solid var(--muted); background: transparent;
 }
 .done button:hover { border-color: var(--accent); background: var(--accent); }
+.task .peek { width: 1.2em; padding: 0; line-height: 20px; color: var(--muted); }
+.peek-all { font-size: .8125rem; }
+.task .steps { display: none; flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 0 0 0 calc(1.2em + 10px); }
+.task.open .steps { display: block; }
+.task .steps li { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: .9rem; }
+.task .steps a { color: var(--fg); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.task .steps .meta { display: flex; gap: 8px; }
+.task .check { color: var(--muted); width: 1.2em; text-align: center; }
+/* Buttons inside a row are compact, so every row is the same height. */
+.task .start button, .task .timing button, .task .make-next button {
+  padding: 0 6px; font-size: .75rem; line-height: 20px; color: var(--muted);
+}
+.task .start button { opacity: 0; }
+.task:hover .start button, .task .start button:focus { opacity: 1; }
+.task .start button:hover { color: var(--accent); }
+.task .timing button { color: var(--accent); }
+.task .make-next button { color: var(--accent); border-color: var(--line); }
+@media (hover: none) { .task .start button { opacity: 1; } }
 
-.upcoming { margin-top: 28px; color: var(--muted); }
-.upcoming summary { cursor: pointer; }
-.review { padding-left: 20px; }
+/* A thin bar: project progress, time per project. */
+.progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.progress { display: inline-block; width: 72px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; }
+.task.stalled span.progress > i { background: var(--warn); }
+
 .review > li { margin-bottom: 8px; }
-.review > li.ok h2 { color: var(--muted); text-decoration: line-through; }
-.review h2 { color: var(--fg); }
+.review { list-style: none; padding-left: 0; }
+.review > li.ticked h2 { color: var(--muted); text-decoration: line-through; }
+.review > li.ticked > :not(h2) { display: none; }
+.review h2 { color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }
+.review .tick button:hover { border-color: var(--accent); }
+.review > li.ticked .tick button { border-color: var(--accent); background: var(--accent); color: var(--bg); }
 .plain { padding-left: 18px; }
 .date { font-variant-numeric: tabular-nums; }
+.done-toggle { margin-top: 1.5em; font-size: .9rem; }
+.done-toggle a { color: var(--muted); }
+.horizon textarea { margin-top: 4px; }
 
-.cal-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
-.cal-head h1 { margin-bottom: 0; }
+/* Calendar. */
 .cal { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; }
-.cal th { font-size: .75rem; color: var(--muted); font-weight: 600; padding: 4px 0; }
-.cal td { vertical-align: top; height: 84px; border: 1px solid var(--line); padding: 2px; overflow: hidden; }
-.cal td.out { background: transparent; opacity: .45; }
-.cal td.today { box-shadow: inset 0 0 0 2px var(--accent); }
-.cal .day { border: 0; background: none; padding: 0 2px; font-size: .8rem; color: var(--muted); }
-.cal td.today .day { color: var(--accent); font-weight: 700; }
+.cal th { font-size: .7rem; color: var(--muted); font-weight: 600; padding: 4px 0; text-transform: uppercase; letter-spacing: .05em; }
+.cal td { vertical-align: top; height: 88px; border: 1px solid var(--line); padding: 3px; overflow: hidden; }
+.cal td.out { opacity: .4; }
+.cal td.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.cal .day { border: 0; background: none; padding: 0 4px; font-size: .8rem; color: var(--muted); border-radius: 999px; }
+.cal .day:hover { background: var(--accent); color: var(--accent-fg); }
+.cal td.today .day { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 .cal .ev {
-  display: block; font-size: .75rem; line-height: 1.3; padding: 1px 3px; margin-top: 2px;
-  border-radius: 4px; background: var(--card); color: var(--fg); box-shadow: 0 0 0 1px var(--line);
+  display: block; font-size: .75rem; line-height: 1.35; padding: 1px 4px; margin-top: 2px;
+  border-radius: 3px; color: var(--fg); border-left: 3px solid var(--k, var(--line));
+  background: color-mix(in srgb, var(--k, var(--line)) 10%, transparent);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cal .ev.ghost { background: transparent; box-shadow: none; color: var(--muted); }
-.cal .ev.overdue { background: var(--overdue); }
-.cal .ev.waiting::before { content: "⏳ "; }
-.horizon textarea { margin-top: 4px; }
+.cal .ev.ghost { background: transparent; color: var(--muted); border-left-style: dotted; }
+.cal .ev.overdue { color: var(--danger); }
+.cal.week td { height: 320px; }
+.cal.week .ev { white-space: normal; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0; font-size: .75rem; color: var(--muted); }
+.legend span::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; background: var(--k);
+}
 @media (max-width: 520px) {
   .cal td { height: 64px; }
   .cal .ev { font-size: .65rem; }
 }
 
-/* Timer: the running-timer bar (every page), ▶ on task rows, and the Timer page. */
-.running-timer {
-  display: flex; align-items: center; gap: 10px; margin: 8px 0 0; padding: 6px 6px 6px 12px;
-  border: 1px solid var(--accent); border-radius: 8px; background: var(--card);
-}
-.running-timer .clock { font: 600 1rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--accent); }
-.running-timer a { flex: 1 1 auto; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.task .start button, .task .timing button {
-  padding: 0 6px; font-size: .75rem; line-height: 20px; border-color: transparent; background: transparent; color: var(--muted);
-}
-.task .start button:hover { color: var(--accent); border-color: var(--line); }
-.task .timing button { color: var(--accent); }
-.week { border-collapse: collapse; min-width: 260px; }
-.week td { padding: 4px 16px 4px 0; border-bottom: 1px solid var(--line); }
-.week td.date { text-align: right; padding-right: 0; }
-.week .total td { font-weight: 600; border-bottom: 0; }
+/* Timer page. */
+.totals { border-collapse: collapse; min-width: 300px; }
+.totals td { padding: 5px 16px 5px 0; border-bottom: 1px solid var(--line); }
+.totals td.date { text-align: right; padding-right: 0; }
+.totals .barcell { width: 140px; }
+.totals .barcell .progress { width: 100%; height: 6px; border-radius: 3px; }
+.totals .total td { font-weight: 600; border-bottom: 0; }
 .history { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto auto auto auto; }
 /* Entries share the list's columns (subgrid) so they line up even though their buttons differ. */
 .entry {
@@ -161,9 +270,7 @@ button:hover, .button:hover { border-color: var(--muted); }
 .entry .dur { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .entry.running .dur { color: var(--accent); font-weight: 600; }
 .entry .actions { display: flex; gap: 2px; justify-content: flex-end; }
-.entry .actions button { padding: 2px 8px; font-size: .8125rem; border-color: transparent; background: transparent; color: var(--muted); }
-.entry .actions button:hover { border-color: var(--line); color: var(--fg); }
-.entry .actions .danger:hover { color: var(--danger); }
+.entry .actions button { padding: 2px 8px; font-size: .8125rem; }
 /* Too narrow for one line per entry: task + buttons, then project, then times. */
 @media (max-width: 720px) {
   .history { grid-template-columns: 1fr auto auto; }
@@ -175,10 +282,9 @@ button:hover, .button:hover { border-color: var(--muted); }
   .entry .dur { grid-column: 3; grid-row: 3; }
 }
 
+/* Date box: type words, or 📅 for the native picker. */
 .date-field { position: relative; display: flex; gap: 4px; flex: 1 1 200px; min-width: 0; align-items: center; }
 .edit label .date-field { margin-top: 4px; }
 .date-field input[name] { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
-.date-field .cal { padding: 8px; line-height: 1; }
+.date-field .cal { padding: 6px; line-height: 1; width: auto; flex: none; }
 .date-field .picker { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; padding: 0; margin: 0; border: 0; pointer-events: none; }
-.cal.week td { height: 320px; }
-.cal.week .ev { white-space: normal; }

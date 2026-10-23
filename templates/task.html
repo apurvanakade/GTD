@@ -1,23 +1,25 @@
 {% extends "base.html" %}
-{% from "_task.html" import context_select, project_select, date_input with context %}
+{% from "_task.html" import project_select, date_input with context %}
 {% block title %}{{ t.title }}{% endblock %}
-{% block body %}
-{% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="row">
-  <a href="{{ url_for('project_view', id=t.project_id) }}">← {{ t.project_title }}</a> <span class="hint">project</span>
+{% block crumb %}
+{% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="crumb">
+  <a href="{{ url_for('project_view', id=t.project_id) }}">← {{ t.project_title }}</a>
   {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
 </form>
-{% elif t.ground %}<p><a href="{{ url_for('horizons_view') }}">← Horizons</a> · <span class="hint">H0 · ground level</span></p>{% endif %}
+{% elif t.ground %}<p class="crumb"><a href="{{ url_for('horizons_view') }}">← Horizons</a> · H0 · ground level</p>{% endif %}
+{% endblock %}
+{% block heading %}{% endblock %}
+{% block body %}
 <form method="post" class="edit">
   <input type="hidden" name="next" value="{{ back or '' }}">
   <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
-  <textarea name="notes" rows="4" placeholder="Notes">{{ t.notes }}</textarea>
+  <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
   <label>Status
     <select name="status">
       {% for s in ['inbox', 'next', 'waiting', 'later'] %}<option{% if s == t.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
-      {% if t.status == 'done' %}<option selected>done</option>{% endif %}
+      {% if t.status in ('done', 'abandoned') %}<option selected>{{ t.status }}</option>{% endif %}
     </select>
   </label>
-  <label>Context {{ context_select(t.context) }}</label>
   <label>Project
     {{ project_select(projects, 'h0' if t.ground else t.project_id) }}
   </label>
@@ -26,11 +28,13 @@
   <div class="row">
     <button class="primary">Save</button>
     <button name="exit" value="1">Save &amp; exit</button>
-    <button formaction="{{ url_for('complete', id=t.id) }}">✓ Done</button>
-    {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}">■ Stop timer</button>
-    {% elif t.status != 'done' %}<button formaction="{{ url_for('task_start', id=t.id) }}">▶ Start timer</button>{% endif %}
+    {% if t.status == 'abandoned' %}<button formaction="{{ url_for('revive', id=t.id) }}" title="Back to the inbox">Revive</button>
+    {% else %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Mark done" aria-label="Mark done">✓</button>{% endif %}
+    {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
+    {% elif t.status not in ('done', 'abandoned') %}<button formaction="{{ url_for('task_start', id=t.id) }}" class="icon" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
     {% if seconds %}<span class="hint">{{ seconds|hm }} spent</span>{% endif %}
-    <button formaction="{{ url_for('delete', id=t.id) }}" class="danger" onclick="return confirm('Delete this task?')">Delete</button>
+    {% if t.status == 'abandoned' %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this task for good?')">✕</button>
+    {% else %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Abandon (stays on Done, revivable)" aria-label="Abandon task">✕</button>{% endif %}
   </div>
 </form>
 {% endblock %}

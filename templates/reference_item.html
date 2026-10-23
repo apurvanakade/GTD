@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ r.title }}{% endblock %}
+{% block crumb %}<p class="crumb"><a href="{{ url_for('reference') }}">← Reference</a></p>{% endblock %}
+{% block heading %}{% endblock %}
+{% block body %}
+<form method="post" class="edit">
+  <input name="title" value="{{ r.title }}" class="big" aria-label="Title" required>
+  {% set urls = r.notes|links %}
+  {% if urls %}<ul class="links">{% for u in urls %}<li><a href="{{ u }}">{{ u }}</a></li>{% endfor %}</ul>{% endif %}
+  <textarea name="notes" rows="14" placeholder="Details, links, model numbers…">{{ r.notes }}</textarea>
+  <div class="row">
+    <button class="primary">Save</button>
+    <button formaction="{{ url_for('reference_delete', id=r.id) }}" class="danger end" title="Delete" aria-label="Delete" onclick="return confirm('Delete this reference item?')">✕</button>
+  </div>
+</form>
+{% endblock %}

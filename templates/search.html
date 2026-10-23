@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% from "_task.html" import row with context %}
 {% block title %}Search{% endblock %}
+{% block heading %}<h1>Search{% if q %} <small>“{{ q }}”</small>{% endif %}</h1>{% endblock %}
 {% block body %}
-<h1>Search{% if q %} <small>“{{ q }}”</small>{% endif %}</h1>
 {% if results %}
 {% set r = results %}
 {% if r.projects %}
@@ -17,7 +17,7 @@
 {% set tasks = r.tasks|selectattr('status', 'equalto', status)|list %}
 {% if tasks %}
 <h2>{{ label }}</h2>
-<ul class="tasks">{% for t in tasks %}{{ row(t, context=True) }}{% endfor %}</ul>
+<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
 {% endif %}
 {% endfor %}
 {% if r.horizons %}
@@ -25,6 +25,14 @@
 <ul class="tasks">
   {% for h in r.horizons %}
   <li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) if h.level in ('goal', 'area') else url_for('horizons_view') }}">{{ h.title }}</a><span class="meta">{{ h.level }}</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% if r.references %}
+<h2>Reference</h2>
+<ul class="tasks">
+  {% for x in r.references %}
+  <li class="task"><a class="title" href="{{ url_for('reference_view', id=x.id) }}">{{ x.title }}</a>{% if x.notes %}<span class="meta">{{ x.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}</li>
   {% endfor %}
 </ul>
 {% endif %}
@@ -37,7 +45,7 @@
   {% endfor %}
 </ul>
 {% endif %}
-{% if not (r.projects or r.tasks or r.horizons or r.done) %}<p class="empty">Nothing matches.</p>{% endif %}
+{% if not (r.projects or r.tasks or r.horizons or r.references or r.done) %}<p class="empty">Nothing matches.</p>{% endif %}
 {% else %}
 <p class="empty">Type in the search box above.</p>
 {% endif %}

@@ -1,28 +1,38 @@
-{% macro row(t, project=True, context=False, make_next=False, grip=False) %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}" data-id="{{ t.id }}">
+{% macro row(t, project=True, make_next=False, grip=False, soon=False) %}
+{% set closed = t.status in ('done', 'abandoned') %}
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}{% if soon and t.due_date and not closed %} s-{{ t.due_date|soon }}{% endif %}" data-id="{{ t.id }}">
   {% if grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
-  <form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>
+  {% if t.status == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
+  {% elif t.status == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
+  {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}
   <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
   <span class="meta">
-    {% if context and t.context %}<a class="ctx" href="{{ url_for('next_view', ctx=t.context) }}">{{ t.context }}</a>{% endif %}
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
-    {% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}
-    {% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}
     {% if t.status == 'later' %}<span>later</span>{% endif %}
+    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.status == 'done' else 'Abandoned' }}">{{ t.completed_at[:10] }}</span>{% endif %}
+    {% if t.due_date and not closed %}<span class="date">{{ t.due_date }}</span>{% endif %}
+    {# Always there, empty when not repeating, so dates line up down the list. #}
+    <span class="recur"{% if t.recur %} title="{{ t.recur }}"{% endif %}>{{ '↻' if t.recur }}</span>
   </span>
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
-  {% elif t.status != 'done' %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
-  {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}"><button>Make next</button></form>{% endif %}
+  {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
+  {% if t.status == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Back to the inbox">Revive</button></form>{% endif %}
+  {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>{% endif %}
 </li>
 {% endmacro %}
 
-{% macro context_select(selected) %}
-<select name="context" aria-label="Context">
-  <option value="">context…</option>
-  {% for c in CONTEXTS %}<option{% if c == selected %} selected{% endif %}>{{ c }}</option>{% endfor %}
-</select>
-<input name="new_context" placeholder="or new context…" aria-label="New context" size="14">
+{# A project row's ▸ and the open steps it folds out (base.html's JS toggles them), read-only: a title opens its task. #}
+{% macro peek_button() %}<button type="button" class="peek" aria-expanded="false" title="Show steps" aria-label="Show steps">▸</button>{% endmacro %}
+{% macro peek_steps(steps) %}
+<ul class="steps">
+  {% for t in steps %}
+  <li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+    <span class="meta"><span>{{ t.status }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
+  {% else %}
+  <li class="empty">No open steps.</li>
+  {% endfor %}
+</ul>
 {% endmacro %}
 
 {# Type a date in words, or click 📅 for the browser's picker. base.html's JS copies the pick into the text box. #}
@@ -34,11 +44,23 @@
 </span>
 {% endmacro %}
 
+{# "＋ New…" (value __new__) reveals the name box beside it, in CSS; the server ignores it without a name. #}
 {% macro project_select(projects, selected=none) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>
   <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
   {% for p in projects %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
+  <option value="__new__">＋ New project…</option>
 </select>
-<input name="new_project" placeholder="or new project…" aria-label="New project" size="14">
+<input name="new_project" placeholder="new project" aria-label="New project" size="14">
+{% endmacro %}
+
+{# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
+{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add') %}
+<form method="post" action="{{ action }}" class="add{{ ' ' ~ cls if cls }}"{% if id %} id="{{ id }}"{% endif %}>
+  <span class="plus" aria-hidden="true">+</span>
+  <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
+  <button class="primary" title="{{ label }} (Enter)" aria-label="{{ label }}">{{ button }}</button>
+  {% if caller is defined %}<div class="add-more">{{ caller() }}</div>{% endif %}
+</form>
 {% endmacro %}

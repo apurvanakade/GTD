@@ -1,15 +1,14 @@
 {% extends "base.html" %}
 {% from "_task.html" import row with context %}
 {% block title %}Horizons{% endblock %}
+{% block heading %}<h1>Horizons of focus</h1>{% endblock %}
 {% block body %}
-<h1>Horizons of focus</h1>
 <p class="hint">Revisit goals quarterly, vision and purpose yearly.</p>
 {% for level, label, hint in levels %}
 <section class="horizon">
   <h2>{{ label }}</h2>
   {% if level in ('purpose', 'vision') %}{% set h = items[level][0] %}
   <form method="post" action="{{ url_for('horizon_view', id=h.id) }}">
-    <input type="hidden" name="next" value="{{ url_for('horizons_view') }}">
     <textarea name="notes" rows="5" placeholder="{{ hint }}">{{ h.notes }}</textarea>
     <div class="row"><button>Save</button></div>
   </form>
@@ -47,25 +46,6 @@
 <section class="horizon">
   <h2>H0 · Ground level</h2>
   <p class="hint">Tasks you chose to keep outside any project. Set H0 in a task's project picker.</p>
-  <ul class="tasks">{% for t in ground %}{{ row(t, context=True) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
-</section>
-<section class="horizon" id="contexts">
-  <h2>Contexts</h2>
-  <p class="hint">Where or with what you can do a next action. A context still used by open tasks can't be removed.</p>
-  <ul class="tasks">
-    {% for name in CONTEXTS %}
-    <li class="task">
-      <a class="title" href="{{ url_for('next_view', ctx=name) }}">{{ name }}</a>
-      <form method="post" action="{{ url_for('context_delete') }}">
-        <input type="hidden" name="name" value="{{ name }}">
-        <button class="danger" title="Remove {{ name }}">Remove</button>
-      </form>
-    </li>
-    {% endfor %}
-  </ul>
-  <form method="post" action="{{ url_for('context_create') }}" class="row">
-    <input name="name" placeholder="New context, e.g. @phone" required>
-    <button>Add</button>
-  </form>
+  <ul class="tasks">{% for t in ground %}{{ row(t) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
 </section>
 {% endblock %}

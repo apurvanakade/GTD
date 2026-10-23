@@ -2,7 +2,6 @@
 {% from "_task.html" import row with context %}
 {% block title %}Done{% endblock %}
 {% block body %}
-<h1>Done</h1>
 <h2>Projects</h2>
 <ul class="tasks">
   {% for p in projects %}
@@ -13,8 +12,14 @@
 </ul>
 <h2>Tasks</h2>
 {% if tasks %}
-<ul class="tasks">{% for t in tasks %}{{ row(t, context=True) }}{% endfor %}</ul>
+<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
 {% else %}
 <p class="empty">Nothing finished yet.</p>
+{% endif %}
+<h2>Abandoned</h2>
+{% if abandoned %}
+<ul class="tasks">{% for t in abandoned %}{{ row(t) }}{% endfor %}</ul>
+{% else %}
+<p class="empty">Nothing abandoned.</p>
 {% endif %}
 {% endblock %}
