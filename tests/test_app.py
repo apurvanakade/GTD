@@ -296,6 +296,20 @@ def test_calendar_shows_dated_and_projected_repeats(client, conn):
     assert "undated" not in html
 
 
+def test_calendar_week_view(client, conn):
+    db.add_task(conn, "in week", status="next", due_date="2026-10-25")  # Sunday of the week of Thu Oct 22
+    db.add_task(conn, "next week", status="next", due_date="2026-10-26")
+    db.add_task(conn, "last week", status="next", due_date="2026-10-18")
+    db.add_task(conn, "plants", status="next", recur="weekly", due_date="2026-10-11")
+    html = client.get("/calendar?w=2026-10-22").data.decode()
+    assert "in week" in html and "next week" not in html and "last week" not in html
+    assert html.count(">↻ plants<") == 1  # Oct 11 weekly: Oct 25 is the only one in the week
+    assert "19 Oct" in html and "25 Oct" in html
+    assert "w=2026-10-26" in html and "w=2026-10-12" in html  # next / previous week
+    assert client.get("/calendar?w=bogus").status_code == 200
+    assert "w=2026-10-19" in client.get("/calendar").data.decode()  # month view links to this week
+
+
 def test_calendar_add(client, conn):
     pid = db.add_project(conn, "Taxes")
     r = client.post("/calendar", data={"title": "file taxes", "due_date": "2027-04-15", "context": "@computer",

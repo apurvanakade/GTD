@@ -365,13 +365,23 @@ def calendar_view():
                 flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
             db.add_task(conn(), fields.pop("title"), status=status, **fields)
         return redirect(url_for("calendar_view", m=(fields.get("due_date") or "")[:7] or None))
-    try:
-        first = date.fromisoformat(request.args.get("m", "") + "-01")
-    except ValueError:
-        first = today().replace(day=1)
-    last = recur.add_months(first, 1) - timedelta(days=1)
-    start = first - timedelta(days=first.weekday())  # weeks start on Monday
-    end = last + timedelta(days=6 - last.weekday())
+    week = None
+    if "w" in request.args:
+        try:
+            week = date.fromisoformat(request.args["w"])
+        except ValueError:
+            week = today()
+        week -= timedelta(days=week.weekday())  # weeks start on Monday
+        first = week.replace(day=1)
+        start, end = week, week + timedelta(days=6)
+    else:
+        try:
+            first = date.fromisoformat(request.args.get("m", "") + "-01")
+        except ValueError:
+            first = today().replace(day=1)
+        last = recur.add_months(first, 1) - timedelta(days=1)
+        start = first - timedelta(days=first.weekday())
+        end = last + timedelta(days=6 - last.weekday())
     by_day = defaultdict(list)  # iso date -> [(task, is_projected_repeat)]
     for t in db.dated_tasks(conn(), start, end):
         by_day[t["due_date"]].append((t, False))
@@ -381,9 +391,12 @@ def calendar_view():
                 if d >= start:
                     by_day[d.isoformat()].append((t, True))
     weeks = [[start + timedelta(days=7 * w + i) for i in range(7)] for w in range(((end - start).days + 1) // 7)]
-    return render_template("calendar.html", first=first, projects=db.open_projects(conn()), weeks=weeks, by_day=by_day,
-                           prev=recur.add_months(first, -1).strftime("%Y-%m"),
-                           next=recur.add_months(first, 1).strftime("%Y-%m"))
+    if week:
+        prev, next_ = ((week + timedelta(days=d)).isoformat() for d in (-7, 7))
+    else:
+        prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
+    return render_template("calendar.html", first=first, week=week, end=end, projects=db.open_projects(conn()), weeks=weeks,
+                           by_day=by_day, prev=prev, next=next_, this_week=(today() - timedelta(days=today().weekday())).isoformat())
 
 
 # --- timer -----------------------------------------------------------------
