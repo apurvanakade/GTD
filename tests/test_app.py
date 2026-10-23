@@ -613,3 +613,12 @@ def test_old_time_entries_table_is_replaced(tmp_path):
     c = db.connect(str(path))
     assert "task_id" in [r[1] for r in c.execute("PRAGMA table_info(time_entries)")]
     assert db.time_entries(c) == []
+
+
+def test_new_context_from_task_form(client, conn):
+    tid = db.add_task(conn, "ring Bob", status="next", project_id=db.add_project(conn, "P"))
+    r = client.post(f"/tasks/{tid}", data={"context": "", "new_context": " deep work "})
+    assert r.status_code in (200, 302)
+    assert db.get_task(conn, tid)["context"] == "@deep-work"
+    assert "@deep-work" in db.contexts(conn)
+    assert b'name="new_context"' in client.get(f"/tasks/{tid}").data

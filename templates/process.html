@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select with context %}
+{% from "_task.html" import project_select, context_select with context %}
 {% block title %}Process inbox{% endblock %}
 {% block body %}
 <h1>Process inbox <small>{{ remaining }} left</small></h1>
@@ -30,10 +30,7 @@
 
   <h2>Next action</h2>
   <div class="row">
-    <select name="context" aria-label="Context">
-      <option value="">context…</option>
-      {% for c in CONTEXTS %}<option>{{ c }}</option>{% endfor %}
-    </select>
+    {{ context_select(none) }}
     <input type="date" name="due_date" aria-label="Due date">
     <input name="recur" placeholder="repeats…" aria-label="Repeats">
     <button name="action" value="next" class="primary">→ Next actions</button>

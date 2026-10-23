@@ -87,6 +87,7 @@ There is no build step, linter config or JS bundler.
 - **One context per task.** Contexts live in the `contexts` table (managed at the bottom of the Horizons page), not in code, because the repo is public.
   - Any context used by an open task is re-added on every `connect()`, so the list and the tasks can't disagree.
   - A context still used by open tasks can't be removed.
+  - `context_select()` also renders an "or new context…" box (`new_context`); `task_fields_from_form()` adds it to the table and uses it, so a context can be created from any task form.
   - The Process flow requires a context for next actions.
 - **No areas on projects.** H2 areas exist only as notes on the Horizons page.
 - **Recurring tasks** stay `next` but are hidden until their due date (`VISIBLE_NEXT` in `db.py`).

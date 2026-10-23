@@ -22,6 +22,7 @@
   <option value="">context…</option>
   {% for c in CONTEXTS %}<option{% if c == selected %} selected{% endif %}>{{ c }}</option>{% endfor %}
 </select>
+<input name="new_context" placeholder="or new context…" aria-label="New context" size="14">
 {% endmacro %}
 
 {% macro project_select(projects, selected=none) %}

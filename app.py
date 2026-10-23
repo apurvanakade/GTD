@@ -59,6 +59,10 @@ def task_fields_from_form():
             fields[name] = form_value(name)
     if "notes" in fields:
         fields["notes"] = fields["notes"] or ""
+    new_context = db.context_name(request.form.get("new_context"))
+    if new_context:  # typed into the "or new…" box next to the context dropdown
+        db.add_context(conn(), new_context)
+        fields["context"] = new_context
     if "project_id" in request.form:
         # The picker offers "h0": ground level, a deliberate choice of no project.
         raw = request.form["project_id"]
