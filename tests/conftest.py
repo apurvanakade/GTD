@@ -31,29 +31,31 @@ def conn(client):
 
 def seed(c):
     """One of everything the UI can show, so pages render every branch. Deterministic ids."""
-    for name in ("@home", "@calls", "@spare"):
-        db.add_context(c, name)
     active = db.add_project(c, "Kitchen", notes="tiles\nand grout")
     stalled = db.add_project(c, "Stalled")
     waiting = db.add_project(c, "Waiting proj", status="waiting")
     someday = db.add_project(c, "Someday proj", status="someday")
     done = db.add_project(c, "Done proj", status="done")
     db.add_task(c, "inbox item", notes="from email")
-    db.add_task(c, "buy tiles", status="next", context="@home", project_id=active, due_date="2026-10-01")
+    db.add_task(c, "buy tiles", status="next", project_id=active, due_date="2026-10-01")
     db.add_task(c, "lay tiles", status="later", project_id=active)
     db.add_task(c, "quote from Bob", status="waiting", project_id=active, due_date="2026-10-22")
-    db.add_task(c, "vacuum", status="next", context="@home", ground=1, recur="weekly", due_date="2026-10-22")
-    db.add_task(c, "bins", status="next", context="@home", ground=1, recur="every 2 weeks", due_date="2026-11-03")
-    db.add_task(c, "call mum", status="next", context="@calls", ground=1)
-    db.add_task(c, "parked step", status="next", context="@calls", project_id=waiting)
+    db.add_task(c, "vacuum", status="next", ground=1, recur="weekly", due_date="2026-10-22")
+    db.add_task(c, "bins", status="next", ground=1, recur="every 2 weeks", due_date="2026-11-03")
+    db.add_task(c, "call mum", status="next", ground=1)
+    db.add_task(c, "parked step", status="next", project_id=waiting)
     db.add_task(c, "dream step", status="later", project_id=someday)
     db.add_task(c, "legacy orphan", status="next")
     finished = db.add_task(c, "old tiles", status="next", project_id=done)
     db.complete_task(c, finished, TODAY)
+    db.abandon_task(c, db.add_task(c, "dropped idea", status="later", project_id=active))
     db.add_horizon(c, "goal", "Ship the kitchen")
     area = db.add_horizon(c, "area", "Home")
     db.update_horizon(c, area, notes="Clean and calm\nsecond line")
+    db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
     db.timer_start(c, 7, NOW - timedelta(minutes=10))  # "call mum", still running
+    db.complete_review(c, TODAY - timedelta(days=7))
+    db.toggle_review_step(c, "sweep")  # this week's review under way
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done}

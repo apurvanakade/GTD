@@ -4,6 +4,7 @@ Catches the bugs no targeted test thinks of: a template that breaks on some data
 doesn't expect, a redirect to a page that no longer exists. Each form submission runs against a fresh
 copy of the seeded DB, and every page is requested with itself as the Referer (as after a save).
 """
+import re
 import shutil
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
@@ -64,6 +65,7 @@ class Page(HTMLParser):
 
 def parse(html):
     p = Page()
+    p.html = html
     p.feed(html)
     for f in p.forms:
         for s in f["selects"]:
@@ -108,8 +110,9 @@ def internal(href):
     parts = urlsplit(href)
     if parts.scheme or parts.netloc or not parts.path.startswith("/"):
         return None
-    if parts.path == "/calendar" and parts.query not in CALENDAR_MONTHS:
-        return None
+    if parts.path == "/calendar":  # only within the listed months
+        if parts.query not in CALENDAR_MONTHS:
+            return None
     return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
@@ -148,8 +151,33 @@ def test_every_link_works(client, conn):
     html_pages = [u for u, p in pages.items() if p]
     assert len(html_pages) > 25, html_pages  # the crawl really reached the app
     for must in ("/inbox", "/process", "/next", "/waiting", "/someday", "/review", "/calendar", "/horizons",
-                 "/projects/1", "/projects/4", "/tasks/1", "/horizons/3", "/next?ctx=@home"):
+                 "/projects/1", "/projects/4", "/tasks/1", "/horizons/3"):
         assert must in pages, must
+
+
+def test_every_page_has_the_same_skeleton(client, conn):
+    """One layout everywhere: header (title + actions), then the add line, then the list."""
+    seed(conn)
+    pages, _ = crawl(client)
+    checked = 0
+    for url, page in pages.items():
+        if not page or "<main>" not in page.html:
+            continue
+        main = re.sub(r'<p class="flash">.*?</p>', "", page.html.split("<main>")[1]).strip()
+        assert main.startswith('<header class="page">'), url
+        header = main[:main.index("</header>")]
+        assert "<h1>" in header or 'class="big"' in main, url  # edit pages: the big title input is the heading
+        assert 'class="chips"' not in main, url
+        adds = [m.start() for m in re.finditer(r'<form[^>]*class="add', main)]
+        assert len(adds) <= 1, url
+        if adds:
+            between = main[main.index("</header>") + len("</header>"):adds[0]]
+            assert between.strip() == "" or 'class="big"' in between, url  # a record page: its own form comes first
+            for later in ('class="tasks', '<table class="cal'):
+                if later in main:
+                    assert adds[0] < main.index(later), (url, later)
+        checked += 1
+    assert checked > 25
 
 
 def test_every_form_submits(client, conn, tmp_path):

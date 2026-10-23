@@ -64,11 +64,11 @@ def test_tick_off_fades_the_row_in_place(page, live, conn):
     assert db.get_task(conn, 5)["status"] == "done"
 
 
-def test_finishing_a_projects_next_action_goes_to_the_project(page, live):
+def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
     page.goto(live + "/next")
     row(page, "buy tiles").locator("form.done button").click()
-    page.wait_for_url("**/projects/*")
-    assert page.get_by_role("button", name="Make next").count() >= 1
+    page.wait_for_selector("li.task.gone")
+    assert page.url == live + "/next"
 
 
 def test_plus_inbox_dialog_captures(page, live, conn):
@@ -135,3 +135,107 @@ def test_drag_reorders_project_steps(page, live, conn):
     assert [t["title"] for t in db.project_tasks(conn, 1)] == ["lay tiles", "buy tiles", "quote from Bob"]
     page.reload()
     assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
+
+
+def test_slash_on_inbox_focuses_its_add_box(page, live):
+    page.goto(live + "/inbox")
+    page.keyboard.press("/")
+    assert page.evaluate("document.activeElement.closest('main form.add') !== null")
+    assert not page.locator(".capture-dialog").evaluate("d => d.open")
+
+
+def test_task_rows_are_one_height(page, live):
+    """A Make next or Activate button mustn't make its row taller than the others."""
+    heights = []
+    for url in ("/projects/1", "/someday"):
+        page.goto(live + url)
+        heights += page.locator("ul.tasks > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
+    assert len(heights) >= 3 and max(heights) - min(heights) < 1, heights
+
+
+def test_project_row_arrow_folds_out_its_steps(page, live):
+    for url, project, step in (("/projects", "Kitchen", "lay tiles"), ("/someday", "Someday proj", "dream step")):
+        page.goto(live + url)
+        r = row(page, project)
+        link = r.get_by_role("link", name=step, exact=True)
+        assert not link.is_visible()
+        r.locator("button.peek").click()
+        assert link.is_visible() and r.locator("button.peek").get_attribute("aria-expanded") == "true"
+        link.click()
+        page.wait_for_url("**/tasks/*")
+        assert page.locator("input.big").input_value() == step
+
+
+def test_expand_all_folds_out_every_project(page, live):
+    for url in ("/projects", "/someday"):
+        page.goto(live + url)
+        steps, toggle = page.locator("ul.steps"), page.locator("button.peek-all")
+        assert toggle.inner_text() == "Expand all" and not any(s.is_visible() for s in steps.all())
+        toggle.click()
+        assert toggle.inner_text() == "Collapse all" and all(s.is_visible() for s in steps.all())
+        assert set(page.locator("button.peek").all_inner_texts()) == {"▾"}
+        toggle.click()
+        assert not any(s.is_visible() for s in steps.all())
+        assert set(page.locator("button.peek").all_inner_texts()) == {"▸"}
+
+
+def test_search_suggests_as_you_type_and_opens_the_pick(page, live):
+    page.goto(live + "/next")
+    page.fill(".search input", "lay tls")
+    page.wait_for_selector(".suggest a")
+    assert page.locator(".suggest a").first.inner_text().startswith("lay tiles")
+    page.locator(".suggest a").first.click()
+    page.wait_for_url("**/tasks/3")
+
+
+def test_search_suggestions_keyboard(page, live):
+    page.goto(live + "/next")
+    page.keyboard.press("f")
+    page.keyboard.type("tiles")
+    page.wait_for_selector(".suggest a")
+    page.keyboard.press("ArrowDown")
+    second = page.locator(".suggest a").nth(1).get_attribute("href")
+    with page.expect_navigation():
+        page.keyboard.press("Enter")
+    assert page.url == live + second
+    page.goto(live + "/next")
+    page.fill(".search input", "tiles")
+    page.wait_for_selector(".suggest a")
+    page.keyboard.press("Escape")
+    assert page.locator(".suggest").is_hidden()
+
+
+def test_add_line_reveals_its_extra_fields_on_focus(page, live):
+    page.goto(live + "/projects/1")
+    more = page.locator("main form.add .add-more")
+    assert more.is_hidden()
+    page.locator("main form.add input[name=title]").focus()
+    assert more.is_visible()
+
+
+def test_new_option_reveals_the_name_box(page, live):
+    page.goto(live + "/tasks/2")
+    box = page.locator("input[name=new_project]")
+    assert box.is_hidden()
+    page.select_option("select[name=project_id]", "__new__")
+    assert box.is_visible()
+    page.fill("input[name=new_project]", "Garage")
+    page.get_by_role("button", name="Save", exact=True).click()
+    assert page.locator("select[name=project_id] option:checked").inner_text() == "Garage"
+
+
+def test_clicking_a_calendar_day_sets_the_add_date(page, live):
+    page.goto(live + "/calendar")
+    page.locator('.cal .day[data-date="2026-10-29"]').click()
+    title = page.locator("main form.add input[name=title]")
+    assert page.evaluate("document.activeElement.name") == "title"
+    assert "29 Oct" in title.get_attribute("placeholder")
+    assert page.locator("main form.add input[name=due_date]").input_value() == "2026-10-29"
+
+
+def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
+    db.add_task(conn, "dentist", status="next", ground=1, due_date="2026-10-30")
+    page.goto(live + "/h0")
+    edges = {t: row(page, t).locator(".date").evaluate("e => Math.round(e.getBoundingClientRect().right)")
+             for t in ("vacuum", "dentist")}
+    assert edges["vacuum"] == edges["dentist"], edges
