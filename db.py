@@ -2,6 +2,7 @@ import os
 import sqlite3
 from datetime import date, datetime, timezone
 
+import fuzzy
 import recur
 
 def default_db_path(home):
@@ -14,7 +15,7 @@ def default_db_path(home):
 
 DB_PATH = os.environ.get("GTD_DB") or default_db_path(os.path.expanduser("~"))
 
-# Someday and waiting are project statuses only. An active project has exactly one next action;
+# Someday and waiting are project statuses only. A deleted task is first "abandoned" (revivable), like done. An active project has exactly one next action;
 # its other open steps are "later".
 PROJECTS_TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
@@ -31,8 +32,7 @@ CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'later', 'done')),
-  context TEXT,
+  status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'later', 'done', 'abandoned')),
   project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
   due_date TEXT,
   recur TEXT,
@@ -60,10 +60,13 @@ INSERT INTO horizons (level, title) SELECT 'purpose', 'Purpose & principles'
   WHERE NOT EXISTS (SELECT 1 FROM horizons WHERE level = 'purpose');
 INSERT INTO horizons (level, title) SELECT 'vision', 'Vision'
   WHERE NOT EXISTS (SELECT 1 FROM horizons WHERE level = 'vision');
-CREATE TABLE IF NOT EXISTS contexts (name TEXT PRIMARY KEY);
--- Any context an open task uses is always on the list.
-INSERT OR IGNORE INTO contexts SELECT DISTINCT context FROM tasks
-  WHERE context IS NOT NULL AND context != '' AND status != 'done';
+-- Reference: information with no action attached, one flat list.
+CREATE TABLE IF NOT EXISTS reference (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 -- Time tracking: every entry belongs to a task. Times are UTC ISO-8601; no end_time means running.
 CREATE TABLE IF NOT EXISTS time_entries (
   id INTEGER PRIMARY KEY,
@@ -72,10 +75,13 @@ CREATE TABLE IF NOT EXISTS time_entries (
   end_time TEXT
 );
 CREATE INDEX IF NOT EXISTS time_entries_task ON time_entries(task_id);
+-- Weekly review: the steps ticked so far, and the date of each finished review.
+CREATE TABLE IF NOT EXISTS review_checks (step TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
-TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "ground"}
+TASK_FIELDS = {"title", "notes", "status", "project_id", "due_date", "recur", "ground"}
 PROJECT_FIELDS = {"title", "notes", "status"}
 TASK_SELECT = "SELECT t.*, p.title AS project_title, p.status AS project_status FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
 # Next Actions leave out H0 tasks (they live on Horizons), recurring tasks until their due day, and tasks of waiting/someday projects.
@@ -106,6 +112,11 @@ def _migrate(c):
         c.executescript("""BEGIN; UPDATE tasks SET notes = CASE WHEN notes = '' THEN '' ELSE notes || char(10) || char(10) END
             || 'Waiting on: ' || trim(waiting_on) WHERE trim(COALESCE(waiting_on, '')) != '';
             ALTER TABLE tasks DROP COLUMN waiting_on; COMMIT;""")
+    if "tasks" in old and "context" in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
+        # Contexts were removed: nobody filtered by them, and picking one was a chore.
+        c.execute("ALTER TABLE tasks DROP COLUMN context")
+    if "contexts" in old:
+        c.execute("DROP TABLE contexts")
     steps = []
     if "projects" in old and "'waiting'" not in old["projects"]:
         steps += [PROJECTS_TABLE.format(name="projects_new"), "INSERT INTO projects_new SELECT * FROM projects",
@@ -113,9 +124,9 @@ def _migrate(c):
     if "tasks" in old and "'someday'" in old["tasks"]:
         # Someday tasks inside a project become later steps; loose ones go back to the inbox.
         steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new (id, title, notes, status,
-            context, project_id, due_date, recur, created_at, completed_at) SELECT id, title, notes,
+            project_id, due_date, recur, created_at, completed_at) SELECT id, title, notes,
             CASE WHEN status != 'someday' THEN status WHEN project_id IS NULL THEN 'inbox' ELSE 'later' END,
-            context, project_id, due_date, recur, created_at, completed_at FROM tasks""",
+            project_id, due_date, recur, created_at, completed_at FROM tasks""",
                   "DROP TABLE tasks", "ALTER TABLE tasks_new RENAME TO tasks"]
     if steps:
         # Foreign keys off, or dropping projects would null every task's project_id.
@@ -135,6 +146,15 @@ def _migrate(c):
             UPDATE tasks SET position = o.n FROM (SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY
               {STATUS_ORDER}, created_at, id) AS n FROM tasks t WHERE project_id IS NOT NULL) o WHERE o.id = tasks.id;
             COMMIT;""")
+    tasks_sql = c.execute("SELECT sql FROM sqlite_master WHERE name = 'tasks'").fetchone()
+    if tasks_sql and "'abandoned'" not in tasks_sql[0]:
+        # Deleting a task became abandoning it. Foreign keys off, or dropping tasks would delete their time.
+        cols = ", ".join(r[1] for r in c.execute("PRAGMA table_info(tasks)"))
+        c.execute("PRAGMA foreign_keys = OFF")
+        c.executescript(f"""BEGIN; {TASKS_TABLE.format(name="tasks_new")};
+            INSERT INTO tasks_new ({cols}) SELECT {cols} FROM tasks;
+            DROP TABLE tasks; ALTER TABLE tasks_new RENAME TO tasks; COMMIT;""")
+        c.execute("PRAGMA foreign_keys = ON")
 
 
 def _insert(c, table, allowed, fields):
@@ -192,14 +212,30 @@ def get_task(c, id):
 
 
 def delete_task(c, id):
+    """Hard delete, time included. The UI abandons a task first; only an abandoned one is deleted for good."""
     c.execute("DELETE FROM tasks WHERE id = ?", (id,))
+    c.commit()
+
+
+def abandon_task(c, id, now=None):
+    """A soft delete (stopping its timer): the task leaves every list but stays on Done, revivable."""
+    running = timer_running(c)
+    if running and running["task_id"] == id:
+        timer_stop(c, now or datetime.now(timezone.utc))
+    c.execute("UPDATE tasks SET status = 'abandoned', completed_at = datetime('now') WHERE id = ?", (id,))
+    c.commit()
+
+
+def revive_task(c, id):
+    """An abandoned task goes back to the inbox (keeping its project) to be processed again."""
+    c.execute("UPDATE tasks SET status = 'inbox', completed_at = NULL WHERE id = ? AND status = 'abandoned'", (id,))
     c.commit()
 
 
 def complete_task(c, id, today, now=None):
     """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None."""
     t = get_task(c, id)
-    if t is None or t["status"] == "done":
+    if t is None or t["status"] in ("done", "abandoned"):
         return None
     running = timer_running(c)
     if running and running["task_id"] == id:
@@ -208,8 +244,8 @@ def complete_task(c, id, today, now=None):
     new_id = None
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
-        new_id = add_task(c, t["title"], notes=t["notes"], status=t["status"], context=t["context"],
-                          project_id=t["project_id"], ground=t["ground"], recur=t["recur"],
+        new_id = add_task(c, t["title"], notes=t["notes"], status=t["status"], project_id=t["project_id"],
+                          ground=t["ground"], recur=t["recur"],
                           due_date=recur.next_due(t["recur"], due, today).isoformat())
     c.commit()
     return new_id
@@ -224,14 +260,18 @@ def next_actions(c, today):
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""", (today.isoformat(),)).fetchall()
 
 
-def h0_actions(c, today):
-    return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_H0}
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""", (today.isoformat(),)).fetchall()
+def h0_actions(c):
+    """Every H0 next action, repeats not yet due included, soonest due first; undated ones last."""
+    return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND t.ground
+        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
-def upcoming_recurring(c, today, ground=False):
-    return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND t.recur IS NOT NULL
-        AND t.due_date > ? AND t.ground = ? ORDER BY t.due_date""", (today.isoformat(), int(ground))).fetchall()
+def next_list(c):
+    """The Next tab: every next action outside H0 and waiting/someday projects, repeats not yet due included,
+    soonest due first; undated ones last."""
+    return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND NOT t.ground
+        AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))
+        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
 def overdue(c, today):
@@ -245,13 +285,13 @@ def orphans(c):
 
 def ground_level(c):
     """H0: open tasks deliberately kept outside any project."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND t.ground
+    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND t.ground
         ORDER BY t.due_date IS NULL, t.due_date, lower(t.title)""").fetchall()
 
 
 def project_tasks(c, project_id):
     """Open steps in the order dragged on the project page; steps never dragged go last, oldest first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.status != 'done'
+    return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.status NOT IN ('done', 'abandoned')
         ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (project_id,)).fetchall()
 
 
@@ -288,18 +328,33 @@ def _matching(q, cols):
 
 
 def search(c, q):
-    """Tasks (open, then the latest 50 done), projects and horizons whose text contains every word of q."""
-    where, args = _matching(q, ["t.title", "t.notes", "t.context"])
-    tasks = c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND {where} ORDER BY
+    """Tasks (open, then the latest 50 done), projects, horizons and reference whose text contains every word of q."""
+    where, args = _matching(q, ["t.title", "t.notes"])
+    tasks = c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND {where} ORDER BY
         CASE t.status WHEN 'inbox' THEN 0 WHEN 'next' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END,
         lower(t.title)""", args).fetchall()
-    done = c.execute(f"""{TASK_SELECT} WHERE t.status = 'done' AND {where}
+    done = c.execute(f"""{TASK_SELECT} WHERE t.status IN ('done', 'abandoned') AND {where}
         ORDER BY t.completed_at DESC LIMIT 50""", args).fetchall()
     where, args = _matching(q, ["title", "notes"])
     projects = c.execute(f"""SELECT * FROM projects WHERE {where}
         ORDER BY status = 'done', lower(title)""", args).fetchall()
     horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title)", args).fetchall()
-    return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons}
+    references = c.execute(f"SELECT * FROM reference WHERE {where} ORDER BY lower(title)", args).fetchall()
+    return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references}
+
+
+def suggest(c, q, limit=10):
+    """The best fuzzy title matches among tasks, projects, horizons and reference; open items before done ones."""
+    rows = [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned')")]
+    rows += [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.status IN ('done', 'abandoned') ORDER BY t.completed_at DESC LIMIT 200")]
+    rows += [("project", r) for r in c.execute("SELECT * FROM projects")]
+    rows += [("horizon", r) for r in c.execute("SELECT * FROM horizons")]
+    rows += [("reference", r) for r in c.execute("SELECT * FROM reference")]
+    hits = [(fuzzy.score(q, r["title"]), kind, r) for kind, r in rows]
+    hits = [h for h in hits if h[0] is not None]
+    closed = lambda kind, r: kind in ("task", "project") and r["status"] in ("done", "abandoned")
+    hits.sort(key=lambda h: (closed(h[1], h[2]), -h[0], h[2]["title"].lower()))
+    return [(kind, r) for _, kind, r in hits[:limit]]
 
 
 # --- projects --------------------------------------------------------------
@@ -330,14 +385,32 @@ def get_project(c, id):
 def projects(c, status="active"):
     return c.execute("""SELECT p.*,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'next') AS next_count,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS open_count
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status NOT IN ('done', 'abandoned')) AS open_count,
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
         FROM projects p WHERE p.status = ? ORDER BY lower(p.title)""", (status,)).fetchall()
 
 
-def done_tasks(c, limit=100):
-    """Finished tasks, newest first."""
-    return c.execute(f"{TASK_SELECT} WHERE t.status = 'done' ORDER BY t.completed_at DESC, t.id DESC LIMIT ?",
-                     (limit,)).fetchall()
+def open_steps(c, status="active"):
+    """{project id: its open steps in project-page order}, for every project with the given status."""
+    steps = {}
+    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.status NOT IN ('done', 'abandoned')
+            ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (status,)):
+        steps.setdefault(t["project_id"], []).append(t)
+    return steps
+
+
+def done_tasks(c, limit=100, project_id=None, ground=None, status="done"):
+    """Finished (or, with status="abandoned", abandoned) tasks, newest first; optionally only one project's,
+    or only H0 (ground=1) / non-H0 (ground=0)."""
+    where, args = "t.status = ?", [status]
+    if project_id is not None:
+        where += " AND t.project_id = ?"
+        args.append(project_id)
+    if ground is not None:
+        where += " AND t.ground = ?"
+        args.append(ground)
+    return c.execute(f"{TASK_SELECT} WHERE {where} ORDER BY t.completed_at DESC, t.id DESC LIMIT ?",
+                     (*args, limit)).fetchall()
 
 
 def open_projects(c):
@@ -354,12 +427,12 @@ def stalled_projects(c):
 # --- calendar --------------------------------------------------------------
 
 def dated_tasks(c, start, end):
-    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND t.due_date BETWEEN ? AND ?
+    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND t.due_date BETWEEN ? AND ?
         ORDER BY t.due_date, t.created_at""", (start.isoformat(), end.isoformat())).fetchall()
 
 
 def recurring_tasks(c):
-    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND t.recur IS NOT NULL
+    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND t.recur IS NOT NULL
         AND t.due_date IS NOT NULL""").fetchall()
 
 
@@ -394,34 +467,53 @@ def delete_horizon(c, id):
     c.commit()
 
 
-# --- contexts --------------------------------------------------------------
+# --- reference -------------------------------------------------------------
 
-def contexts(c):
-    return [r[0] for r in c.execute("SELECT name FROM contexts ORDER BY name")]
-
-
-def context_name(raw):
-    """'deep work' -> '@deep-work'."""
-    name = "-".join((raw or "").strip().lstrip("@").split())
-    return f"@{name}" if name else None
+REFERENCE_FIELDS = {"title", "notes"}
 
 
-def add_context(c, name):
-    c.execute("INSERT OR IGNORE INTO contexts (name) VALUES (?)", (name,))
+def references(c):
+    return c.execute("SELECT * FROM reference ORDER BY lower(title)").fetchall()
+
+
+def add_reference(c, title, **fields):
+    return _insert(c, "reference", REFERENCE_FIELDS, {"title": title, **fields})
+
+
+def update_reference(c, id, **fields):
+    _update(c, "reference", REFERENCE_FIELDS, id, fields)
+
+
+def get_reference(c, id):
+    return c.execute("SELECT * FROM reference WHERE id = ?", (id,)).fetchone()
+
+
+def delete_reference(c, id):
+    c.execute("DELETE FROM reference WHERE id = ?", (id,))
     c.commit()
 
 
-def context_in_use(c, name):
-    return c.execute("SELECT count(*) FROM tasks WHERE context = ? AND status != 'done'", (name,)).fetchone()[0]
+# --- weekly review ---------------------------------------------------------
+
+def review_checked(c):
+    return {r[0] for r in c.execute("SELECT step FROM review_checks")}
 
 
-def delete_context(c, name):
-    """Remove a context unless open tasks still use it; returns how many do."""
-    used = context_in_use(c, name)
-    if not used:
-        c.execute("DELETE FROM contexts WHERE name = ?", (name,))
-        c.commit()
-    return used
+def toggle_review_step(c, step):
+    if not c.execute("DELETE FROM review_checks WHERE step = ?", (step,)).rowcount:
+        c.execute("INSERT INTO review_checks (step) VALUES (?)", (step,))
+    c.commit()
+
+
+def complete_review(c, today):
+    """Record a finished review and clear the ticks for next week."""
+    c.execute("INSERT INTO reviews (completed_on) VALUES (?)", (today.isoformat(),))
+    c.execute("DELETE FROM review_checks")
+    c.commit()
+
+
+def reviews(c):
+    return [r[0] for r in c.execute("SELECT completed_on FROM reviews ORDER BY completed_on DESC, id DESC")]
 
 
 # --- timer -----------------------------------------------------------------
@@ -491,4 +583,4 @@ def week_totals(c, since, now):
 
 def open_tasks(c):
     """Every open task, for the timer's picker: next actions first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' ORDER BY {STATUS_ORDER}, lower(t.title)""").fetchall()
+    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') ORDER BY {STATUS_ORDER}, lower(t.title)""").fetchall()

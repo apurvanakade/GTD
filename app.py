@@ -1,9 +1,10 @@
 import os
+import re
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, g, make_response, redirect, render_template, request, url_for
 
 import dates
 import db
@@ -43,8 +44,11 @@ def now():
 
 @app.context_processor
 def template_globals():
-    return {"counts": db.counts(conn(), today()), "CONTEXTS": db.contexts(conn()), "today": today().isoformat(),
+    return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
             "timer": db.timer_running(conn())}
+
+
+NEW = "__new__"  # project_select's "＋ New…" option (_task.html)
 
 
 def form_value(name):
@@ -55,15 +59,11 @@ def form_value(name):
 def task_fields_from_form():
     """Editable task fields present in the submitted form."""
     fields = {}
-    for name in ("title", "notes", "context", "due_date", "recur"):
+    for name in ("title", "notes", "due_date", "recur"):
         if name in request.form:
             fields[name] = form_value(name)
     if "notes" in fields:
         fields["notes"] = fields["notes"] or ""
-    new_context = db.context_name(request.form.get("new_context"))
-    if new_context:  # typed into the "or new…" box next to the context dropdown
-        db.add_context(conn(), new_context)
-        fields["context"] = new_context
     if "project_id" in request.form:
         # The picker offers "h0": ground level, a deliberate choice of no project.
         raw = request.form["project_id"]
@@ -98,7 +98,8 @@ def orphaned(status, project_id, ground):
 
 
 def back(default="next_view"):
-    return redirect(request.form.get("next") or request.referrer or url_for(default))
+    """Stay on the page the form was on: nothing jumps elsewhere unless you follow a link or "Save & exit"."""
+    return redirect(request.referrer or url_for(default))
 
 
 @app.route("/")
@@ -126,10 +127,8 @@ def inbox():
 @app.route("/process")
 def process():
     items = db.tasks_with_status(conn(), "inbox")
-    if not items:
-        flash("Inbox zero.")
-        return redirect(url_for("inbox"))
-    return render_template("process.html", t=items[0], remaining=len(items), projects=db.open_projects(conn()))
+    return render_template("process.html", t=items[0] if items else None, remaining=len(items),
+                           projects=db.open_projects(conn()))
 
 
 @app.post("/process/<int:id>")
@@ -140,7 +139,7 @@ def process_item(id):
     title = form_value("title") or t["title"]
     notes = (request.form.get("notes") or "").strip()
     if action == "trash":
-        db.delete_task(c, id)
+        db.abandon_task(c, id, now())
     elif action == "done":
         db.update_task(c, id, title=title, notes=notes)
         db.complete_task(c, id, today(), now())
@@ -156,16 +155,12 @@ def process_item(id):
             flash("Someday / maybe: make it a new someday project, or add it to an existing project?")
             return redirect(url_for("process"))
     elif action == "project":
-        pid = db.add_project(c, title, notes=notes)
+        db.add_project(c, title, notes=notes)
         db.delete_task(c, id)
-        flash("Project created – add its first next action.")
-        return redirect(url_for("project_view", id=pid, processing=1))
+        flash(f"Project created: {title}")
     elif action in ("next", "waiting"):
         fields = task_fields_from_form()
         fields.update(title=title, notes=notes, status=action)
-        if action == "next" and not fields.get("context"):
-            flash("Pick a context for the next action.")
-            return redirect(url_for("process"))
         pid = fields.get("project_id")
         if orphaned(action, pid, fields.get("ground")):
             flash("Pick a project, or H0 · ground level if it really belongs to none.")
@@ -181,28 +176,59 @@ def process_item(id):
 
 # --- lists -----------------------------------------------------------------
 
+def toggle_url(show):
+    """This page's URL with ?done=1 flipped,, keeping other query args."""
+    args = {k: v for k, v in request.args.items() if k != "done"}
+    return url_for(request.endpoint, **request.view_args, **({} if show else {"done": 1}), **args)
+
+
+def completed(**filters):
+    """Template variables for the "Show completed" toggle (?done=1): the done tasks, newest completion first."""
+    show = request.args.get("done") == "1"
+    return {"show_done": show, "done_tasks": db.done_tasks(conn(), **filters) if show else [],
+            "toggle_url": toggle_url(show)}
+
+
 @app.route("/next")
 def next_view():
-    ctx = request.args.get("ctx")
-    tasks = db.next_actions(conn(), today())
-    by_ctx = {}
-    for t in tasks:
-        by_ctx.setdefault(t["context"] or "(no context)", []).append(t)
-    shown = {ctx: by_ctx.get(ctx, [])} if ctx else dict(sorted(by_ctx.items(), key=lambda kv: (kv[0] != "(no context)", kv[0])))
-    return render_template("next.html", groups=shown, by_ctx=by_ctx, ctx=ctx,
-                           upcoming=db.upcoming_recurring(conn(), today()))
+    return render_template("next.html", tasks=db.next_list(conn()), projects=db.open_projects(conn()),
+                           SOON=SOON, **completed(ground=0))
+
+
+def add_next_action():
+    """Add the form's task as a next action: a later step if its project already has one, the inbox if orphaned."""
+    fields = task_fields_from_form()
+    if fields.get("title"):
+        pid = fields.get("project_id")
+        status = "later" if pid and db.project_next(conn(), pid) else "next"
+        if orphaned(status, pid, fields.get("ground")):
+            status = "inbox"
+            flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
+        db.add_task(conn(), fields.pop("title"), status=status, **fields)
+    return fields
+
+
+@app.post("/next/add")
+def next_add():
+    add_next_action()
+    return back("next_view")
 
 
 @app.route("/h0")
 def h0_view():
-    ctx = request.args.get("ctx")
-    tasks = db.h0_actions(conn(), today())
-    by_ctx = {}
-    for t in tasks:
-        by_ctx.setdefault(t["context"] or "(no context)", []).append(t)
-    shown = {ctx: by_ctx.get(ctx, [])} if ctx else dict(sorted(by_ctx.items(), key=lambda kv: (kv[0] != "(no context)", kv[0])))
-    return render_template("h0.html", groups=shown, by_ctx=by_ctx, ctx=ctx,
-                           upcoming=db.upcoming_recurring(conn(), today(), ground=True))
+    return render_template("h0.html", tasks=db.h0_actions(conn()), SOON=SOON, **completed(ground=1))
+
+
+SOON = [("overdue", "Overdue"), ("today", "Today"), ("week", "This week"), ("month", "This month"), ("later", "Later")]
+
+
+@app.template_filter("soon")
+def soon(due):
+    """How soon an ISO due date is, as a SOON key ('' when undated), for the Next and H0 color stripes."""
+    if not due:
+        return ""
+    days = (date.fromisoformat(due) - today()).days
+    return "overdue" if days < 0 else "today" if days == 0 else "week" if days <= 7 else "month" if days <= 30 else "later"
 
 
 @app.post("/h0/add")
@@ -216,32 +242,139 @@ def h0_add():
 @app.route("/waiting")
 def waiting():
     return render_template("list.html", title="Waiting for", tasks=db.tasks_with_status(conn(), "waiting"),
-                           projects=db.projects(conn(), "waiting"), empty="Nothing delegated.")
+                           projects=db.projects(conn(), "waiting"), empty="Nothing delegated.",
+                           open_projects=db.open_projects(conn()))
+
+
+@app.post("/waiting/add")
+def waiting_add():
+    fields = task_fields_from_form()
+    if fields.get("title"):
+        status = "waiting"
+        if orphaned(status, fields.get("project_id"), fields.get("ground")):
+            status = "inbox"
+            flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
+        db.add_task(conn(), fields.pop("title"), status=status, **fields)
+    return redirect(url_for("waiting"))
 
 
 @app.route("/someday")
 def someday():
-    return render_template("someday.html", projects=db.projects(conn(), "someday"))
+    return render_template("someday.html", projects=db.projects(conn(), "someday"),
+                           steps=db.open_steps(conn(), "someday"))
+
+
+@app.post("/someday/add")
+def someday_add():
+    title = form_value("title")
+    if title:
+        db.add_project(conn(), title, status="someday")
+    return redirect(url_for("someday"))
+
+
+# --- reference -------------------------------------------------------------
+
+@app.route("/reference")
+def reference():
+    return render_template("reference.html", items=db.references(conn()))
+
+
+@app.post("/reference/add")
+def reference_add():
+    title = form_value("title")
+    if title:
+        db.add_reference(conn(), title)
+    return back("reference")
+
+
+@app.route("/reference/<int:id>", methods=["GET", "POST"])
+def reference_view(id):
+    c = conn()
+    r = db.get_reference(c, id) or abort(404)
+    if request.method == "POST":
+        db.update_reference(c, id, title=form_value("title") or r["title"],
+                            notes=(request.form.get("notes") or "").strip())
+        flash("Saved.")
+        return back("reference")
+    return render_template("reference_item.html", r=r)
+
+
+@app.post("/reference/<int:id>/delete")
+def reference_delete(id):
+    db.delete_reference(conn(), id)
+    return redirect(url_for("reference"))
+
+
+@app.template_filter()
+def links(text):
+    """Every URL in a note (http, obsidian://, …), for the reference page's clickable links."""
+    return re.findall(r"\b[a-z][a-z0-9+.-]*://[^\s<>\"]+", text or "", re.I)
 
 
 @app.route("/done")
 def done():
-    return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"))
+    return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"),
+                           abandoned=db.done_tasks(conn(), status="abandoned"))
+
+
+# The weekly review's steps, in order; review.html has one section per key.
+REVIEW_STEPS = ("sweep", "inbox", "overdue", "stalled", "orphans", "nexts", "waiting", "someday", "ahead", "horizons")
+
+
+@app.template_filter()
+def long_date(iso):
+    return date.fromisoformat(iso).strftime("%a %-d %b %Y")
 
 
 @app.route("/review")
 def review():
     c = conn()
     all_next = db.next_actions(c, today())
-    nexts = [t for t in all_next if not (t["due_date"] and t["due_date"] > today().isoformat())]
+    nexts = [t for t in all_next if not (t["due_date"] and t["due_date"] >= today().isoformat())]
     return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()),
-                           orphans=db.orphans(c), nexts=nexts, scheduled=len(all_next) - len(nexts))
+                           orphans=db.orphans(c), nexts=nexts, scheduled=len(all_next) - len(nexts),
+                           steps=REVIEW_STEPS, checked=db.review_checked(c), past=db.reviews(c))
+
+
+@app.route("/review/<step>", methods=["POST"])
+def review_tick(step):
+    """Tick or untick a review step. Ticking the last one finishes the review."""
+    if step not in REVIEW_STEPS:
+        abort(404)
+    c = conn()
+    db.toggle_review_step(c, step)
+    if db.review_checked(c) >= set(REVIEW_STEPS):
+        db.complete_review(c, today())
+        flash(f"Weekly review completed on {long_date(today().isoformat())}.")
+        return redirect(url_for("review"))
+    return redirect(url_for("review", _anchor=step))
 
 
 @app.route("/search")
 def search():
     q = (request.args.get("q") or "").strip()
     return render_template("search.html", q=q, results=db.search(conn(), q) if q else None)
+
+
+@app.route("/search/suggest")
+def search_suggest():
+    """JSON for the search box's dropdown: [{title, url, kind, meta}]."""
+    out = []
+    for kind, r in db.suggest(conn(), request.args.get("q") or ""):
+        if kind == "task":
+            out.append({"title": r["title"], "url": url_for("task_view", id=r["id"]),
+                         "kind": "H0" if r["ground"] and r["status"] not in ("done", "abandoned") else r["status"],
+                         "meta": r["project_title"] or ""})
+        elif kind == "project":
+            out.append({"title": r["title"], "url": url_for("project_view", id=r["id"]), "kind": "project",
+                        "meta": "" if r["status"] == "active" else r["status"]})
+        elif kind == "reference":
+            out.append({"title": r["title"], "url": url_for("reference_view", id=r["id"]), "kind": "reference",
+                        "meta": ""})
+        else:
+            url = url_for("horizon_view", id=r["id"]) if r["level"] in ("goal", "area") else url_for("horizons_view")
+            out.append({"title": r["title"], "url": url, "kind": r["level"], "meta": ""})
+    return out
 
 
 # --- tasks -----------------------------------------------------------------
@@ -280,31 +413,37 @@ def complete(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     db.complete_task(c, id, today(), now())
-    p = t["project_id"] and db.get_project(c, t["project_id"])
-    if p and p["status"] == "active" and not db.project_next(c, p["id"]):
-        # Ask which step comes next (the page's fetch follows this redirect and navigates).
-        flash(f"Done. What's the next action for “{p['title']}”?")
-        return redirect(url_for("project_view", id=p["id"]))
     return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
 
 
 @app.post("/tasks/<int:id>/delete")
 def delete(id):
-    db.delete_task(conn(), id)
+    """Abandons the task (it stays on Done, revivable); deleting an abandoned task deletes it for good."""
+    c = conn()
+    t = db.get_task(c, id)
+    if t and t["status"] == "abandoned":
+        db.delete_task(c, id)
+    elif t:
+        db.abandon_task(c, id, now())
+        return back()  # an abandoned task's page still shows it, with Revive
     nxt = request.form.get("next")
     if nxt and urlsplit(nxt).path == url_for("task_view", id=id):  # e.g. after a save; the page is gone now
         nxt = None
     return redirect(nxt or url_for("next_view"))
 
 
+@app.post("/tasks/<int:id>/revive")
+def revive(id):
+    db.revive_task(conn(), id)
+    flash("Revived into the inbox.")
+    return back()
+
+
 @app.post("/tasks/<int:id>/make-next")
 def make_next(id):
     c = conn()
-    t = db.get_task(c, id) or abort(404)
+    db.get_task(c, id) or abort(404)
     flash_demoted(db.update_task(c, id, status="next"))
-    if not t["context"]:
-        flash("Pick a context for the next action.")
-        return redirect(url_for("task_view", id=id))
     return back()
 
 
@@ -312,15 +451,18 @@ def make_next(id):
 
 @app.route("/projects")
 def projects_view():
-    return render_template("projects.html", projects=db.projects(conn()))
+    show = request.args.get("done") == "1"
+    return render_template("projects.html", projects=db.projects(conn()), steps=db.open_steps(conn()),
+                           show_done=show, toggle_url=toggle_url(show),
+                           done_projects=db.projects(conn(), "done") if show else [])
 
 
 @app.post("/projects")
 def project_create():
     title = form_value("title")
-    if not title:
-        return redirect(url_for("projects_view"))
-    return redirect(url_for("project_view", id=db.add_project(conn(), title)))
+    if title:
+        db.add_project(conn(), title)
+    return back("projects_view")
 
 
 @app.route("/projects/<int:id>", methods=["GET", "POST"])
@@ -340,11 +482,10 @@ def project_view(id):
         db.update_project(c, id, **fields)
         if fields.get("status") == "someday":
             flash(f"Moved “{fields['title']}” to someday / maybe.")
-        if fields.get("status") in ("done", "waiting"):
-            return redirect(url_for("projects_view"))
-        return redirect(url_for("project_view", id=id))
+        return back()
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
-                           processing=request.args.get("processing"), seconds=db.project_seconds(c, id, now()))
+                           seconds=db.project_seconds(c, id, now()),
+                           **completed(project_id=id))
 
 
 @app.post("/projects/<int:id>/delete")
@@ -377,7 +518,7 @@ def project_add_task(id):
     if fields.get("title"):
         fields.setdefault("status", "later" if db.project_next(c, id) else "next")
         db.add_task(c, fields.pop("title"), project_id=id, **fields)
-    return redirect(url_for("project_view", id=id, processing=request.args.get("processing")))
+    return redirect(url_for("project_view", id=id))
 
 
 # --- calendar --------------------------------------------------------------
@@ -385,19 +526,13 @@ def project_add_task(id):
 @app.route("/calendar", methods=["GET", "POST"])
 def calendar_view():
     if request.method == "POST":
-        fields = task_fields_from_form()
-        if fields.get("title"):
-            pid = fields.get("project_id")
-            status = "later" if pid and db.project_next(conn(), pid) else "next"
-            if orphaned(status, pid, fields.get("ground")):
-                status = "inbox"
-                flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
-            db.add_task(conn(), fields.pop("title"), status=status, **fields)
-        return redirect(url_for("calendar_view", m=(fields.get("due_date") or "")[:7] or None))
+        add_next_action()
+        return back("calendar_view")
     week = None
-    if "w" in request.args:
+    # A bare /calendar opens the last view used (cookie `cal_view`); an explicit ?w= or ?m= sets it.
+    if "w" in request.args or ("m" not in request.args and request.cookies.get("cal_view") == "week"):
         try:
-            week = date.fromisoformat(request.args["w"])
+            week = date.fromisoformat(request.args.get("w", ""))
         except ValueError:
             week = today()
         week -= timedelta(days=week.weekday())  # weeks start on Monday
@@ -411,21 +546,28 @@ def calendar_view():
         last = recur.add_months(first, 1) - timedelta(days=1)
         start = first - timedelta(days=first.weekday())
         end = last + timedelta(days=6 - last.weekday())
-    by_day = defaultdict(list)  # iso date -> [(task, is_projected_repeat)]
+    shown = []  # (iso date, task, is_projected_repeat)
     for t in db.dated_tasks(conn(), start, end):
-        by_day[t["due_date"]].append((t, False))
+        shown.append((t["due_date"], t, False))
     for t in db.recurring_tasks(conn()):
         if recur.parse(t["recur"]):
             for d in recur.occurrences(t["recur"], date.fromisoformat(t["due_date"]), end):
                 if d >= start:
-                    by_day[d.isoformat()].append((t, True))
+                    shown.append((d.isoformat(), t, True))
+    by_day = defaultdict(list)  # iso date -> [(task, is_projected_repeat)]
+    for iso, t, ghost in shown:
+        by_day[iso].append((t, ghost))
     weeks = [[start + timedelta(days=7 * w + i) for i in range(7)] for w in range(((end - start).days + 1) // 7)]
     if week:
         prev, next_ = ((week + timedelta(days=d)).isoformat() for d in (-7, 7))
     else:
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
-    return render_template("calendar.html", first=first, week=week, end=end, projects=db.open_projects(conn()), weeks=weeks,
-                           by_day=by_day, prev=prev, next=next_, this_week=(today() - timedelta(days=today().weekday())).isoformat())
+    resp = make_response(render_template(
+        "calendar.html", first=first, week=week, end=end, projects=db.open_projects(conn()), weeks=weeks,
+        by_day=by_day, prev=prev, next=next_,
+        this_week=(today() - timedelta(days=today().weekday())).isoformat(), this_month=today().strftime("%Y-%m")))
+    resp.set_cookie("cal_view", "week" if week else "month", max_age=365 * 86400, samesite="Lax")
+    return resp
 
 
 # --- timer -----------------------------------------------------------------
@@ -531,28 +673,13 @@ def horizons_view():
                            projects=db.projects(conn()), ground=db.ground_level(conn()))
 
 
-@app.post("/contexts")
-def context_create():
-    name = db.context_name(request.form.get("name")) or abort(400)
-    db.add_context(conn(), name)
-    return redirect(url_for("horizons_view") + "#contexts")
-
-
-@app.post("/contexts/delete")
-def context_delete():
-    name = request.form.get("name") or abort(400)
-    used = db.delete_context(conn(), name)
-    if used:
-        flash(f"{name} is still used by {used} open task{'s' if used != 1 else ''}. Change those first.")
-    return redirect(url_for("horizons_view") + "#contexts")
-
-
 @app.post("/horizons")
 def horizon_create():
     level, title = request.form.get("level"), form_value("title")
     if level not in ("goal", "area") or not title:
         abort(400)
-    return redirect(url_for("horizon_view", id=db.add_horizon(conn(), level, title)))
+    db.add_horizon(conn(), level, title)
+    return back("horizons_view")
 
 
 @app.route("/horizons/<int:id>", methods=["GET", "POST"])
@@ -563,7 +690,7 @@ def horizon_view(id):
         db.update_horizon(c, id, title=form_value("title") or h["title"],
                           notes=(request.form.get("notes") or "").strip())
         flash("Saved.")
-        return redirect(request.form.get("next") or url_for("horizon_view", id=id))
+        return back()
     return render_template("horizon.html", h=h, label=dict((l, lab) for l, lab, _ in HORIZON_LEVELS)[h["level"]])
 
 
