@@ -4,7 +4,15 @@ from datetime import date, datetime, timezone
 
 import recur
 
-DB_PATH = os.environ.get("GTD_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db"))
+def default_db_path(home):
+    """The database lives in Dropbox (synced between machines) if ~/Dropbox/Apps/GTD exists, else next to the code."""
+    synced = os.path.join(home, "Dropbox", "Apps", "GTD")
+    if os.path.isdir(synced):
+        return os.path.join(synced, "gtd.db")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
+
+
+DB_PATH = os.environ.get("GTD_DB") or default_db_path(os.path.expanduser("~"))
 
 # Someday and waiting are project statuses only. An active project has exactly one next action;
 # its other open steps are "later".

@@ -739,3 +739,10 @@ def test_h0_tab_lists_ground_next_actions(client, conn):
     assert b"stretch" in main and b"later bins" not in main and b"later bins" in upcoming
     assert b"later bins" not in client.get("/next").data
     assert db.counts(conn, date(2026, 10, 22))["h0"] == 1
+
+
+def test_default_db_path_prefers_dropbox_folder(tmp_path):
+    assert db.default_db_path(str(tmp_path)).endswith("gtd.db")
+    assert not db.default_db_path(str(tmp_path)).startswith(str(tmp_path))  # no Dropbox folder: next to the code
+    (tmp_path / "Dropbox" / "Apps" / "GTD").mkdir(parents=True)
+    assert db.default_db_path(str(tmp_path)) == str(tmp_path / "Dropbox" / "Apps" / "GTD" / "gtd.db")

@@ -42,7 +42,7 @@ Environment variables, all optional:
 | --- | --- | --- |
 | `GTD_HOST` | `127.0.0.1` | Address to listen on |
 | `GTD_PORT` | `5005` | Port to listen on |
-| `GTD_DB` | `./gtd.db` | Path to the SQLite file |
+| `GTD_DB` | `~/Dropbox/Apps/GTD/gtd.db` if that folder exists, else `./gtd.db` | Path to the SQLite file |
 | `GTD_SECRET` | random on each start | Flask session key (used for flash messages) |
 | `GTD_DEBUG` | off | Set to `1` for Flask debug mode and auto-reload |
 

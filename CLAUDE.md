@@ -25,7 +25,7 @@ uv run pytest -m browser                        # browser tests (real Chromium, 
 ```
 
 Env vars:
-- `GTD_DB` points to a different SQLite file. The default is `./gtd.db`, which holds the user's real data and is gitignored.
+- `GTD_DB` points to a different SQLite file. The default is `~/Dropbox/Apps/GTD/gtd.db` when that folder exists (the database syncs between machines through Dropbox, one machine at a time; stop the server and let Dropbox finish before switching), else `./gtd.db`. Either way it holds the user's real data; `gtd.db*` is gitignored. See `default_db_path()` in `db.py`.
 - `GTD_SECRET` sets the Flask session key used for flash messages.
 - `GTD_DEBUG=1` turns on Flask's debug mode and auto-reload.
 
