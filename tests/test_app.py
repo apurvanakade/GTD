@@ -648,3 +648,10 @@ def test_task_form_accepts_words_for_due_date(client, conn):
     assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
     client.post(f"/tasks/{tid}", data={"title": "call", "due_date": "gibberish"})  # keeps the old date
     assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
+
+
+def test_due_date_box_has_a_calendar_picker(client, conn):
+    pid = db.add_project(conn, "P")
+    tid = db.add_task(conn, "call", status="next", project_id=pid)
+    html = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert 'name="due_date"' in html and 'class="cal"' in html and 'type="date" class="picker"' in html

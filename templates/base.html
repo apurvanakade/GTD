@@ -61,6 +61,17 @@ document.addEventListener('keydown', e => {
 });
 // Off the Inbox page, capture happens in a dialog.
 document.querySelector('.add-inbox')?.addEventListener('click', () => document.querySelector('.capture-dialog').showModal());
+// 📅 opens the native date picker; its pick lands in the text box beside it.
+document.addEventListener('click', e => {
+  const b = e.target.closest('.date-field .cal');
+  if (!b) return;
+  const field = b.closest('.date-field'), text = field.querySelector('input[name]'), picker = field.querySelector('.picker');
+  picker.value = /^\d{4}-\d\d-\d\d$/.test(text.value) ? text.value : '';
+  picker.showPicker();
+});
+document.addEventListener('change', e => {
+  if (e.target.matches('.date-field .picker')) e.target.closest('.date-field').querySelector('input[name]').value = e.target.value;
+});
 // The running timer's clock.
 const clock = document.querySelector('.running-timer .clock');
 if (clock) setInterval(() => {

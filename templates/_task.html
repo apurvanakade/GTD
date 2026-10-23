@@ -25,6 +25,15 @@
 <input name="new_context" placeholder="or new context…" aria-label="New context" size="14">
 {% endmacro %}
 
+{# Type a date in words, or click 📅 for the browser's picker. base.html's JS copies the pick into the text box. #}
+{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…') %}
+<span class="date-field">
+  <input name="due_date" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="Due date">
+  <button type="button" class="cal" aria-label="Pick a date">📅</button>
+  <input type="date" class="picker" tabindex="-1" aria-hidden="true">
+</span>
+{% endmacro %}
+
 {% macro project_select(projects, selected=none) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>

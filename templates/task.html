@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import context_select, project_select with context %}
+{% from "_task.html" import context_select, project_select, date_input with context %}
 {% block title %}{{ t.title }}{% endblock %}
 {% block body %}
 {% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="row">
@@ -21,7 +21,7 @@
   <label>Project
     {{ project_select(projects, 'h0' if t.ground else t.project_id) }}
   </label>
-  <label>Due <input name="due_date" value="{{ t.due_date or '' }}" placeholder="tomorrow, sat, oct 30…"></label>
+  <label>Due {{ date_input(t.due_date) }}</label>
   <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…"></label>
   <label>Waiting on <input name="waiting_on" value="{{ t.waiting_on or '' }}"></label>
   <div class="row">
