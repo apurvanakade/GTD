@@ -29,7 +29,8 @@
     <button class="primary">Save</button>
     <button name="exit" value="1">Save &amp; exit</button>
     {% if t.status == 'abandoned' %}<button formaction="{{ url_for('revive', id=t.id) }}" title="Back to the inbox">Revive</button>
-    {% else %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Mark done" aria-label="Mark done">✓</button>{% endif %}
+    {% else %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Mark done" aria-label="Mark done">✓</button>
+    {% if t.project_id and t.status != 'done' %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
     {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
     {% elif t.status not in ('done', 'abandoned') %}<button formaction="{{ url_for('task_start', id=t.id) }}" class="icon" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
     {% if seconds %}<span class="hint">{{ seconds|hm }} spent</span>{% endif %}

@@ -416,6 +416,15 @@ def complete(id):
     return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
 
 
+@app.post("/tasks/<int:id>/done-then-project")
+def complete_then_project(id):
+    """✓→: finish a step and open its project, to pick the next action. The one deliberate jump."""
+    c = conn()
+    t = db.get_task(c, id) or abort(404)
+    db.complete_task(c, id, today(), now())
+    return redirect(url_for("project_view", id=t["project_id"])) if t["project_id"] else back()
+
+
 @app.post("/tasks/<int:id>/delete")
 def delete(id):
     """Abandons the task (it stays on Done, revivable); deleting an abandoned task deletes it for good."""

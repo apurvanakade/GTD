@@ -69,7 +69,7 @@ There is no build step, linter config or JS bundler.
   - Small bars show proportions: project progress (done steps / all steps, `done_count` in `db.projects()`) and time per project on the Timer page.
   - Buttons inside a task row (▶, ■, Make next, Activate) are compact, so every row is the same height.
   - That JS submits `form.done` with the header `X-Requested-With: fetch`. The complete route returns `204` for that header, and the row fades out in place.
-  - **No jumps.** An action stays on the page it was made on (`back()` in `app.py` redirects to the Referer). Only a link, "Save & exit", or deleting the page's own record (a project, a horizon, an abandoned task) goes elsewhere. Don't add helpful redirects.
+  - **No jumps.** An action stays on the page it was made on (`back()` in `app.py` redirects to the Referer). Only a link, "Save & exit", ✓→ (below), or deleting the page's own record (a project, a horizon, an abandoned task) goes elsewhere. Don't add helpful redirects.
   - Search suggests as you type: the JS fetches `/search/suggest?q=` (JSON, `db.suggest()`), the 10 best fuzzy title matches among tasks (open, plus the newest 200 done), projects, horizons and reference; open items rank before done ones. ↑/↓ move, Enter or a click opens the highlighted one, Esc closes.
   - Fuzzy scoring is `fuzzy.score()` (pure): each query word must appear in the title as a substring (best, more so at a word start) or as letters in order; shorter titles win ties.
   - Enter with no suggestions submits to the full-text page (`/search?q=`, `db.search()`), a plain case-insensitive `LIKE`: every word must appear in a task's title/notes, or a project's, horizon's or reference item's title/notes. Done tasks are included, newest 50 only.
@@ -116,6 +116,7 @@ There is no build step, linter config or JS bundler.
   - Process → "Someday / maybe" asks where the item goes: a new someday project, or a `later` step of an existing project. Nothing happens until you pick.
 - **One next action per project.** `db.update_task`/`add_task` enforce it: when a project task becomes `next`, the project's other `next` tasks become `later`.
   - When a project's next action is finished, nothing is promoted automatically and nothing navigates: the project shows as stalled (⚠) until you pick one with "Make next" on its page.
+  - ✓→ (on a project step's row outside its project page, and on its task page; `/tasks/<id>/done-then-project`, `complete_then_project()` in `app.py`) completes the step and opens its project, so you can pick the next one right away. It's the plain ✓ plus a deliberate jump; a task without a project just stays on the page.
   - Adding a step to a project that already has a next action makes it `later` by default, and so does processing an inbox item into such a project.
   - An active project with no `next` task is "stalled" (⚠).
   - Tasks of waiting and someday projects stay off Next Actions (`VISIBLE_NEXT`). Waiting projects are listed on the Waiting page.

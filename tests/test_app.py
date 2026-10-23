@@ -164,6 +164,23 @@ def test_one_next_action_per_project(client, conn):
     assert b"Make next" in client.get(f"/projects/{pid}").data
 
 
+def test_done_then_pick_next(client, conn):
+    """✓→ completes a project step and opens its project, to choose the next action there."""
+    pid = db.add_project(conn, "P")
+    a = db.add_task(conn, "a", status="next", project_id=pid)
+    db.add_task(conn, "b", status="later", project_id=pid)
+    h = db.add_task(conn, "h", status="next", ground=1)
+    assert f'/tasks/{a}/done-then-project' in client.get("/next").get_data(as_text=True)
+    assert f'/tasks/{a}/done-then-project' in client.get(f"/tasks/{a}").get_data(as_text=True)
+    assert f'/tasks/{h}/done-then-project' not in client.get("/h0").get_data(as_text=True)  # no project
+    assert 'done-then-project' not in client.get(f"/projects/{pid}").get_data(as_text=True)  # already there
+    r = client.post(f"/tasks/{a}/done-then-project", headers={"Referer": "http://localhost/next"})
+    assert r.status_code == 302 and r.headers["Location"].endswith(f"/projects/{pid}")
+    assert db.get_task(conn, a)["status"] == "done"
+    r = client.post(f"/tasks/{h}/done-then-project", headers={"Referer": "http://localhost/h0"})
+    assert r.headers["Location"].endswith("/h0") and db.get_task(conn, h)["status"] == "done"
+
+
 def test_process_next_into_project_with_next_becomes_later(client, conn):
     pid = db.add_project(conn, "P")
     db.add_task(conn, "a", status="next", project_id=pid)

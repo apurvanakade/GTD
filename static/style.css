@@ -189,15 +189,15 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
-.task .start button, .task .timing button, .task .make-next button {
+.task .start button, .task .timing button, .task .make-next button, .task .then button {
   padding: 0 6px; font-size: .75rem; line-height: 20px; color: var(--muted);
 }
-.task .start button { opacity: 0; }
-.task:hover .start button, .task .start button:focus { opacity: 1; }
-.task .start button:hover { color: var(--accent); }
+.task .start button, .task .then button { opacity: 0; }
+.task:hover .start button, .task .start button:focus, .task:hover .then button, .task .then button:focus { opacity: 1; }
+.task .start button:hover, .task .then button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
 .task .make-next button { color: var(--accent); border-color: var(--line); }
-@media (hover: none) { .task .start button { opacity: 1; } }
+@media (hover: none) { .task .start button, .task .then button { opacity: 1; } }
 
 /* A thin bar: project progress, time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }

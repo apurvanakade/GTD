@@ -71,6 +71,16 @@ def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
     assert page.url == live + "/next"
 
 
+def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
+    page.goto(live + "/next")
+    tile = row(page, "buy tiles")
+    tile.hover()
+    tile.locator("form.then button").click()
+    page.wait_for_url("**/projects/*")
+    assert page.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
+    assert db.get_task(conn, 2)["status"] == "done"
+
+
 def test_plus_inbox_dialog_captures(page, live, conn):
     page.goto(live + "/next")
     page.click(".add-inbox")
