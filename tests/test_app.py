@@ -14,6 +14,7 @@ from conftest import NOW, TODAY
 @pytest.mark.parametrize("rule,expected", [
     ("weekly", (1, "week")), ("every 2 weeks", (2, "week")), ("every 6 months", (6, "month")),
     ("Daily", (1, "day")), ("every year", (1, "year")), ("every 0 days", None), ("fortnightly", None),
+    ("every 2 weeks after done", (2, "week")), ("weekly after completion", None),
     ("every 12 months", (12, "month")), ("Every  10  Days ", (10, "day")),
 ])
 def test_parse(rule, expected):
@@ -25,6 +26,13 @@ def test_next_due_keeps_anchor_and_skips_past():
     assert recur.next_due("weekly", date(2026, 10, 1), TODAY) == date(2026, 10, 29)  # overdue: skip ahead
     assert recur.next_due("monthly", date(2026, 1, 31), date(2026, 1, 31)) == date(2026, 2, 28)
     assert recur.next_due("every 6 months", None, TODAY) == date(2027, 4, 22)
+
+
+def test_after_done_counts_from_completion():
+    rule = "every 2 weeks after done"
+    assert recur.next_due(rule, date(2026, 10, 1), TODAY) == date(2026, 11, 5)  # from today, not the overdue due date
+    assert recur.next_due(rule, date(2026, 12, 1), TODAY) == date(2026, 11, 5)  # even if completed early
+    assert list(recur.occurrences(rule, date(2026, 10, 22), date(2027, 3, 1))) == []
 
 
 # --- inbox processing ------------------------------------------------------

@@ -49,6 +49,7 @@ There is no build step, linter config or JS bundler.
   - Both step from their anchor by `n*k`, so month-end days don't drift.
   - `next_due()` returns the first such date after today, stepping from the old due date.
   - `occurrences()` yields every such date up to an end date. Use it for projections such as the calendar.
+  - A rule ending in `after done` (e.g. `every 2 weeks after done`) counts from the completion date: `next_due()` steps from today, and `occurrences()` yields nothing, so the calendar shows no projection.
 - **Templates** extend `base.html`, which holds the nav, capture (an inline box on the Inbox page only; elsewhere a "+ Inbox" button opens a `<dialog>`; `/` does either), the search box (`f` focuses it) and the only JS on the page.
   - That JS submits `form.done` with the header `X-Requested-With: fetch`. The complete route returns `204` for that header, and the row fades out in place. If the response was redirected, the JS navigates there instead.
   - Search (`/search?q=`, `db.search()`) is a plain case-insensitive `LIKE`: every word must appear in a task's title/notes/context/waiting-on, or a project's or horizon's title/notes. Done tasks are included, newest 50 only.
