@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}GTD{% endblock %}</title>
+<script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -31,6 +32,7 @@
   <form class="search" action="{{ url_for('search') }}">
     <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search…  ( f )" aria-label="Search" required>
   </form>
+  <button type="button" class="theme-toggle" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
 </div>
 {% if timer %}
 <form class="running-timer" method="post" action="{{ url_for('timer_stop') }}">
@@ -72,6 +74,13 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if (e.target.matches('.date-field .picker')) e.target.closest('.date-field').querySelector('input[name]').value = e.target.value;
+});
+// Light / dark toggle; the pick overrides the system setting and is remembered.
+document.querySelector('.theme-toggle').addEventListener('click', () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.theme = root.dataset.theme; } catch (e) {}
 });
 // The running timer's clock.
 const clock = document.querySelector('.running-timer .clock');

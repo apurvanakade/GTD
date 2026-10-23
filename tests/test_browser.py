@@ -108,3 +108,17 @@ def test_running_timer_clock_ticks(page, live):
     before = page.inner_text(".running-timer .clock")
     page.clock.run_for(3000)
     assert page.inner_text(".running-timer .clock") != before
+
+
+def test_theme_toggle_overrides_system_and_persists(page, live):
+    page.emulate_media(color_scheme="light")
+    page.goto(live + "/next")
+    bg = lambda: page.evaluate("getComputedStyle(document.body).backgroundColor")
+    light = bg()
+    page.locator(".theme-toggle").click()
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+    assert bg() != light
+    page.reload()
+    assert page.evaluate("document.documentElement.dataset.theme") == "dark"
+    page.locator(".theme-toggle").click()
+    assert bg() == light
