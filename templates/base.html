@@ -11,6 +11,7 @@
   {% set ep = request.endpoint %}
   <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep in ('inbox', 'process') }}">Inbox{% if counts.inbox %} <b>{{ counts.inbox }}</b>{% endif %}</a>
   <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next <b>{{ counts.next }}</b></a>
+  <a href="{{ url_for('h0_view') }}" class="{{ 'on' if ep == 'h0_view' }}">H0{% if counts.h0 %} <b>{{ counts.h0 }}</b>{% endif %}</a>
   <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{% if counts.stalled %} <b class="warn">{{ counts.stalled }}</b>{% endif %}</a>
   <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{% if counts.waiting %} <b>{{ counts.waiting }}</b>{% endif %}</a>
   <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>

@@ -80,7 +80,6 @@ def plan(tasks, projects):
             "project_src": t.get("projectId") if t.get("projectId") in live else None,
             "due_date": (t.get("dueDate") or "")[:10] or None,
             "recur": rule,
-            "waiting_on": None,
         })
     return out_projects, out_tasks, reference, warnings
 

@@ -6,7 +6,6 @@
     {% if context and t.context %}<a class="ctx" href="{{ url_for('next_view', ctx=t.context) }}">{{ t.context }}</a>{% endif %}
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
-    {% if t.waiting_on %}<span>⏳ {{ t.waiting_on }}</span>{% endif %}
     {% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}
     {% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}
     {% if t.status == 'later' %}<span>later</span>{% endif %}
@@ -40,4 +39,5 @@
   <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
   {% for p in projects %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
 </select>
+<input name="new_project" placeholder="or new project…" aria-label="New project" size="14">
 {% endmacro %}

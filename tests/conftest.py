@@ -41,7 +41,7 @@ def seed(c):
     db.add_task(c, "inbox item", notes="from email")
     db.add_task(c, "buy tiles", status="next", context="@home", project_id=active, due_date="2026-10-01")
     db.add_task(c, "lay tiles", status="later", project_id=active)
-    db.add_task(c, "quote from Bob", status="waiting", waiting_on="Bob", project_id=active, due_date="2026-10-22")
+    db.add_task(c, "quote from Bob", status="waiting", project_id=active, due_date="2026-10-22")
     db.add_task(c, "vacuum", status="next", context="@home", ground=1, recur="weekly", due_date="2026-10-22")
     db.add_task(c, "bins", status="next", context="@home", ground=1, recur="every 2 weeks", due_date="2026-11-03")
     db.add_task(c, "call mum", status="next", context="@calls", ground=1)

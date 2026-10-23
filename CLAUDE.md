@@ -21,6 +21,7 @@ uv run app.py                                   # http://127.0.0.1:5005 (GTD_HOS
 uv run pytest                                   # all tests
 uv run pytest tests/test_app.py::test_horizons  # one test
 uv run pytest -k calendar                       # by keyword
+uv run pytest -m browser                        # browser tests (real Chromium, ~5s); excluded from the default run
 ```
 
 Env vars:
@@ -73,8 +74,8 @@ There is no build step, linter config or JS bundler.
 - **Task statuses:** `inbox | next | waiting | later | done`.
   - `later` means a project step that isn't the next action yet.
 - **No orphaned tasks:** a `next`/`waiting` task needs a project unless it is deliberately marked H0, "ground level" (`tasks.ground`); a `later` task always needs a project. See `ORPHAN` in `db.py` and `orphaned()` in `app.py`.
-  - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. A repeat rule doesn't exempt a task.
-  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag.
+  - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. The macro also renders an "or new project…" box (`new_project`); `task_fields_from_form()` creates an active project from it and uses it, overriding the dropdown. A repeat rule doesn't exempt a task.
+  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open next actions have their own H0 tab right of Next (`/h0`, `VISIBLE_H0`, repeats hidden until due) and stay off Next Actions and its count (`VISIBLE_NEXT`).
   - The `ground` column was added by `_migrate()`, which marked the open repeating tasks that had no project as H0.
   - Process refuses next/waiting with neither. The task form and the calendar add form send such a task to the inbox instead.
   - Existing orphans are listed on the weekly review; nothing moves them automatically.
@@ -96,6 +97,7 @@ There is no build step, linter config or JS bundler.
   - `complete_task()` marks the task done and inserts the next instance.
   - A repeat rule without a due date gets today as its due date.
 - **Projects can't be marked done while they have open tasks.**
+- **Only an empty project can be deleted** (no tasks at all, done ones included). The project page shows the button only then.
 - **Deleting a task is a hard delete.**
 - **Horizons** live in one table keyed by `level`:
   - `purpose` and `vision` are single seeded notes that can't be deleted.
@@ -106,11 +108,11 @@ There is no build step, linter config or JS bundler.
 Every change must be verified before it is called done:
 1. Write or extend a test that fails without the change, and watch it fail first.
 2. Run the whole suite (`uv run pytest`, about 2s).
-3. For template or JS changes, also click through the real app (`GTD`) in the browser. JS behavior isn't exercised by the tests, only its contract with the HTML.
+3. For template or JS changes, also run `uv run pytest -m browser`, and add a browser test for new JS behavior. Click through the real app (`GTD`) for anything visual.
 
 Enforcement:
-- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail.
-- `.githooks/pre-commit` refuses commits while tests fail. It is enabled per clone with `git config core.hooksPath .githooks`.
+- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail. It also runs the browser tests when `templates/` or `static/` have uncommitted changes.
+- `.githooks/pre-commit` refuses commits while tests fail. It also runs the browser tests when the commit touches `templates/` or `static/`. It is enabled per clone with `git config core.hooksPath .githooks`.
 
 Layout (Flask test client, temporary DB):
 - `tests/conftest.py` holds the fixtures:
@@ -119,6 +121,7 @@ Layout (Flask test client, temporary DB):
   - `seed(c)` builds one of everything the UI can show (each task status, H0, repeats, waiting/someday/done projects, horizons, contexts). Its ids are deterministic.
   - New date-dependent behavior should be tested against the fixed date.
 - `tests/test_app.py` holds the targeted tests: GTD rules, routes, recurrence, migrations, the import, edge cases.
+- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, a live server on a random port with the seeded DB) drives the JS: tick-off, capture dialog, `/` and `f` keys, date picker, timer clock, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
 - `tests/test_crawl.py` holds the generic tests. They usually catch accidental bugs before anyone writes a targeted test for them:
   - Every link reachable from `/` must load.
   - Every form, with each submit button and each `<select>` option, must submit and land on a 200 page. Each submission gets a fresh copy of the seeded DB and sends its own page as the Referer.

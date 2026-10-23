@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS {name} (
   project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
   due_date TEXT,
   recur TEXT,
-  waiting_on TEXT,
   ground INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
@@ -67,15 +66,17 @@ CREATE INDEX IF NOT EXISTS time_entries_task ON time_entries(task_id);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
-TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "waiting_on", "ground"}
+TASK_FIELDS = {"title", "notes", "status", "context", "project_id", "due_date", "recur", "ground"}
 PROJECT_FIELDS = {"title", "notes", "status"}
 TASK_SELECT = "SELECT t.*, p.title AS project_title, p.status AS project_status FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
-# Recurring tasks stay out of Next Actions until their due day; so do tasks of waiting/someday projects.
+# Next Actions leave out H0 tasks (they live on Horizons), recurring tasks until their due day, and tasks of waiting/someday projects.
 # Open tasks need a project unless deliberately marked H0 (ground level); later steps always need one.
 # Inbox items aren't processed yet.
 ORPHAN = """t.project_id IS NULL AND (t.status = 'later' OR (t.status IN ('next', 'waiting') AND NOT t.ground))"""
-VISIBLE_NEXT = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)
+READY = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"""
+VISIBLE_NEXT = f"""{READY} AND NOT t.ground
   AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))"""
+VISIBLE_H0 = f"{READY} AND t.ground"
 
 
 def connect(path=None):
@@ -90,6 +91,11 @@ def connect(path=None):
 def _migrate(c):
     """Rebuild tables whose status CHECK predates the current one (SQLite can't alter a CHECK)."""
     old = dict(c.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'").fetchall())
+    if "tasks" in old and "waiting_on" in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
+        # The "waiting on" field was dropped; whoever it named now lives in the notes.
+        c.executescript("""BEGIN; UPDATE tasks SET notes = CASE WHEN notes = '' THEN '' ELSE notes || char(10) || char(10) END
+            || 'Waiting on: ' || trim(waiting_on) WHERE trim(COALESCE(waiting_on, '')) != '';
+            ALTER TABLE tasks DROP COLUMN waiting_on; COMMIT;""")
     steps = []
     if "projects" in old and "'waiting'" not in old["projects"]:
         steps += [PROJECTS_TABLE.format(name="projects_new"), "INSERT INTO projects_new SELECT * FROM projects",
@@ -97,9 +103,9 @@ def _migrate(c):
     if "tasks" in old and "'someday'" in old["tasks"]:
         # Someday tasks inside a project become later steps; loose ones go back to the inbox.
         steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new (id, title, notes, status,
-            context, project_id, due_date, recur, waiting_on, created_at, completed_at) SELECT id, title, notes,
+            context, project_id, due_date, recur, created_at, completed_at) SELECT id, title, notes,
             CASE WHEN status != 'someday' THEN status WHEN project_id IS NULL THEN 'inbox' ELSE 'later' END,
-            context, project_id, due_date, recur, waiting_on, created_at, completed_at FROM tasks""",
+            context, project_id, due_date, recur, created_at, completed_at FROM tasks""",
                   "DROP TABLE tasks", "ALTER TABLE tasks_new RENAME TO tasks"]
     if steps:
         # Foreign keys off, or dropping projects would null every task's project_id.
@@ -202,9 +208,14 @@ def next_actions(c, today):
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""", (today.isoformat(),)).fetchall()
 
 
-def upcoming_recurring(c, today):
+def h0_actions(c, today):
+    return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_H0}
+        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""", (today.isoformat(),)).fetchall()
+
+
+def upcoming_recurring(c, today, ground=False):
     return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND t.recur IS NOT NULL
-        AND t.due_date > ? ORDER BY t.due_date""", (today.isoformat(),)).fetchall()
+        AND t.due_date > ? AND t.ground = ? ORDER BY t.due_date""", (today.isoformat(), int(ground))).fetchall()
 
 
 def overdue(c, today):
@@ -233,6 +244,7 @@ def counts(c, today):
     return {
         "inbox": one("SELECT count(*) FROM tasks WHERE status = 'inbox'"),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_NEXT}", today.isoformat()),
+        "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE status = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'"),
@@ -254,7 +266,7 @@ def _matching(q, cols):
 
 def search(c, q):
     """Tasks (open, then the latest 50 done), projects and horizons whose text contains every word of q."""
-    where, args = _matching(q, ["t.title", "t.notes", "t.context", "t.waiting_on"])
+    where, args = _matching(q, ["t.title", "t.notes", "t.context"])
     tasks = c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' AND {where} ORDER BY
         CASE t.status WHEN 'inbox' THEN 0 WHEN 'next' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END,
         lower(t.title)""", args).fetchall()
@@ -277,6 +289,15 @@ def update_project(c, id, **fields):
     if fields.get("status") == "done":
         c.execute("UPDATE projects SET completed_at = datetime('now') WHERE id = ?", (id,))
     _update(c, "projects", PROJECT_FIELDS, id, fields)
+
+
+def delete_project(c, id):
+    """Only an empty project (no tasks at all, done ones included) can be deleted."""
+    if c.execute("SELECT 1 FROM tasks WHERE project_id = ?", (id,)).fetchone():
+        return False
+    c.execute("DELETE FROM projects WHERE id = ?", (id,))
+    c.commit()
+    return True
 
 
 def get_project(c, id):

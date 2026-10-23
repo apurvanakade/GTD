@@ -55,7 +55,7 @@ def form_value(name):
 def task_fields_from_form():
     """Editable task fields present in the submitted form."""
     fields = {}
-    for name in ("title", "notes", "context", "due_date", "recur", "waiting_on"):
+    for name in ("title", "notes", "context", "due_date", "recur"):
         if name in request.form:
             fields[name] = form_value(name)
     if "notes" in fields:
@@ -69,6 +69,10 @@ def task_fields_from_form():
         raw = request.form["project_id"]
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
+    new_project = form_value("new_project")
+    if new_project:  # typed into the "or new project…" box; overrides the dropdown
+        fields["project_id"] = db.add_project(conn(), new_project)
+        fields["ground"] = 0
     if "status" in request.form:
         fields["status"] = request.form["status"]
     if fields.get("due_date"):
@@ -162,9 +166,6 @@ def process_item(id):
         if action == "next" and not fields.get("context"):
             flash("Pick a context for the next action.")
             return redirect(url_for("process"))
-        if action == "waiting" and not fields.get("waiting_on"):
-            flash("Who are you waiting on?")
-            return redirect(url_for("process"))
         pid = fields.get("project_id")
         if orphaned(action, pid, fields.get("ground")):
             flash("Pick a project, or H0 · ground level if it really belongs to none.")
@@ -190,6 +191,18 @@ def next_view():
     shown = {ctx: by_ctx.get(ctx, [])} if ctx else dict(sorted(by_ctx.items(), key=lambda kv: (kv[0] != "(no context)", kv[0])))
     return render_template("next.html", groups=shown, by_ctx=by_ctx, ctx=ctx,
                            upcoming=db.upcoming_recurring(conn(), today()))
+
+
+@app.route("/h0")
+def h0_view():
+    ctx = request.args.get("ctx")
+    tasks = db.h0_actions(conn(), today())
+    by_ctx = {}
+    for t in tasks:
+        by_ctx.setdefault(t["context"] or "(no context)", []).append(t)
+    shown = {ctx: by_ctx.get(ctx, [])} if ctx else dict(sorted(by_ctx.items(), key=lambda kv: (kv[0] != "(no context)", kv[0])))
+    return render_template("h0.html", groups=shown, by_ctx=by_ctx, ctx=ctx,
+                           upcoming=db.upcoming_recurring(conn(), today(), ground=True))
 
 
 @app.route("/waiting")
@@ -312,6 +325,17 @@ def project_view(id):
         return redirect(url_for("project_view", id=id))
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
                            processing=request.args.get("processing"), seconds=db.project_seconds(c, id, now()))
+
+
+@app.post("/projects/<int:id>/delete")
+def project_delete(id):
+    c = conn()
+    p = db.get_project(c, id) or abort(404)
+    if db.delete_project(c, id):
+        flash(f"Deleted “{p['title']}”.")
+        return redirect(url_for("projects_view"))
+    flash("Only an empty project can be deleted: finish or delete its tasks first.")
+    return redirect(url_for("project_view", id=id))
 
 
 @app.post("/projects/<int:id>/tasks")
