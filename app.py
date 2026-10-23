@@ -219,8 +219,10 @@ def someday():
 @app.route("/review")
 def review():
     c = conn()
+    all_next = db.next_actions(c, today())
+    nexts = [t for t in all_next if not (t["due_date"] and t["due_date"] > today().isoformat())]
     return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()),
-                           orphans=db.orphans(c))
+                           orphans=db.orphans(c), nexts=nexts, scheduled=len(all_next) - len(nexts))
 
 
 @app.route("/search")
@@ -320,7 +322,7 @@ def project_view(id):
         db.update_project(c, id, **fields)
         if fields.get("status") == "someday":
             flash(f"Moved “{fields['title']}” to someday / maybe.")
-        if fields.get("status") in ("done", "waiting", "someday"):
+        if fields.get("status") in ("done", "waiting"):
             return redirect(url_for("projects_view"))
         return redirect(url_for("project_view", id=id))
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),

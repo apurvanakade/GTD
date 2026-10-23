@@ -120,7 +120,8 @@ def test_move_project_to_someday_from_task(client, conn):
     db.update_project(conn, pid, notes="seed list")
     tid = db.add_task(conn, "dig", status="next", context="@home", project_id=pid)
     assert "Move project to someday" in client.get(f"/tasks/{tid}").get_data(as_text=True)
-    client.post(f"/projects/{pid}", data={"status": "someday"})
+    r = client.post(f"/projects/{pid}", data={"status": "someday"})
+    assert r.headers["Location"].endswith(f"/projects/{pid}")  # stays on the project
     p = db.get_project(conn, pid)
     assert (p["status"], p["title"], p["notes"]) == ("someday", "Garden", "seed list")  # notes kept
     assert "Move project to someday" not in client.get(f"/tasks/{tid}").get_data(as_text=True)
@@ -431,6 +432,16 @@ def test_review_orphan_wording(client, conn):
     assert "Every open task has a project or is H0" in html and "repeat" not in html
     db.add_task(conn, "legacy", status="next")
     assert "mark it H0" in client.get("/review").get_data(as_text=True)
+
+
+def test_review_next_actions_skip_scheduled(client, conn):
+    pid = db.add_project(conn, "Trip")
+    db.add_task(conn, "book flights", status="next", context="@home", project_id=pid, due_date="2026-12-01")
+    db.add_task(conn, "pack bags", status="later", context="@home", project_id=pid)
+    db.add_task(conn, "renew visa", status="next", context="@home", project_id=db.add_project(conn, "Visa"))
+    html = client.get("/review").get_data(as_text=True)
+    assert "renew visa" in html and "book flights" not in html  # listed like orphans
+    assert "1 scheduled for later is left out" in html
 
 
 def test_task_form_edges(client, conn):
