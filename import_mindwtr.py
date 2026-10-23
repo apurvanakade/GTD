@@ -63,8 +63,8 @@ def plan(tasks, projects):
             continue
         contexts = t.get("contexts") or []
         notes = (t.get("description") or "").strip()
-        if len(contexts) > 1:
-            notes = (notes + "\n\nOther contexts: " + " ".join(contexts[1:])).strip()
+        if contexts:  # this app has no contexts; keep Mindwtr's in the notes
+            notes = (notes + "\n\nContexts: " + " ".join(contexts)).strip()
         title, rule = t["title"], None
         if t.get("recurrence"):
             rule = map_recurrence(t["recurrence"])
@@ -76,7 +76,6 @@ def plan(tasks, projects):
             warnings.append(f"project not imported, task left loose: {t['title']}")
         out_tasks.append({
             "title": title, "notes": notes, "status": t["status"],
-            "context": contexts[0] if contexts else None,
             "project_src": t.get("projectId") if t.get("projectId") in live else None,
             "due_date": (t.get("dueDate") or "")[:10] or None,
             "recur": rule,
@@ -113,8 +112,6 @@ def main():
     print("Tasks:   ", dict(Counter(t["status"] for t in out_tasks)),
           f"({sum(bool(t['recur']) for t in out_tasks)} repeating)")
     print("Reference items -> reference.md:", len(reference))
-    print("Next actions without a context:",
-          sum(t["status"] == "next" and not t["context"] for t in out_tasks))
     for w in warnings:
         print("  !", w)
 
