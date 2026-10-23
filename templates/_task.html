@@ -1,5 +1,6 @@
-{% macro row(t, project=True, context=False, make_next=False) %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}">
+{% macro row(t, project=True, context=False, make_next=False, grip=False) %}
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}" data-id="{{ t.id }}">
+  {% if grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   <form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>
   <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
   <span class="meta">

@@ -205,6 +205,14 @@ def h0_view():
                            upcoming=db.upcoming_recurring(conn(), today(), ground=True))
 
 
+@app.post("/h0/add")
+def h0_add():
+    fields = task_fields_from_form()
+    if fields.get("title"):
+        db.add_task(conn(), fields.pop("title"), status="next", ground=1, project_id=None, **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "status")})
+    return redirect(url_for("h0_view"))
+
+
 @app.route("/waiting")
 def waiting():
     return render_template("list.html", title="Waiting for", tasks=db.tasks_with_status(conn(), "waiting"),
@@ -214,6 +222,11 @@ def waiting():
 @app.route("/someday")
 def someday():
     return render_template("someday.html", projects=db.projects(conn(), "someday"))
+
+
+@app.route("/done")
+def done():
+    return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"))
 
 
 @app.route("/review")
@@ -247,8 +260,13 @@ def task_view(id):
             fields["status"] = "inbox"
             flash("No project and not H0 · ground level (later steps always need a project), so this went back to the inbox.")
         flash_demoted(db.update_task(c, id, **fields))
-        return redirect(request.form.get("next") or url_for("task_view", id=id))
-    return render_template("task.html", t=t, projects=db.open_projects(c), back=request.referrer,
+        nxt = request.form.get("next") or None
+        if request.form.get("exit"):
+            return redirect(nxt or url_for("next_view"))
+        flash("Saved.")
+        return redirect(url_for("task_view", id=id, back=nxt))  # stay, but keep where "exit" goes
+    return render_template("task.html", t=t, projects=db.open_projects(c),
+                           back=request.args.get("back") or request.referrer,
                            seconds=db.task_seconds(c, id, now()))
 
 
@@ -337,6 +355,17 @@ def project_delete(id):
         flash(f"Deleted “{p['title']}”.")
         return redirect(url_for("projects_view"))
     flash("Only an empty project can be deleted: finish or delete its tasks first.")
+    return redirect(url_for("project_view", id=id))
+
+
+@app.post("/projects/<int:id>/order")
+def project_order(id):
+    """The project page's drag-and-drop sends the task ids in their new order."""
+    c = conn()
+    db.get_project(c, id) or abort(404)
+    db.reorder_project(c, id, [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
     return redirect(url_for("project_view", id=id))
 
 

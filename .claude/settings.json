@@ -1,4 +1,10 @@
 {
+  "permissions": {
+    "allow": [
+      "ClaudeInChromeDomain(127.0.0.1:5006)",
+      "ClaudeInChromeDomain(127.0.0.1:5005)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {
@@ -11,11 +17,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "allow": [
-      "ClaudeInChromeDomain(127.0.0.1:5006)"
     ]
   }
 }

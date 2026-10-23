@@ -7,7 +7,7 @@ import db
 import import_mindwtr
 import recur
 from app import app, local_input
-from conftest import NOW, TODAY
+from conftest import NOW, TODAY, seed
 
 
 # --- recur -----------------------------------------------------------------
@@ -420,6 +420,20 @@ def test_search(client, conn):
 
 # --- edges -----------------------------------------------------------------
 
+def test_saving_a_task_stays_on_its_page(client, conn):
+    pid = db.add_project(conn, "P")
+    tid = db.add_task(conn, "call", status="next", context="@calls", project_id=pid)
+    # Saving takes it off Next; the page stays put instead of returning to a list it's no longer on.
+    r = client.post(f"/tasks/{tid}", data={"status": "waiting", "next": "/next"})
+    assert r.headers["Location"] == f"/tasks/{tid}?back=/next"
+    page = client.get(r.headers["Location"], headers={"Referer": f"http://localhost/tasks/{tid}"}).get_data(as_text=True)
+    assert "Saved." in page and 'name="next" value="/next"' in page and "Save &amp; exit" in page
+    assert db.get_task(conn, tid)["status"] == "waiting"
+    # Save & exit goes back where you came from.
+    r = client.post(f"/tasks/{tid}", data={"status": "waiting", "next": "/next", "exit": "1"})
+    assert r.headers["Location"] == "/next"
+
+
 def test_delete_from_task_page_after_saving(client, conn):
     tid = db.add_task(conn, "x", status="next", context="@home", ground=1)
     # After a save the task page is its own referrer, so its back link points at itself.
@@ -741,8 +755,59 @@ def test_h0_tab_lists_ground_next_actions(client, conn):
     assert db.counts(conn, date(2026, 10, 22))["h0"] == 1
 
 
+def test_add_h0_task_straight_from_h0_tab(client, conn):
+    page = client.get("/h0").data
+    assert b'action="/h0/add"' in page
+    r = client.post("/h0/add", data={"title": "stretch", "context": "@home", "due_date": "", "recur": "daily"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/h0")
+    t = conn.execute("SELECT * FROM tasks WHERE title='stretch'").fetchone()
+    assert (t["status"], t["ground"], t["project_id"], t["context"]) == ("next", 1, None, "@home")
+    assert b"stretch" in client.get("/h0").data
+    client.post("/h0/add", data={"title": "  "})  # blank title: nothing added
+    assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=''").fetchone()[0] == 0
+
+
 def test_default_db_path_prefers_dropbox_folder(tmp_path):
     assert db.default_db_path(str(tmp_path)).endswith("gtd.db")
     assert not db.default_db_path(str(tmp_path)).startswith(str(tmp_path))  # no Dropbox folder: next to the code
     (tmp_path / "Dropbox" / "Apps" / "GTD").mkdir(parents=True)
     assert db.default_db_path(str(tmp_path)) == str(tmp_path / "Dropbox" / "Apps" / "GTD" / "gtd.db")
+
+
+def test_reorder_project_tasks(client, conn):
+    ids = seed(conn)
+    titles = lambda: [t["title"] for t in db.project_tasks(conn, ids["active"])]
+    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]  # never dragged: oldest first
+    r = client.post(f"/projects/{ids['active']}/order", data={"ids": "3,2,4"}, headers={"X-Requested-With": "fetch"})
+    assert r.status_code == 204
+    assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
+    assert db.get_task(conn, 2)["status"] == "next"  # order only, statuses untouched
+    db.add_task(conn, "grout", status="later", project_id=ids["active"])
+    assert titles()[-1] == "grout"  # new steps go to the end
+    # Ids from another project are ignored.
+    client.post(f"/projects/{ids['active']}/order", data={"ids": "8,4,3,2"})
+    assert titles() == ["quote from Bob", "lay tiles", "buy tiles", "grout"] and db.get_task(conn, 8)["position"] is None
+
+
+def test_migration_keeps_project_order(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + db.TASKS_TABLE.format(name="tasks")
+                      .replace("position INTEGER,", "") + """;
+      INSERT INTO projects (id, title) VALUES (1, 'P');
+      INSERT INTO tasks (title, status, project_id) VALUES ('a', 'later', 1), ('b', 'next', 1), ('c', 'waiting', 1),
+        ('loose', 'inbox', NULL);""")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    assert [t["title"] for t in db.project_tasks(c, 1)] == ["b", "c", "a"]
+    c.close()
+
+
+def test_done_page_lists_finished_tasks_and_projects(client, conn):
+    seed(conn)
+    page = client.get("/done").get_data(as_text=True)
+    assert "old tiles" in page and "Done proj" in page
+    assert "buy tiles" not in page and "Kitchen" not in page.split("Projects")[-1]
+    assert 'href="/done"' in client.get("/next").get_data(as_text=True)

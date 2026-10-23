@@ -98,7 +98,7 @@ def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, co
         "el => { el.value = '2026-11-05'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
     assert page.input_value("input[name=due_date]") == "2026-11-05"
     with page.expect_navigation():
-        page.get_by_role("button", name="Save").click()
+        page.get_by_role("button", name="Save", exact=True).click()
     assert db.get_task(conn, 2)["due_date"] == "2026-11-05"
 
 
@@ -122,3 +122,16 @@ def test_theme_toggle_overrides_system_and_persists(page, live):
     assert page.evaluate("document.documentElement.dataset.theme") == "dark"
     page.locator(".theme-toggle").click()
     assert bg() == light
+
+
+def test_drag_reorders_project_steps(page, live, conn):
+    page.goto(live + "/projects/1")
+    titles = lambda: page.locator("ul.tasks li.task a.title").all_inner_texts()
+    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
+    with page.expect_response(lambda r: r.url.endswith("/order")) as saved:
+        row(page, "lay tiles").locator(".grip").drag_to(row(page, "buy tiles"), target_position={"x": 5, "y": 2})
+    assert saved.value.status == 204
+    assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
+    assert [t["title"] for t in db.project_tasks(conn, 1)] == ["lay tiles", "buy tiles", "quote from Bob"]
+    page.reload()
+    assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]

@@ -25,6 +25,7 @@
   <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…"></label>
   <div class="row">
     <button class="primary">Save</button>
+    <button name="exit" value="1">Save &amp; exit</button>
     <button formaction="{{ url_for('complete', id=t.id) }}">✓ Done</button>
     {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}">■ Stop timer</button>
     {% elif t.status != 'done' %}<button formaction="{{ url_for('task_start', id=t.id) }}">▶ Start timer</button>{% endif %}

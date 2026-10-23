@@ -20,7 +20,7 @@
 
 {% if p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
 <h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}{% if seconds %} <span class="hint">· {{ seconds|hm }} spent</span>{% endif %}</h2>
-<ul class="tasks">{% for t in tasks %}{{ row(t, project=False, context=True, make_next=(t.status == 'later')) }}{% endfor %}</ul>
+<ul class="tasks" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, context=True, make_next=(t.status == 'later'), grip=True) }}{% endfor %}</ul>
 <form method="post" action="{{ url_for('project_add_task', id=p.id, processing=processing) }}" class="row">
   <input name="title" placeholder="Add a step" required>
   {{ context_select(none) }}

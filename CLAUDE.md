@@ -53,11 +53,14 @@ There is no build step, linter config or JS bundler.
   - A rule ending in `after done` (e.g. `every 2 weeks after done`) counts from the completion date: `next_due()` steps from today, and `occurrences()` yields nothing, so the calendar shows no projection.
 - **`dates.py`** is pure date parsing (`parse(text, today)`): ISO, `today|tomorrow|yesterday`, weekdays (always the next one after today), `next week|month`, `in N days|weeks|months`, `oct 30`.
   - `task_fields_from_form()` runs every `due_date` through it, so the task page and Process take words. Their `date_input()` macro (`_task.html`) is a text box plus a 📅 button; the button opens a hidden native `<input type="date">` and the JS in `base.html` copies the pick into the text box. An unparseable date is flashed and ignored. The calendar's add form keeps its native date picker.
+- **Done** (`/done`, `db.done_tasks()`) lists done projects and the latest 100 done tasks, newest first.
 - **Calendar** (`/calendar`) shows a month (`?m=YYYY-MM`) or one week (`?w=<any date>`, Monday-first); the Month/Week buttons switch.
 - **Templates** extend `base.html`, which holds the nav, capture (an inline box on the Inbox page only; elsewhere a "+ Inbox" button opens a `<dialog>`; `/` does either), the search box (`f` focuses it) and the only JS on the page.
   - That JS submits `form.done` with the header `X-Requested-With: fetch`. The complete route returns `204` for that header, and the row fades out in place. If the response was redirected, the JS navigates there instead.
   - Search (`/search?q=`, `db.search()`) is a plain case-insensitive `LIKE`: every word must appear in a task's title/notes/context/waiting-on, or a project's or horizon's title/notes. Done tasks are included, newest 50 only.
   - A ◐ button next to the search box toggles light/dark. The pick sets `data-theme` on `<html>`, is kept in `localStorage`, and overrides `prefers-color-scheme`; a tiny script in `<head>` applies it before first paint.
+  - A project page's steps are reordered by dragging their ⠿ grip (`row(grip=True)`). On drop the JS posts the ids in order to `/projects/<id>/order`, which numbers `tasks.position` (`db.reorder_project()`). `project_tasks()` sorts by position; steps never dragged (`NULL`) go last, oldest first. Order is only display: dragging never changes status, so the next action needn't be on top. `_migrate()` added the column and numbered existing steps next → waiting → later.
+  - On the task page, Save stays on the page (flashes "Saved.", carries where you came from as `?back=`); "Save & exit" (`exit=1`) returns there.
   - Task rows come from the `row()` macro in `_task.html`. The context dropdown comes from its `context_select()` macro.
 - **Timer** (`/timer`) replaced a standalone time tracker on 2026-10-22. Every time entry belongs to a task.
   - Table `time_entries` (`task_id` → `tasks`, `ON DELETE CASCADE`; `start_time`, `end_time` as UTC ISO-8601 to the second, written by `db.iso()`). No `end_time` means running. A partial unique index allows only one running entry.
@@ -77,7 +80,7 @@ There is no build step, linter config or JS bundler.
   - `later` means a project step that isn't the next action yet.
 - **No orphaned tasks:** a `next`/`waiting` task needs a project unless it is deliberately marked H0, "ground level" (`tasks.ground`); a `later` task always needs a project. See `ORPHAN` in `db.py` and `orphaned()` in `app.py`.
   - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. The macro also renders an "or new project…" box (`new_project`); `task_fields_from_form()` creates an active project from it and uses it, overriding the dropdown. A repeat rule doesn't exempt a task.
-  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open next actions have their own H0 tab right of Next (`/h0`, `VISIBLE_H0`, repeats hidden until due) and stay off Next Actions and its count (`VISIBLE_NEXT`).
+  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open next actions have their own H0 tab right of Next (`/h0`, `VISIBLE_H0`, repeats hidden until due) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, context, repeat), so a ground-level task needs no Inbox or Process trip.
   - The `ground` column was added by `_migrate()`, which marked the open repeating tasks that had no project as H0.
   - Process refuses next/waiting with neither. The task form and the calendar add form send such a task to the inbox instead.
   - Existing orphans are listed on the weekly review; nothing moves them automatically.
@@ -123,7 +126,7 @@ Layout (Flask test client, temporary DB):
   - `seed(c)` builds one of everything the UI can show (each task status, H0, repeats, waiting/someday/done projects, horizons, contexts). Its ids are deterministic.
   - New date-dependent behavior should be tested against the fixed date.
 - `tests/test_app.py` holds the targeted tests: GTD rules, routes, recurrence, migrations, the import, edge cases.
-- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, a live server on a random port with the seeded DB) drives the JS: tick-off, theme toggle, capture dialog, `/` and `f` keys, date picker, timer clock, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
+- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, a live server on a random port with the seeded DB) drives the JS: tick-off, theme toggle, capture dialog, dragging project steps, `/` and `f` keys, date picker, timer clock, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
 - `tests/test_crawl.py` holds the generic tests. They usually catch accidental bugs before anyone writes a targeted test for them:
   - Every link reachable from `/` must load.
   - Every form, with each submit button and each `<select>` option, must submit and land on a 200 page. Each submission gets a fresh copy of the seeded DB and sends its own page as the Referer.

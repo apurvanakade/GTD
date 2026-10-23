@@ -1,8 +1,14 @@
 {% extends "base.html" %}
-{% from "_task.html" import row with context %}
+{% from "_task.html" import row, context_select with context %}
 {% block title %}H0 · Ground level{% endblock %}
 {% block body %}
 <h1>H0 · Ground level</h1>
+<form method="post" action="{{ url_for('h0_add') }}" class="row">
+  <input name="title" placeholder="Add an H0 task" required>
+  {{ context_select(ctx) }}
+  <input name="recur" placeholder="repeats…" aria-label="Repeats" size="10">
+  <button>Add</button>
+</form>
 <div class="chips">
   <a href="{{ url_for('h0_view') }}" class="{{ 'on' if not ctx }}">All</a>
   {% for c in CONTEXTS %}{% if by_ctx.get(c) %}

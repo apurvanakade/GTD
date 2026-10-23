@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS {name} (
   due_date TEXT,
   recur TEXT,
   ground INTEGER NOT NULL DEFAULT 0,
+  position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 )
@@ -85,6 +86,7 @@ READY = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due
 VISIBLE_NEXT = f"""{READY} AND NOT t.ground
   AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))"""
 VISIBLE_H0 = f"{READY} AND t.ground"
+STATUS_ORDER = "CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END"
 
 
 def connect(path=None):
@@ -127,6 +129,12 @@ def _migrate(c):
         # Before the H0 flag, open repeating tasks without a project were ground level implicitly.
         c.executescript("""BEGIN; ALTER TABLE tasks ADD COLUMN ground INTEGER NOT NULL DEFAULT 0;
             UPDATE tasks SET ground = 1 WHERE recur IS NOT NULL AND project_id IS NULL AND status != 'done'; COMMIT;""")
+    if "tasks" in old and "position" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
+        # Project steps became draggable; number them in the order the project page used to show.
+        c.executescript(f"""BEGIN; ALTER TABLE tasks ADD COLUMN position INTEGER;
+            UPDATE tasks SET position = o.n FROM (SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY
+              {STATUS_ORDER}, created_at, id) AS n FROM tasks t WHERE project_id IS NOT NULL) o WHERE o.id = tasks.id;
+            COMMIT;""")
 
 
 def _insert(c, table, allowed, fields):
@@ -242,9 +250,16 @@ def ground_level(c):
 
 
 def project_tasks(c, project_id):
+    """Open steps in the order dragged on the project page; steps never dragged go last, oldest first."""
     return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.status != 'done'
-        ORDER BY CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END,
-        t.created_at, t.id""", (project_id,)).fetchall()
+        ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (project_id,)).fetchall()
+
+
+def reorder_project(c, project_id, ids):
+    """Number the project's tasks in the given order; ids from other projects are ignored."""
+    c.executemany("UPDATE tasks SET position = ? WHERE id = ? AND project_id = ?",
+                  [(n, id, project_id) for n, id in enumerate(ids)])
+    c.commit()
 
 
 def counts(c, today):
@@ -317,6 +332,12 @@ def projects(c, status="active"):
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'next') AS next_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status != 'done') AS open_count
         FROM projects p WHERE p.status = ? ORDER BY lower(p.title)""", (status,)).fetchall()
+
+
+def done_tasks(c, limit=100):
+    """Finished tasks, newest first."""
+    return c.execute(f"{TASK_SELECT} WHERE t.status = 'done' ORDER BY t.completed_at DESC, t.id DESC LIMIT ?",
+                     (limit,)).fetchall()
 
 
 def open_projects(c):
@@ -470,5 +491,4 @@ def week_totals(c, since, now):
 
 def open_tasks(c):
     """Every open task, for the timer's picker: next actions first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' ORDER BY
-        CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END, lower(t.title)""").fetchall()
+    return c.execute(f"""{TASK_SELECT} WHERE t.status != 'done' ORDER BY {STATUS_ORDER}, lower(t.title)""").fetchall()

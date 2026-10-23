@@ -16,6 +16,7 @@
   <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{% if counts.stalled %} <b class="warn">{{ counts.stalled }}</b>{% endif %}</a>
   <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{% if counts.waiting %} <b>{{ counts.waiting }}</b>{% endif %}</a>
   <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
+  <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}">Done</a>
   <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
   <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
   <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
@@ -88,6 +89,36 @@ if (clock) setInterval(() => {
   const s = Math.max(0, Math.floor((Date.now() - clock.dataset.start) / 1000));
   clock.textContent = `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }, 1000);
+// Drag ⠿ to reorder a project's steps; the new order is saved in the background.
+document.querySelectorAll('ul[data-reorder]').forEach(list => {
+  let dragged = null;
+  // Only the grip starts a drag, so titles stay links and text stays selectable.
+  list.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; });
+  list.addEventListener('pointerup', () => list.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
+  list.addEventListener('dragstart', e => {
+    dragged = e.target.closest('li[draggable]');
+    if (!dragged) return;
+    dragged.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  list.addEventListener('dragover', e => {
+    const over = e.target.closest('li');
+    if (!dragged || !over) return;
+    e.preventDefault();
+    if (over === dragged) return;
+    const r = over.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) over.before(dragged); else over.after(dragged);
+  });
+  list.addEventListener('drop', e => e.preventDefault());
+  list.addEventListener('dragend', () => {
+    if (!dragged) return;
+    dragged.classList.remove('dragging');
+    dragged.removeAttribute('draggable');
+    dragged = null;
+    const ids = [...list.querySelectorAll('li[data-id]')].map(li => li.dataset.id).join(',');
+    fetch(list.dataset.reorder, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams({ids})});
+  });
+});
 // Tick off a task in place instead of reloading the page.
 document.addEventListener('submit', async e => {
   const f = e.target;
