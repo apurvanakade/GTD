@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 import pytest
 
+import dates
 import db
 import import_mindwtr
 import recur
@@ -622,3 +623,28 @@ def test_new_context_from_task_form(client, conn):
     assert db.get_task(conn, tid)["context"] == "@deep-work"
     assert "@deep-work" in db.contexts(conn)
     assert b'name="new_context"' in client.get(f"/tasks/{tid}").data
+
+
+# --- natural-language dates --------------------------------------------------
+
+@pytest.mark.parametrize("text,expected", [  # TODAY is Thursday 2026-10-22
+    ("tomorrow", date(2026, 10, 23)), ("Today", TODAY), ("yesterday", date(2026, 10, 21)),
+    ("saturday", date(2026, 10, 24)), ("sat", date(2026, 10, 24)), ("next saturday", date(2026, 10, 24)),
+    ("thursday", date(2026, 10, 29)),  # same weekday means next week
+    ("monday", date(2026, 10, 26)), ("next week", date(2026, 10, 26)), ("next month", date(2026, 11, 22)),
+    ("in 3 days", date(2026, 10, 25)), ("in 2 weeks", date(2026, 11, 5)), ("in 1 month", date(2026, 11, 22)),
+    ("oct 30", date(2026, 10, 30)), ("30 Oct", date(2026, 10, 30)), ("jan 5", date(2027, 1, 5)),
+    ("jan 5 2028", date(2028, 1, 5)), ("2026-12-01", date(2026, 12, 1)),
+    ("feb 30", None), ("blah", None), ("", None),
+])
+def test_natural_dates(text, expected):
+    assert dates.parse(text, TODAY) == expected
+
+
+def test_task_form_accepts_words_for_due_date(client, conn):
+    pid = db.add_project(conn, "P")
+    tid = db.add_task(conn, "call", status="next", project_id=pid)
+    client.post(f"/tasks/{tid}", data={"title": "call", "due_date": "saturday"})
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
+    client.post(f"/tasks/{tid}", data={"title": "call", "due_date": "gibberish"})  # keeps the old date
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-24"

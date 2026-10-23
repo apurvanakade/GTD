@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, url_for
 
+import dates
 import db
 import recur
 
@@ -70,6 +71,13 @@ def task_fields_from_form():
         fields["project_id"] = int(raw) if raw.isdigit() else None
     if "status" in request.form:
         fields["status"] = request.form["status"]
+    if fields.get("due_date"):
+        due = dates.parse(fields["due_date"], today())
+        if due:
+            fields["due_date"] = due.isoformat()
+        else:
+            flash(f"Didn't understand date “{fields['due_date']}” – try “tomorrow”, “saturday” or “oct 30”.")
+            fields.pop("due_date")
     if fields.get("recur") and not recur.parse(fields["recur"]):
         flash(f"Didn't understand repeat rule “{fields['recur']}” – try “weekly” or “every 6 months”.")
         fields.pop("recur")

@@ -21,7 +21,7 @@
   <label>Project
     {{ project_select(projects, 'h0' if t.ground else t.project_id) }}
   </label>
-  <label>Due <input type="date" name="due_date" value="{{ t.due_date or '' }}"></label>
+  <label>Due <input name="due_date" value="{{ t.due_date or '' }}" placeholder="tomorrow, sat, oct 30…"></label>
   <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…"></label>
   <label>Waiting on <input name="waiting_on" value="{{ t.waiting_on or '' }}"></label>
   <div class="row">
