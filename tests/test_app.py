@@ -318,64 +318,10 @@ def test_steps_only_exist_inside_projects(conn):
         conn.execute("UPDATE tasks SET step = 'next' WHERE id = ?", (loose,))
 
 
-def test_migrates_someday_tasks(tmp_path):
-    import sqlite3
-    path = str(tmp_path / "old.db")
-    old = sqlite3.connect(path)
-    old.executescript("""
-      CREATE TABLE projects (id INTEGER PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'someday', 'done')),
-        created_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT);
-      CREATE TABLE tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'someday', 'done')),
-        context TEXT, project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL, due_date TEXT, recur TEXT,
-        waiting_on TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT);
-      INSERT INTO projects (id, title) VALUES (1, 'P');
-      INSERT INTO tasks (title, status, project_id) VALUES ('in project', 'someday', 1), ('loose', 'someday', NULL),
-        ('n', 'next', 1);""")
-    old.commit()
-    old.close()
-    c = db.connect(path)
-    got = {r["title"]: (r["state"], r["step"], r["project_id"]) for r in c.execute("SELECT * FROM tasks")}
-    assert got == {"in project": ("open", "later", 1), "loose": ("open", None, None), "n": ("open", "next", 1)}
-    db.update_project(c, 1, status="waiting")  # new CHECK is in place
-    c.close()
-    db.connect(path).close()  # second connect is a no-op
 
 
-def test_migration_folds_waiting_on_into_notes(tmp_path):
-    import sqlite3
-    path = str(tmp_path / "old.db")
-    old = sqlite3.connect(path)
-    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + LEGACY_TASKS
-                      .replace("ground INTEGER", "waiting_on TEXT, ground INTEGER") + """;
-      INSERT INTO tasks (title, notes, status, waiting_on) VALUES ('bare', '', 'waiting', 'Bob'),
-        ('noted', 'call back', 'waiting', 'Ann'), ('blank', 'keep', 'waiting', ''), ('none', '', 'next', NULL);""")
-    old.commit()
-    old.close()
-    c = db.connect(path)
-    assert "waiting_on" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]
-    assert {r["title"]: r["notes"] for r in c.execute("SELECT * FROM tasks")} == {
-        "bare": "Waiting on: Bob", "noted": "call back\n\nWaiting on: Ann", "blank": "keep", "none": ""}
-    c.close()
-    db.connect(path).close()  # second connect is a no-op
 
 
-def test_migration_marks_projectless_repeats_h0(tmp_path):
-    import sqlite3
-    path = str(tmp_path / "old.db")
-    old = sqlite3.connect(path)
-    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + LEGACY_TASKS
-                      .replace("ground INTEGER NOT NULL DEFAULT 0,", "") + """;
-      INSERT INTO projects (id, title) VALUES (1, 'P');
-      INSERT INTO tasks (title, status, recur, project_id) VALUES ('bins', 'next', 'weekly', NULL),
-        ('in project', 'next', 'weekly', 1), ('one-off', 'next', NULL, NULL), ('old', 'done', 'weekly', NULL);""")
-    old.commit()
-    old.close()
-    c = db.connect(path)
-    assert {r["title"]: r["ground"] for r in c.execute("SELECT * FROM tasks")} == {
-        "bins": 1, "in project": 0, "one-off": 0, "old": 0}
-    c.close()
 
 
 # --- calendar + horizons -------------------------------------------------
@@ -509,23 +455,6 @@ def test_search_finds_reference(client, conn):
     assert hit["title"] == "Boiler manual" and hit["kind"] == "reference" and hit["url"].startswith("/reference/")
 
 
-def test_migration_drops_contexts(tmp_path):
-    """Contexts were removed; the column and the contexts table go, the tasks stay."""
-    import sqlite3
-    path = str(tmp_path / "old.db")
-    old = sqlite3.connect(path)
-    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + LEGACY_TASKS
-                      .replace("project_id INTEGER", "context TEXT, project_id INTEGER") + """;
-      CREATE TABLE contexts (name TEXT PRIMARY KEY); INSERT INTO contexts VALUES ('@home');
-      INSERT INTO tasks (title, status, context) VALUES ('a', 'next', '@home'), ('b', 'later', NULL);""")
-    old.commit()
-    old.close()
-    c = db.connect(path)
-    assert "context" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]
-    assert not c.execute("SELECT 1 FROM sqlite_master WHERE name = 'contexts'").fetchone()
-    assert [(r["title"], r["state"]) for r in c.execute("SELECT * FROM tasks ORDER BY id")] == [("a", "open"), ("b", "open")]
-    c.close()
-    db.connect(path).close()  # second connect is a no-op
 
 
 # --- import ----------------------------------------------------------------
@@ -823,23 +752,6 @@ def test_process_trash_abandons(client, conn):
     assert db.get_task(conn, t)["state"] == "abandoned"
 
 
-def test_migration_allows_abandoned(tmp_path):
-    path = tmp_path / "old.db"
-    old = sqlite3.connect(path)
-    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";"
-                      + LEGACY_TASKS.replace(", 'abandoned'", "") + ";"
-                      + """CREATE TABLE time_entries (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL
-                           REFERENCES tasks(id) ON DELETE CASCADE, start_time TEXT NOT NULL, end_time TEXT);
-                           INSERT INTO projects (title) VALUES ('P');
-                           INSERT INTO tasks (title, status, project_id, position) VALUES ('a', 'next', 1, 3);
-                           INSERT INTO time_entries (task_id, start_time, end_time) VALUES (1, 'x', 'y');""")
-    old.commit()
-    old.close()
-    c = db.connect(str(path))
-    db.abandon_task(c, 1)
-    t = db.get_task(c, 1)
-    assert t["state"] == "abandoned" and t["project_id"] == 1 and t["position"] == 3
-    assert c.execute("SELECT count(*) FROM time_entries").fetchone()[0] == 1
 
 
 def test_edit_and_delete_time_entries(client, conn):
@@ -885,17 +797,6 @@ def test_time_totals_on_task_project_and_timer_pages(client, conn):
     assert db.week_totals(conn, NOW - timedelta(days=1), NOW) == [("Kitchen", 4800), ("H0 · ground level", 600)]
 
 
-def test_old_time_entries_table_is_replaced(tmp_path):
-    import sqlite3
-    path = tmp_path / "old.db"
-    old = sqlite3.connect(path)
-    old.execute("CREATE TABLE time_entries (id INTEGER PRIMARY KEY, task TEXT, area TEXT, start_time TEXT, end_time TEXT)")
-    old.execute("INSERT INTO time_entries (task, area, start_time) VALUES ('x', '', '2026-10-22T10:00:00+00:00')")
-    old.commit()
-    old.close()
-    c = db.connect(str(path))
-    assert "task_id" in [r[1] for r in c.execute("PRAGMA table_info(time_entries)")]
-    assert db.time_entries(c) == []
 
 
 def test_new_project_from_task_form(client, conn):
@@ -1096,20 +997,6 @@ def test_reorder_project_tasks(client, conn):
     assert titles() == ["quote from Bob", "lay tiles", "buy tiles", "grout"] and db.get_task(conn, 8)["position"] is None
 
 
-def test_migration_keeps_project_order(tmp_path):
-    import sqlite3
-    path = str(tmp_path / "old.db")
-    old = sqlite3.connect(path)
-    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + LEGACY_TASKS
-                      .replace("position INTEGER,", "") + """;
-      INSERT INTO projects (id, title) VALUES (1, 'P');
-      INSERT INTO tasks (title, status, project_id) VALUES ('a', 'later', 1), ('b', 'next', 1), ('c', 'waiting', 1),
-        ('loose', 'later', NULL);""")
-    old.commit()
-    old.close()
-    c = db.connect(path)
-    assert [t["title"] for t in db.project_tasks(c, 1)] == ["b", "c", "a"]
-    c.close()
 
 
 def test_done_page_lists_finished_tasks_and_projects(client, conn):

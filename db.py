@@ -103,40 +103,10 @@ def connect(path=None):
 
 
 def _migrate(c):
-    """Rebuild tables whose status CHECK predates the current one (SQLite can't alter a CHECK)."""
+    """One-off schema changes for databases that predate them; each is a no-op once applied.
+    SQLite can't alter a CHECK, so a changed CHECK means a table rebuild. Delete a step once no database
+    you might restore (backups included) predates it."""
     old = dict(c.execute("SELECT name, sql FROM sqlite_master WHERE type = 'table'").fetchall())
-    if "tasks" in old and "waiting_on" in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
-        # The "waiting on" field was dropped; whoever it named now lives in the notes.
-        c.executescript("""BEGIN; UPDATE tasks SET notes = CASE WHEN notes = '' THEN '' ELSE notes || char(10) || char(10) END
-            || 'Waiting on: ' || trim(waiting_on) WHERE trim(COALESCE(waiting_on, '')) != '';
-            ALTER TABLE tasks DROP COLUMN waiting_on; COMMIT;""")
-    if "tasks" in old and "context" in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
-        # Contexts were removed: nobody filtered by them, and picking one was a chore.
-        c.execute("ALTER TABLE tasks DROP COLUMN context")
-    if "contexts" in old:
-        c.execute("DROP TABLE contexts")
-    steps = []
-    if "projects" in old and "'waiting'" not in old["projects"]:
-        steps += [PROJECTS_TABLE.format(name="projects_new"), "INSERT INTO projects_new SELECT * FROM projects",
-                  "DROP TABLE projects", "ALTER TABLE projects_new RENAME TO projects"]
-    if steps:
-        # Foreign keys off, or dropping projects would null every task's project_id.
-        c.execute("PRAGMA foreign_keys = OFF")
-        c.executescript("BEGIN; " + "; ".join(steps) + "; COMMIT;")
-        c.execute("PRAGMA foreign_keys = ON")
-    if "time_entries" in old and "task_id" not in old["time_entries"]:
-        # The first timer kept free-text task names; that history was dropped when entries became tasks' time.
-        c.execute("DROP TABLE time_entries")
-    if "tasks" in old and "ground" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
-        # Before the H0 flag, open repeating tasks without a project were ground level implicitly.
-        c.executescript("""BEGIN; ALTER TABLE tasks ADD COLUMN ground INTEGER NOT NULL DEFAULT 0;
-            UPDATE tasks SET ground = 1 WHERE recur IS NOT NULL AND project_id IS NULL AND status != 'done'; COMMIT;""")
-    if "tasks" in old and "position" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
-        # Project steps became draggable; number them in the order the project page used to show.
-        c.executescript(f"""BEGIN; ALTER TABLE tasks ADD COLUMN position INTEGER;
-            UPDATE tasks SET position = o.n FROM (SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY
-              CASE status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END, created_at, id) AS n FROM tasks t WHERE project_id IS NOT NULL) o WHERE o.id = tasks.id;
-            COMMIT;""")
     if "tasks" in old and "status" in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
         # One status column (inbox, next, waiting, later, someday, done, abandoned) became a state every task has
         # and a step only a project's tasks have. A project task with no step status (inbox, someday) becomes a

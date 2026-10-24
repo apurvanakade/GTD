@@ -51,7 +51,8 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 
 - **`db.py`** holds the schema and every query.
   - `connect()` runs `SCHEMA` (`CREATE ... IF NOT EXISTS`) on each connection, so schema changes must stay idempotent. Seed rows use `INSERT ... WHERE NOT EXISTS`.
-  - SQLite can't alter a `CHECK`, so a status change needs a table rebuild in `_migrate()`. It detects the old schema from `sqlite_master` and runs with foreign keys off; otherwise dropping `projects` would null every task's `project_id`.
+  - `_migrate()` holds one-off schema changes for older databases, each detected from `sqlite_master`/`table_info` and a no-op once applied. SQLite can't alter a `CHECK`, so changing one needs a table rebuild, run with foreign keys off: dropping `projects` would null every task's `project_id`, and dropping `tasks` would cascade away the time entries.
+  - Delete a migration once no database you might restore predates it, pre-deploy and nightly backups included (older ones were pruned on 2026-10-24). To restore an older backup, check out the code of its day first.
   - Writes go through `_insert`/`_update`, which whitelist columns (`TASK_FIELDS`, `PROJECT_FIELDS`, `HORIZON_FIELDS`) and raise on unknown fields.
   - Rows are `sqlite3.Row`.
 - **`app.py`** holds the Flask routes.
@@ -89,7 +90,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Fuzzy scoring is `fuzzy.score()` (pure): each query word must appear in the title as a substring (best, more so at a word start) or as letters in order; shorter titles win ties.
   - Enter with no suggestions submits to the full-text page (`/search?q=`, `db.search()`), a plain case-insensitive `LIKE`: every word must appear in a task's title/notes, or a project's, horizon's or reference item's title/notes. Done tasks are included, newest 50 only.
   - A ◐ button next to the search box toggles light/dark. The pick sets `data-theme` on `<html>`, is kept in `localStorage`, and overrides `prefers-color-scheme`; a tiny script in `<head>` applies it before first paint.
-  - A project page's steps are reordered by dragging their ⠿ grip (`row(grip=True)`). On drop the JS posts the ids in order to `/projects/<id>/order`, which numbers `tasks.position` (`db.reorder_project()`). `project_tasks()` sorts by position; steps never dragged (`NULL`) go last, oldest first. Order is only display: dragging never changes a step, so the next action needn't be on top. `_migrate()` added the column and numbered existing steps next → waiting → later.
+  - A project page's steps are reordered by dragging their ⠿ grip (`row(grip=True)`). On drop the JS posts the ids in order to `/projects/<id>/order`, which numbers `tasks.position` (`db.reorder_project()`). `project_tasks()` sorts by position; steps never dragged (`NULL`) go last, oldest first. Order is only display: dragging never changes a step, so the next action needn't be on top.
   - On Projects and Someday, each row's ▸ (`peek_button()`/`peek_steps()` in `_task.html`, `db.open_steps()`) folds out that project's open steps, read-only: a title opens its task page; there's no add line or tick-off there. "Expand all"/"Collapse all" in the header does every row. The JS in `base.html` toggles them.
   - A project page's add line takes step, due date, repeat rule and notes, so a step needs no trip to its task page.
   - On the task page, Save stays on the page (flashes "Saved.", carries where you came from as `?back=`); "Save & exit" (`exit=1`) returns there.
@@ -107,7 +108,6 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Editing an entry saves only fields that differ from what the form showed, so untouched times keep their seconds. Setting an end on the running entry stops it.
   - The history has no visible Save: the JS in `base.html` submits an entry when focus leaves its row with a time changed (moving between its start and end doesn't), or on Enter. An end before the start isn't sent; the row gets `.bad` until fixed. A hidden Save stays first in the form so Enter saves rather than pressing ▶.
   - Totals: time spent on the task page, the project total on the project page (done steps included), and per project this week on the Timer page (`db.week_totals()`).
-  - `_migrate()` dropped the first timer's free-text `time_entries` table.
 - **`import_mindwtr.py`** was a one-off migration from Mindwtr's Local API, already applied on 2026-10-22.
   - `plan()` is a pure function and is tested.
   - `--apply` refuses to run if the DB already has tasks.
@@ -124,7 +124,6 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **H0 tasks are always next actions**, so they have no step: the H0 tab lists every open H0 task.
   - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. Its "＋ New…" option reveals a `new_project` box; `task_fields_from_form()` creates an active project from it and uses it, overriding the dropdown. A repeat rule doesn't exempt a task.
   - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open tasks have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, due date, repeat), so a ground-level task needs no Inbox or Process trip.
-  - The `ground` column was added by `_migrate()`, which marked the open repeating tasks that had no project as H0.
   - Process refuses next/waiting with neither, and waiting with H0. The task form and the Next, calendar and Waiting add lines send such a task to the inbox instead.
   - The Next page's add line (`/next/add`, `add_next_action()` in `app.py`, shared with the calendar) adds a next action directly: a `later` step if its project already has one.
   - The Waiting page's add box (`/waiting/add`: title, project (no H0 option), follow-up date) adds a `waiting` task; the Someday page's (`/someday/add`) adds a someday project.
@@ -141,7 +140,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Adding a step to a project that already has a next action makes it `later` by default, and so does processing an inbox item into such a project.
   - An active project with no `next` task is "stalled" (⚠).
   - Tasks of waiting and someday projects stay off Next Actions (`VISIBLE_NEXT`). Waiting projects are listed on the Waiting page.
-- **No contexts.** They were removed on 2026-10-23: they were never used, and having to pick one slowed processing. `_migrate()` dropped `tasks.context` and the `contexts` table. Don't bring them back without being asked.
+- **No contexts.** They were removed on 2026-10-23: they were never used, and having to pick one slowed processing. Don't bring them back without being asked.
 - **No areas on projects.** H2 areas exist only as notes on the Horizons page.
 - **Next and H0 tabs hide nothing** (`db.next_list()`, `db.h0_actions()`): repeats not yet due are listed too. Both sort by due date (undated last) and stripe each row by how soon it's due (`row(soon=True)`, the `soon` filter and `SOON` in `app.py`: overdue, today, ≤7 days, ≤30 days, later), with a dot legend. A gap (CSS sibling rules in `style.css`) splits the rows into three bands: overdue + today, this week, everything later.
 - **Recurring tasks** keep their step (or H0) but don't count until their due date: the nav counts, the weekly review and `db.next_actions()` use `VISIBLE_NEXT`/`VISIBLE_H0`.
@@ -153,7 +152,6 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Revive (`/tasks/<id>/revive`, `db.revive_task()`) brings it back where it was: a later step of its project, an H0 task, or the inbox.
   - Deleting an abandoned task is a hard delete (its time too). So is `db.delete_task()`, which Process also uses when an item becomes a project.
   - Completing an abandoned task does nothing. Search and suggestions include abandoned tasks with the done ones.
-  - Table rebuilds of `tasks` in `_migrate()` run with foreign keys off, or the time entries would cascade away.
 - **Horizons** live in one table keyed by `level`:
   - `purpose` and `vision` are single seeded notes that can't be deleted.
   - `goal` and `area` are lists.
