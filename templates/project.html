@@ -2,7 +2,7 @@
 {% from "_task.html" import row, date_input, add_form with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for')}.get(p.status, ('projects_view', 'Projects')) %}
-<p class="crumb"><a href="{{ url_for(up[0]) }}">← {{ up[1] }}</a>{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
+<p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
 {% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}

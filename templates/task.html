@@ -3,7 +3,7 @@
 {% block title %}{{ t.title }}{% endblock %}
 {% block crumb %}
 {% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="crumb">
-  <a href="{{ url_for('project_view', id=t.project_id) }}">← {{ t.project_title }}</a>
+  <a href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
   {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
 </form>{% endif %}
 {% endblock %}

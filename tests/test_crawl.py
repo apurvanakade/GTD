@@ -168,6 +168,7 @@ def test_every_page_has_the_same_skeleton(client, conn):
         header = main[:main.index("</header>")]
         assert "<h1>" in header or 'class="big"' in main, url  # edit pages: the big title input is the heading
         assert 'class="chips"' not in main, url
+        assert "←" not in header, url  # a crumb links up, not back: no back arrow
         adds = [m.start() for m in re.finditer(r'<form[^>]*class="add', main)]
         assert len(adds) <= 1, url
         if adds:
