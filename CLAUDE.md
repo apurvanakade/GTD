@@ -141,7 +141,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Tasks of waiting and someday projects stay off Next Actions (`VISIBLE_NEXT`). Waiting projects are listed on the Waiting page.
 - **No contexts.** They were removed on 2026-10-23: they were never used, and having to pick one slowed processing. `_migrate()` dropped `tasks.context` and the `contexts` table. Don't bring them back without being asked.
 - **No areas on projects.** H2 areas exist only as notes on the Horizons page.
-- **Next and H0 tabs hide nothing** (`db.next_list()`, `db.h0_actions()`): repeats not yet due are listed too. Both sort by due date (undated last) and stripe each row by how soon it's due (`row(soon=True)`, the `soon` filter and `SOON` in `app.py`: overdue, today, ≤7 days, ≤30 days, later), with a dot legend.
+- **Next and H0 tabs hide nothing** (`db.next_list()`, `db.h0_actions()`): repeats not yet due are listed too. Both sort by due date (undated last) and stripe each row by how soon it's due (`row(soon=True)`, the `soon` filter and `SOON` in `app.py`: overdue, today, ≤7 days, ≤30 days, later), with a dot legend. A gap (CSS sibling rules in `style.css`) splits the rows into three bands: overdue + today, this week, everything later.
 - **Recurring tasks** stay `next` but don't count until their due date: the nav counts, the weekly review and `db.next_actions()` use `VISIBLE_NEXT`/`VISIBLE_H0`.
   - `complete_task()` marks the task done and inserts the next instance.
   - A repeat rule without a due date gets today as its due date.

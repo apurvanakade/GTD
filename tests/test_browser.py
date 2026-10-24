@@ -353,3 +353,14 @@ def test_notes_editor_undo(page, live, conn):
     page.keyboard.press("ControlOrMeta+z")
     assert ed.text_content() == "abc"
     assert page.locator("textarea[name=notes]").input_value() == "abc"
+
+
+def test_next_and_h0_rows_are_spaced_into_urgency_bands(page, live, conn):
+    for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"), ("wk2", "2026-10-27"),
+                       ("mo", "2026-11-10"), ("lt", "2027-03-01"), ("nd", None)]:
+        db.add_task(conn, title, status="next", ground=1, due_date=due)
+    page.goto(live + "/h0")
+    rows = page.eval_on_selector_all("li.task", """els => els.map(e =>
+        [e.querySelector('.title').textContent.trim(), parseFloat(getComputedStyle(e).marginTop) > 0])""")
+    # Overdue + today | this week | everything later, undated included (seeded: vacuum today, bins Nov 3).
+    assert [t for t, gap in rows if gap] == ["wk", "bins"]

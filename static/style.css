@@ -25,6 +25,8 @@
 .s-overdue { --k: #dc2626; } .s-today { --k: #ea580c; } .s-week { --k: #eab308; }
 .s-month { --k: #0d9488; } .s-later { --k: #a8a29e; }
 .task[class*=" s-"] { box-shadow: inset 3px 0 0 var(--k); }
+/* The sorted rows fall into three bands, a gap between each: overdue + today, this week, everything later. */
+.task:is(.s-overdue, .s-today) + .task:not(.s-overdue, .s-today), .task.s-week + .task:not(.s-week) { margin-top: 22px; }
 
 * { box-sizing: border-box; }
 body {
