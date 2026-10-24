@@ -22,9 +22,9 @@ uv run app.py
 
 Then open <http://127.0.0.1:5005>.
 
-### Optional: the `GTD` command (macOS, zsh)
+### Optional: the `GTD` command (macOS or Linux)
 
-`gtd.sh` starts the server in the background if it isn't running, restarts it when code or templates have changed, and opens the browser. To install it globally:
+`gtd.sh` starts the server in the background if it isn't running, restarts it when code or templates have changed, and opens the browser (`open` on macOS, `xdg-open` on Linux). To install it globally:
 
 ```bash
 mkdir -p ~/.local/bin
