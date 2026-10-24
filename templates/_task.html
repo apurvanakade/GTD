@@ -9,17 +9,19 @@
   <span class="meta">
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
-    {% if t.step == 'later' %}<span>later</span>{% endif %}
-    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>{% endif %}
-    {% if t.due_date and not closed %}<span class="date">{{ t.due_date }}</span>{% endif %}
-    {# Always there, empty when not repeating, so dates line up down the list. #}
+    {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
+    {% if not project and t.step and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' %}<span>later</span>{% endif %}
+    {# The date and repeat slots are always there, empty when unused, so the columns line up down the list. #}
+    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>
+    {% else %}<span class="date">{{ t.due_date if t.due_date and not closed }}</span>{% endif %}
     <span class="recur"{% if t.recur %} title="{{ t.recur }}"{% endif %}>{{ '↻' if t.recur }}</span>
   </span>
   {% if project and t.project_id and not closed %}<form method="post" action="{{ url_for('complete_then_project', id=t.id) }}" class="then"><button title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button></form>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
   {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Bring it back">Revive</button></form>{% endif %}
-  {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>{% endif %}
+  {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>
+  {% elif grip and not closed %}<span class="make-next slot" aria-hidden="true"><button type="button" tabindex="-1" disabled>Make next</button></span>{% endif %}
 </li>
 {% endmacro %}
 

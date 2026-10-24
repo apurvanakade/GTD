@@ -309,6 +309,18 @@ def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
     assert edges["vacuum"] == edges["dentist"], edges
 
 
+def test_project_page_columns_line_up_whatever_the_step_and_date(page, live, conn):
+    pid = db.add_project(conn, "Columns")
+    rows = {"n": ("next", "2026-10-20"), "wd": ("waiting", "2026-10-30"), "w": ("waiting", None),
+            "ld": ("later", "2026-11-11"), "l": ("later", None)}  # next is overdue, so its date is bold
+    for title, (step, due) in rows.items():
+        db.add_task(conn, title, step=step, project_id=pid, due_date=due)
+    page.goto(f"{live}/projects/{pid}")
+    for sel, side in ((".step", "left"), (".date", "left"), (".date", "right"), (".recur", "right")):
+        edges = {t: row(page, t).locator(sel).evaluate(f"e => Math.round(e.getBoundingClientRect().{side})") for t in rows}
+        assert len(set(edges.values())) == 1, (sel, side, edges)
+
+
 def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
     page.goto(live + "/next")
     page.keyboard.press("?")

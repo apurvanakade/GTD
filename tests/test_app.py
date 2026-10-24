@@ -1332,3 +1332,18 @@ def test_next_repeat_keeps_its_place_in_the_project(client, conn):
     db.reorder_project(conn, pid, [a, b])
     new = db.complete_task(conn, a, TODAY)
     assert [t["id"] for t in db.project_tasks(conn, pid)] == [new, b]
+
+
+def test_project_page_rows_line_up(client, conn):
+    """Every open step shows its step, and the step, date and action slots exist on every row, so columns line up."""
+    pid = db.add_project(conn, "Columns")
+    db.add_task(conn, "n", step="next", project_id=pid, due_date="2026-10-30")
+    db.add_task(conn, "w", step="waiting", project_id=pid)
+    db.add_task(conn, "l", step="later", project_id=pid)
+    html = client.get(f"/projects/{pid}").get_data(as_text=True)
+    rows = re.findall(r'<li class="task.*?</li>', html, re.S)
+    assert len(rows) == 3
+    for row, step in zip(rows, ("next", "waiting", "later")):
+        assert f'<span class="step">{step}</span>' in row
+        assert row.count('class="date"') == 1
+        assert row.count('class="make-next') == 1
