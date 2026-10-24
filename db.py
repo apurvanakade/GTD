@@ -8,9 +8,9 @@ import recur
 # On the server GTD_DB points to /var/lib/apps/gtd/gtd.db; locally `GTD dev` points it to dev.db.
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
-# Someday and waiting are project statuses only. A deleted task is first "abandoned" (revivable), like done. An active project has exactly one next action;
-# its other open steps are "later". The inbox isn't a status: it's every open task with neither a project nor H0
-# (stored as "later", so giving it a project makes it a later step). H0 tasks are always "next".
+# Someday and waiting are project statuses only. A task has a state (open, done, or abandoned: deleted but revivable)
+# and, only inside a project, a step: an active project has exactly one "next" step, its other open steps are "waiting"
+# or "later". H0 tasks (ground level) and inbox items (neither a project nor H0) have no step.
 PROJECTS_TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
@@ -26,21 +26,24 @@ CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'later' CHECK (status IN ('next', 'waiting', 'later', 'done', 'abandoned')),
+  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'done', 'abandoned')),
+  step TEXT CHECK (step IN ('next', 'waiting', 'later')),
   project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
   due_date TEXT,
   recur TEXT,
   ground INTEGER NOT NULL DEFAULT 0,
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  completed_at TEXT
+  completed_at TEXT,
+  CHECK ((step IS NULL) = (project_id IS NULL)),
+  CHECK (NOT (ground AND project_id IS NOT NULL))
 )
 """
 
 SCHEMA = """
 {projects};
 {tasks};
-CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state);
 CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS tasks_due ON tasks(due_date);
 CREATE TABLE IF NOT EXISTS horizons (
@@ -75,17 +78,17 @@ CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NO
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
-TASK_FIELDS = {"title", "notes", "status", "project_id", "due_date", "recur", "ground"}
+TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground"}  # state changes via complete/abandon/revive
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
-INBOX = "t.status NOT IN ('done', 'abandoned') AND t.project_id IS NULL AND NOT t.ground"
+INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
 TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox
   FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"""
 # Next Actions leave out H0 tasks (they have their own tab), recurring tasks until their due day, and tasks of waiting/someday projects.
-READY = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"""
-VISIBLE_NEXT = f"""{READY} AND NOT t.ground AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')"""
+READY = """t.state = 'open' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"""
+VISIBLE_NEXT = f"""{READY} AND t.step = 'next' AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')"""
 VISIBLE_H0 = f"{READY} AND t.ground"
-STATUS_ORDER = "CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END"
+STEP_ORDER = "CASE WHEN t.ground OR t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2 ELSE 3 END"
 
 
 def connect(path=None):
@@ -116,13 +119,6 @@ def _migrate(c):
     if "projects" in old and "'waiting'" not in old["projects"]:
         steps += [PROJECTS_TABLE.format(name="projects_new"), "INSERT INTO projects_new SELECT * FROM projects",
                   "DROP TABLE projects", "ALTER TABLE projects_new RENAME TO projects"]
-    if "tasks" in old and "'someday'" in old["tasks"]:
-        # Someday tasks inside a project become later steps; loose ones go back to the inbox.
-        steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new (id, title, notes, status,
-            project_id, due_date, recur, created_at, completed_at) SELECT id, title, notes,
-            CASE WHEN status NOT IN ('someday', 'inbox') THEN status ELSE 'later' END,
-            project_id, due_date, recur, created_at, completed_at FROM tasks""",
-                  "DROP TABLE tasks", "ALTER TABLE tasks_new RENAME TO tasks"]
     if steps:
         # Foreign keys off, or dropping projects would null every task's project_id.
         c.execute("PRAGMA foreign_keys = OFF")
@@ -139,26 +135,30 @@ def _migrate(c):
         # Project steps became draggable; number them in the order the project page used to show.
         c.executescript(f"""BEGIN; ALTER TABLE tasks ADD COLUMN position INTEGER;
             UPDATE tasks SET position = o.n FROM (SELECT id, row_number() OVER (PARTITION BY project_id ORDER BY
-              {STATUS_ORDER}, created_at, id) AS n FROM tasks t WHERE project_id IS NOT NULL) o WHERE o.id = tasks.id;
+              CASE status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END, created_at, id) AS n FROM tasks t WHERE project_id IS NOT NULL) o WHERE o.id = tasks.id;
             COMMIT;""")
-    tasks_sql = c.execute("SELECT sql FROM sqlite_master WHERE name = 'tasks'").fetchone()
-    if tasks_sql and ("'abandoned'" not in tasks_sql[0] or "'inbox'" in tasks_sql[0]):
-        # Deleting a task became abandoning it, and the inbox stopped being a status: inbox items and
-        # orphans become "later" (a later step if they have a project), H0 tasks "next".
+    if "tasks" in old and "status" in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
+        # One status column (inbox, next, waiting, later, someday, done, abandoned) became a state every task has
+        # and a step only a project's tasks have. A project task with no step status (inbox, someday) becomes a
+        # later step; anything without a project gets no step, so it's H0 or in the inbox.
         # Foreign keys off, or dropping tasks would delete their time.
-        cols = ", ".join(r[1] for r in c.execute("PRAGMA table_info(tasks)"))
         c.execute("PRAGMA foreign_keys = OFF")
-        c.executescript(f"""BEGIN; UPDATE tasks SET status = 'later' WHERE status = 'inbox';
-            UPDATE tasks SET status = CASE WHEN ground THEN 'next' ELSE 'later' END
-              WHERE project_id IS NULL AND status IN ('next', 'waiting', 'later');
-            {TASKS_TABLE.format(name="tasks_new")};
-            INSERT INTO tasks_new ({cols}) SELECT {cols} FROM tasks;
+        c.executescript(f"""BEGIN; {TASKS_TABLE.format(name="tasks_new")};
+            INSERT INTO tasks_new (id, title, notes, state, step, project_id, due_date, recur, ground, position,
+              created_at, completed_at)
+            SELECT id, title, notes, CASE WHEN status IN ('done', 'abandoned') THEN status ELSE 'open' END,
+              CASE WHEN project_id IS NULL THEN NULL WHEN status IN ('next', 'waiting', 'later') THEN status
+                ELSE 'later' END,
+              project_id, due_date, recur, project_id IS NULL AND ground, position, created_at, completed_at
+            FROM tasks;
             DROP TABLE tasks; ALTER TABLE tasks_new RENAME TO tasks; COMMIT;""")
         c.execute("PRAGMA foreign_keys = ON")
 
 
 def _insert(c, table, allowed, fields):
-    fields = {k: v for k, v in fields.items() if k in allowed}
+    unknown = set(fields) - allowed
+    if unknown:
+        raise ValueError(f"unknown fields: {unknown}")
     cols = ", ".join(fields)
     marks = ", ".join("?" * len(fields))
     cur = c.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", list(fields.values()))
@@ -179,41 +179,46 @@ def _update(c, table, allowed, id, fields):
 # --- tasks -----------------------------------------------------------------
 
 def add_task(c, title, **fields):
-    id = _insert(c, "tasks", TASK_FIELDS, {"title": title, **fields})
-    _settle(c, id)
+    id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}))
     _one_next(c, id)
     return id
 
 
 def update_task(c, id, **fields):
     """Returns the titles of project tasks demoted to later because this one became next."""
-    _update(c, "tasks", TASK_FIELDS, id, fields)
-    _settle(c, id)
+    _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, get_task(c, id)))
     return _one_next(c, id)
 
 
-def _settle(c, id):
-    """A task without a project is "next" if H0, else "later" (an inbox item): those are the only statuses it can have."""
-    c.execute("""UPDATE tasks SET status = CASE WHEN ground THEN 'next' ELSE 'later' END
-        WHERE id = ? AND project_id IS NULL AND status IN ('next', 'waiting', 'later')""", (id,))
-    c.commit()
+def _fit_step(fields, current=None):
+    """Only a project's tasks have a step: a task without one (H0, inbox) drops any step it's given, and one
+    joining a project becomes a later step unless told otherwise."""
+    project_id = fields["project_id"] if "project_id" in fields else current and current["project_id"]
+    if not project_id:
+        fields["step"] = None
+    elif not fields.get("step") and not (current and current["step"]):
+        fields["step"] = "later"
+    elif "step" in fields and not fields["step"]:
+        fields.pop("step")
+    return fields
 
 
 def _one_next(c, id):
     """A project has at most one next action: if this task is it, the project's other next tasks become later.
     Returns the titles it demoted."""
     t = get_task(c, id)
-    if not t or t["status"] != "next" or not t["project_id"]:
+    if not t or t["state"] != "open" or t["step"] != "next":
         return []
-    others = c.execute("SELECT id, title FROM tasks WHERE project_id = ? AND status = 'next' AND id != ?",
+    others = c.execute("SELECT id, title FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open' AND id != ?",
                        (t["project_id"], id)).fetchall()
-    c.executemany("UPDATE tasks SET status = 'later' WHERE id = ?", [(o["id"],) for o in others])
+    c.executemany("UPDATE tasks SET step = 'later' WHERE id = ?", [(o["id"],) for o in others])
     c.commit()
     return [o["title"] for o in others]
 
 
 def project_next(c, project_id):
-    return c.execute("SELECT * FROM tasks WHERE project_id = ? AND status = 'next'", (project_id,)).fetchone()
+    return c.execute("SELECT * FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open'",
+                     (project_id,)).fetchone()
 
 
 def get_task(c, id):
@@ -231,38 +236,39 @@ def abandon_task(c, id, now=None):
     running = timer_running(c)
     if running and running["task_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
-    c.execute("UPDATE tasks SET status = 'abandoned', completed_at = datetime('now') WHERE id = ?", (id,))
+    c.execute("UPDATE tasks SET state = 'abandoned', completed_at = datetime('now') WHERE id = ?", (id,))
     c.commit()
 
 
 def revive_task(c, id):
-    """An abandoned task comes back where it was: a later step of its project, an H0 next action, or the inbox."""
-    c.execute("""UPDATE tasks SET status = CASE WHEN ground AND project_id IS NULL THEN 'next' ELSE 'later' END,
-        completed_at = NULL WHERE id = ? AND status = 'abandoned'""", (id,))
+    """An abandoned task comes back where it was: a later step of its project, an H0 task, or an inbox item."""
+    c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN NULL ELSE 'later' END,
+        completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
     c.commit()
 
 
 def complete_task(c, id, today, now=None):
     """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None."""
     t = get_task(c, id)
-    if t is None or t["status"] in ("done", "abandoned"):
+    if t is None or t["state"] != "open":
         return None
     running = timer_running(c)
     if running and running["task_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
-    c.execute("UPDATE tasks SET status = 'done', completed_at = datetime('now') WHERE id = ?", (id,))
+    c.execute("UPDATE tasks SET state = 'done', completed_at = datetime('now') WHERE id = ?", (id,))
     new_id = None
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
-        new_id = add_task(c, t["title"], notes=t["notes"], status=t["status"], project_id=t["project_id"],
+        new_id = add_task(c, t["title"], notes=t["notes"], step=t["step"], project_id=t["project_id"],
                           ground=t["ground"], recur=t["recur"],
                           due_date=recur.next_due(t["recur"], due, today).isoformat())
     c.commit()
     return new_id
 
 
-def tasks_with_status(c, status):
-    return c.execute(f"{TASK_SELECT} WHERE t.status = ? ORDER BY t.created_at, t.id", (status,)).fetchall()
+def tasks_with_step(c, step):
+    """Open project tasks at this step."""
+    return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY t.created_at, t.id", (step,)).fetchall()
 
 
 def next_actions(c, today):
@@ -272,7 +278,7 @@ def next_actions(c, today):
 
 def h0_actions(c):
     """Every H0 next action, repeats not yet due included, soonest due first; undated ones last."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND t.ground
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.ground
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
@@ -283,25 +289,25 @@ def inbox_tasks(c):
 def next_list(c):
     """The Next tab: every next action outside H0 and waiting/someday projects, repeats not yet due included,
     soonest due first; undated ones last."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND NOT t.ground
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.step = 'next'
         AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
 def overdue(c, today):
-    return c.execute(f"""{TASK_SELECT} WHERE t.status IN ('next', 'waiting') AND t.due_date < ?
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND (t.step IN ('next', 'waiting') OR t.ground) AND t.due_date < ?
         ORDER BY t.due_date""", (today.isoformat(),)).fetchall()
 
 
 def ground_level(c):
     """H0: open tasks deliberately kept outside any project."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND t.ground
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.ground
         ORDER BY t.due_date IS NULL, t.due_date, lower(t.title)""").fetchall()
 
 
 def project_tasks(c, project_id):
     """Open steps in the order dragged on the project page; steps never dragged go last, oldest first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.status NOT IN ('done', 'abandoned')
+    return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.state = 'open'
         ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (project_id,)).fetchall()
 
 
@@ -318,7 +324,7 @@ def counts(c, today):
         "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}"),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_NEXT}", today.isoformat()),
         "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
-        "waiting": one("SELECT count(*) FROM tasks WHERE status = 'waiting'")
+        "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'"),
         "stalled": len(stalled_projects(c)),
@@ -340,10 +346,10 @@ def _matching(q, cols):
 def search(c, q):
     """Tasks (open, then the latest 50 done), projects, horizons and reference whose text contains every word of q."""
     where, args = _matching(q, ["t.title", "t.notes"])
-    tasks = c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND {where} ORDER BY
-        {INBOX} DESC, CASE t.status WHEN 'next' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END,
+    tasks = c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND {where} ORDER BY
+        {INBOX} DESC, {STEP_ORDER},
         lower(t.title)""", args).fetchall()
-    done = c.execute(f"""{TASK_SELECT} WHERE t.status IN ('done', 'abandoned') AND {where}
+    done = c.execute(f"""{TASK_SELECT} WHERE t.state != 'open' AND {where}
         ORDER BY t.completed_at DESC LIMIT 50""", args).fetchall()
     where, args = _matching(q, ["title", "notes"])
     projects = c.execute(f"""SELECT * FROM projects WHERE {where}
@@ -355,14 +361,14 @@ def search(c, q):
 
 def suggest(c, q, limit=10):
     """The best fuzzy title matches among tasks, projects, horizons and reference; open items before done ones."""
-    rows = [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned')")]
-    rows += [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.status IN ('done', 'abandoned') ORDER BY t.completed_at DESC LIMIT 200")]
+    rows = [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.state = 'open'")]
+    rows += [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.state != 'open' ORDER BY t.completed_at DESC LIMIT 200")]
     rows += [("project", r) for r in c.execute("SELECT * FROM projects")]
     rows += [("horizon", r) for r in c.execute("SELECT * FROM horizons")]
     rows += [("reference", r) for r in c.execute("SELECT * FROM reference")]
     hits = [(fuzzy.score(q, r["title"]), kind, r) for kind, r in rows]
     hits = [h for h in hits if h[0] is not None]
-    closed = lambda kind, r: kind in ("task", "project") and r["status"] in ("done", "abandoned")
+    closed = lambda kind, r: (kind == "task" and r["state"] != "open") or (kind == "project" and r["status"] == "done")
     hits.sort(key=lambda h: (closed(h[1], h[2]), -h[0], h[2]["title"].lower()))
     return [(kind, r) for _, kind, r in hits[:limit]]
 
@@ -394,25 +400,25 @@ def get_project(c, id):
 
 def projects(c, status="active"):
     return c.execute("""SELECT p.*,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'next') AS next_count,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status NOT IN ('done', 'abandoned')) AS open_count,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.status = 'done') AS done_count
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open') AS open_count,
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'done') AS done_count
         FROM projects p WHERE p.status = ? ORDER BY lower(p.title)""", (status,)).fetchall()
 
 
 def open_steps(c, status="active"):
     """{project id: its open steps in project-page order}, for every project with the given status."""
     steps = {}
-    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.status NOT IN ('done', 'abandoned')
+    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.state = 'open'
             ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (status,)):
         steps.setdefault(t["project_id"], []).append(t)
     return steps
 
 
-def done_tasks(c, limit=100, project_id=None, ground=None, status="done"):
-    """Finished (or, with status="abandoned", abandoned) tasks, newest first; optionally only one project's,
+def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
+    """Finished (or, with state="abandoned", abandoned) tasks, newest first; optionally only one project's,
     or only H0 (ground=1) / non-H0 (ground=0)."""
-    where, args = "t.status = ?", [status]
+    where, args = "t.state = ?", [state]
     if project_id is not None:
         where += " AND t.project_id = ?"
         args.append(project_id)
@@ -437,12 +443,12 @@ def stalled_projects(c):
 # --- calendar --------------------------------------------------------------
 
 def dated_tasks(c, start, end):
-    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND t.due_date BETWEEN ? AND ?
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.due_date BETWEEN ? AND ?
         ORDER BY t.due_date, t.created_at""", (start.isoformat(), end.isoformat())).fetchall()
 
 
 def recurring_tasks(c):
-    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND t.recur IS NOT NULL
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.recur IS NOT NULL
         AND t.due_date IS NOT NULL""").fetchall()
 
 
@@ -529,7 +535,7 @@ def reviews(c):
 # --- timer -----------------------------------------------------------------
 
 ENTRY_FIELDS = {"task_id", "start_time", "end_time"}
-ENTRY_SELECT = f"""SELECT e.*, t.title, t.status AS task_status, t.ground, t.project_id, p.title AS project_title, ({INBOX}) AS inbox
+ENTRY_SELECT = f"""SELECT e.*, t.title, t.state AS task_state, t.ground, t.project_id, p.title AS project_title, ({INBOX}) AS inbox
   FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id"""
 SECONDS = "(julianday(coalesce(e.end_time, ?)) - julianday(e.start_time)) * 86400"
 
@@ -585,7 +591,7 @@ def project_seconds(c, project_id, now):
 def week_totals(c, since, now):
     """[(project title, or H0 / inbox / no project, seconds)] for entries started since `since`, most time first."""
     rows = c.execute(f"""SELECT CASE WHEN p.title IS NOT NULL THEN p.title WHEN t.ground THEN 'H0 · ground level'
-          WHEN t.status NOT IN ('done', 'abandoned') THEN 'Inbox (unprocessed)' ELSE '(no project)' END AS label, sum({SECONDS}) AS secs
+          WHEN t.state = 'open' THEN 'Inbox (unprocessed)' ELSE '(no project)' END AS label, sum({SECONDS}) AS secs
         FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id
         WHERE e.start_time >= ? GROUP BY label ORDER BY secs DESC""", (iso(now), iso(since))).fetchall()
     return [(r["label"], round(r["secs"])) for r in rows]
@@ -593,4 +599,4 @@ def week_totals(c, since, now):
 
 def open_tasks(c):
     """Every open task, for the timer's picker: next actions first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') ORDER BY {STATUS_ORDER}, lower(t.title)""").fetchall()
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' ORDER BY {STEP_ORDER}, lower(t.title)""").fetchall()

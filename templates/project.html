@@ -21,13 +21,13 @@
 {% if p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
 <h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}{% if seconds %} <span class="hint">· {{ seconds|hm }} spent</span>{% endif %}</h2>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step') %}
-  <select name="status" aria-label="Status">
+  <select name="step" aria-label="Step">
     {% for s in ['next', 'later', 'waiting'] %}<option{% if s == ('later' if has_next else 'next') %} selected{% endif %}>{{ s }}</option>{% endfor %}
   </select>
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats: weekly…" aria-label="Repeats">
   <input name="notes" placeholder="notes…" aria-label="Notes">
 {% endcall %}
-<ul class="tasks" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.status == 'later'), grip=True) }}{% endfor %}</ul>
+<ul class="tasks" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step == 'later'), grip=True) }}{% endfor %}</ul>
 {% include "_done_toggle.html" %}
 {% endblock %}

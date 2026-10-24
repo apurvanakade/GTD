@@ -73,8 +73,8 @@ def task_fields_from_form():
     if new_project:  # typed into the "or new project…" box; overrides the dropdown
         fields["project_id"] = db.add_project(conn(), new_project)
         fields["ground"] = 0
-    if "status" in request.form:
-        fields["status"] = request.form["status"]
+    if request.form.get("step") in ("next", "waiting", "later"):  # a project's step; H0 and inbox tasks drop it
+        fields["step"] = request.form["step"]
     if fields.get("due_date"):
         due = dates.parse(fields["due_date"], today())
         if due:
@@ -148,7 +148,7 @@ def process_item(id):
             db.add_project(c, title, notes=notes, status="someday")
             db.delete_task(c, id)
         elif target.isdigit() and db.get_project(c, int(target)):
-            db.update_task(c, id, title=title, notes=notes, status="later", project_id=int(target), ground=0)
+            db.update_task(c, id, title=title, notes=notes, step="later", project_id=int(target), ground=0)
         else:
             flash("Someday / maybe: make it a new someday project, or add it to an existing project?")
             return redirect(url_for("process"))
@@ -158,7 +158,7 @@ def process_item(id):
         flash(f"Project created: {title}")
     elif action in ("next", "waiting"):
         fields = task_fields_from_form()
-        fields.update(title=title, notes=notes, status=action)
+        fields.update(title=title, notes=notes, step=action)
         pid = fields.get("project_id")
         if orphaned(pid, fields.get("ground")):
             flash("Pick a project, or H0 · ground level if it really belongs to none.")
@@ -167,7 +167,7 @@ def process_item(id):
             flash("H0 tasks are always next actions: a waiting-for needs a project.")
             return redirect(url_for("process"))
         if action == "next" and pid and db.project_next(c, pid):
-            fields["status"] = "later"
+            fields["step"] = "later"
             flash(f"“{db.get_project(c, pid)['title']}” already has a next action, so this was added as a later step.")
         db.update_task(c, id, **fields)
     else:
@@ -201,10 +201,10 @@ def add_next_action():
     fields = task_fields_from_form()
     if fields.get("title"):
         pid = fields.get("project_id")
-        status = "later" if pid and db.project_next(conn(), pid) else "next"
+        fields["step"] = "later" if pid and db.project_next(conn(), pid) else "next"
         if orphaned(pid, fields.get("ground")):
             flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
-        db.add_task(conn(), fields.pop("title"), status=status, **fields)
+        db.add_task(conn(), fields.pop("title"), **fields)
     return fields
 
 
@@ -235,13 +235,14 @@ def soon(due):
 def h0_add():
     fields = task_fields_from_form()
     if fields.get("title"):
-        db.add_task(conn(), fields.pop("title"), status="next", ground=1, project_id=None, **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "status")})
+        db.add_task(conn(), fields.pop("title"), ground=1, project_id=None,
+                    **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
     return redirect(url_for("h0_view"))
 
 
 @app.route("/waiting")
 def waiting():
-    return render_template("list.html", title="Waiting for", tasks=db.tasks_with_status(conn(), "waiting"),
+    return render_template("list.html", title="Waiting for", tasks=db.tasks_with_step(conn(), "waiting"),
                            projects=db.projects(conn(), "waiting"), empty="Nothing delegated.",
                            open_projects=db.open_projects(conn()))
 
@@ -254,7 +255,7 @@ def waiting_add():
             fields["ground"] = 0
         if orphaned(fields.get("project_id"), fields.get("ground")):
             flash("No project, so it went to the inbox to be processed.")
-        db.add_task(conn(), fields.pop("title"), status="waiting", **fields)
+        db.add_task(conn(), fields.pop("title"), step="waiting", **fields)
     return redirect(url_for("waiting"))
 
 
@@ -314,7 +315,7 @@ def links(text):
 @app.route("/done")
 def done():
     return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"),
-                           abandoned=db.done_tasks(conn(), status="abandoned"))
+                           abandoned=db.done_tasks(conn(), state="abandoned"))
 
 
 # The weekly review's steps, in order; review.html has one section per key.
@@ -363,8 +364,8 @@ def search_suggest():
     for kind, r in db.suggest(conn(), request.args.get("q") or ""):
         if kind == "task":
             out.append({"title": r["title"], "url": url_for("task_view", id=r["id"]),
-                         "kind": "H0" if r["ground"] and r["status"] not in ("done", "abandoned")
-                                 else "inbox" if r["inbox"] else r["status"],
+                         "kind": r["state"] if r["state"] != "open" else "H0" if r["ground"]
+                                 else "inbox" if r["inbox"] else r["step"],
                          "meta": r["project_title"] or ""})
         elif kind == "project":
             out.append({"title": r["title"], "url": url_for("project_view", id=r["id"]), "kind": "project",
@@ -390,9 +391,9 @@ def task_view(id):
             fields.pop("title", None)
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
         ground = fields["ground"] if "ground" in fields else t["ground"]
-        if orphaned(project_id, ground) and not t["inbox"] and t["status"] not in ("done", "abandoned"):
+        if orphaned(project_id, ground) and not t["inbox"] and t["state"] == "open":
             flash("No project and not H0 · ground level, so this went to the inbox to be processed.")
-        elif ground and fields.get("status") in ("waiting", "later"):
+        elif ground and fields.get("step") in ("waiting", "later"):
             flash("H0 tasks are always next actions.")
         flash_demoted(db.update_task(c, id, **fields))
         nxt = request.form.get("next") or None
@@ -432,7 +433,7 @@ def delete(id):
     """Abandons the task (it stays on Done, revivable); deleting an abandoned task deletes it for good."""
     c = conn()
     t = db.get_task(c, id)
-    if t and t["status"] == "abandoned":
+    if t and t["state"] == "abandoned":
         db.delete_task(c, id)
     elif t:
         db.abandon_task(c, id, now())
@@ -454,7 +455,7 @@ def revive(id):
 def make_next(id):
     c = conn()
     db.get_task(c, id) or abort(404)
-    flash_demoted(db.update_task(c, id, status="next"))
+    flash_demoted(db.update_task(c, id, step="next"))
     return back()
 
 
@@ -527,7 +528,7 @@ def project_add_task(id):
     db.get_project(c, id) or abort(404)
     fields = task_fields_from_form()
     if fields.get("title"):
-        fields.setdefault("status", "later" if db.project_next(c, id) else "next")
+        fields.setdefault("step", "later" if db.project_next(c, id) else "next")
         db.add_task(c, fields.pop("title"), project_id=id, **fields)
     return redirect(url_for("project_view", id=id))
 
@@ -633,7 +634,7 @@ def timer_start():
 @app.post("/tasks/<int:id>/start")
 def task_start(id):
     t = db.get_task(conn(), id) or abort(404)
-    if t["status"] != "done":
+    if t["state"] == "open":
         db.timer_start(conn(), id, now())
     return back()
 

@@ -18,8 +18,13 @@
 <h2>Inbox</h2>
 <ul class="tasks">{% for t in inbox %}{{ row(t) }}{% endfor %}</ul>
 {% endif %}
-{% for status, label in [('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later')] %}
-{% set tasks = r.tasks|rejectattr('inbox')|selectattr('status', 'equalto', status)|list %}
+{% set h0 = r.tasks|selectattr('ground')|list %}
+{% if h0 %}
+<h2>H0</h2>
+<ul class="tasks">{% for t in h0 %}{{ row(t) }}{% endfor %}</ul>
+{% endif %}
+{% for step, label in [('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later')] %}
+{% set tasks = r.tasks|selectattr('step', 'equalto', step)|list %}
 {% if tasks %}
 <h2>{{ label }}</h2>
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>

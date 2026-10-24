@@ -1,16 +1,16 @@
 {% macro row(t, project=True, make_next=False, grip=False, soon=False) %}
-{% set closed = t.status in ('done', 'abandoned') %}
+{% set closed = t.state != 'open' %}
 <li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}{% if soon and t.due_date and not closed %} s-{{ t.due_date|soon }}{% endif %}" data-id="{{ t.id }}">
   {% if grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
-  {% if t.status == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
-  {% elif t.status == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
+  {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
+  {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
   {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}
   <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
   <span class="meta">
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
-    {% if t.status == 'later' and t.project_id %}<span>later</span>{% endif %}
-    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.status == 'done' else 'Abandoned' }}">{{ t.completed_at[:10] }}</span>{% endif %}
+    {% if t.step == 'later' %}<span>later</span>{% endif %}
+    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at[:10] }}</span>{% endif %}
     {% if t.due_date and not closed %}<span class="date">{{ t.due_date }}</span>{% endif %}
     {# Always there, empty when not repeating, so dates line up down the list. #}
     <span class="recur"{% if t.recur %} title="{{ t.recur }}"{% endif %}>{{ '↻' if t.recur }}</span>
@@ -18,7 +18,7 @@
   {% if project and t.project_id and not closed %}<form method="post" action="{{ url_for('complete_then_project', id=t.id) }}" class="then"><button title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button></form>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
-  {% if t.status == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Bring it back">Revive</button></form>{% endif %}
+  {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Bring it back">Revive</button></form>{% endif %}
   {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>{% endif %}
 </li>
 {% endmacro %}
@@ -29,7 +29,7 @@
 <ul class="steps">
   {% for t in steps %}
   <li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
-    <span class="meta"><span>{{ t.status }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
+    <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
   {% else %}
   <li class="empty">No open steps.</li>
   {% endfor %}

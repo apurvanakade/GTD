@@ -62,7 +62,7 @@ def test_tick_off_fades_the_row_in_place(page, live, conn):
     page.wait_for_selector("li.task.gone")
     assert page.url == live + "/horizons"
     assert row(page, "vacuum").get_attribute("class").split().count("gone") == 1
-    assert db.get_task(conn, 5)["status"] == "done"
+    assert db.get_task(conn, 5)["state"] == "done"
 
 
 def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
@@ -79,7 +79,7 @@ def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
     tile.locator("form.then button").click()
     page.wait_for_url("**/projects/*")
     assert page.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
-    assert db.get_task(conn, 2)["status"] == "done"
+    assert db.get_task(conn, 2)["state"] == "done"
 
 
 def test_plus_inbox_dialog_captures(page, live, conn):
@@ -302,7 +302,7 @@ def test_clicking_a_calendar_day_sets_the_add_date(page, live):
 
 
 def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
-    db.add_task(conn, "dentist", status="next", ground=1, due_date="2026-10-30")
+    db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-30")
     page.goto(live + "/h0")
     edges = {t: row(page, t).locator(".date").evaluate("e => Math.round(e.getBoundingClientRect().right)")
              for t in ("vacuum", "dentist")}
@@ -358,7 +358,7 @@ def test_notes_editor_undo(page, live, conn):
 def test_next_and_h0_rows_are_spaced_into_urgency_bands(page, live, conn):
     for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"), ("wk2", "2026-10-27"),
                        ("mo", "2026-11-10"), ("lt", "2027-03-01"), ("nd", None)]:
-        db.add_task(conn, title, status="next", ground=1, due_date=due)
+        db.add_task(conn, title, step="next", ground=1, due_date=due)
     page.goto(live + "/h0")
     rows = page.eval_on_selector_all("li.task", """els => els.map(e =>
         [e.querySelector('.title').textContent.trim(), parseFloat(getComputedStyle(e).marginTop) > 0])""")

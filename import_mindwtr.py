@@ -87,7 +87,9 @@ def apply(conn, projects, tasks):
     ids = {p["src"]: db.add_project(conn, p["title"], status=p["status"], notes=p["notes"]) for p in projects}
     for t in tasks:
         t = dict(t)
-        db.add_task(conn, t.pop("title"), project_id=ids.get(t.pop("project_src")), **t)
+        status = t.pop("status")  # only a project's task keeps it, as its step; someday becomes a later step
+        db.add_task(conn, t.pop("title"), project_id=ids.get(t.pop("project_src")),
+                    step=status if status in ("next", "waiting") else "later", **t)
 
 
 def write_reference(items, path="reference.md"):

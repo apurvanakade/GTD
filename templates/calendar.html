@@ -29,7 +29,7 @@
       <button type="button" class="day" data-date="{{ iso }}" data-label="{{ d.strftime('%a %-d %b') }}" title="Add on {{ iso }}">{% if week %}{{ d.strftime('%-d %b') }}{% else %}{{ d.day }}{% endif %}</button>
       {% for t, ghost in by_day.get(iso, []) %}
       {% set kind = 'h0' if t.ground else 'inbox' if t.inbox else 'someday' if t.project_status == 'someday'
-                    else 'waiting' if 'waiting' in (t.status, t.project_status) else t.status %}
+                    else 'waiting' if 'waiting' in (t.step, t.project_status) else t.step %}
       <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}"
          class="ev k-{{ kind }}{% if ghost %} ghost{% elif iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>
       {% endfor %}
