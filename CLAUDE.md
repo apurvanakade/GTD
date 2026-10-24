@@ -39,7 +39,7 @@ There is no build step, linter config or JS bundler.
 
 ## Hosting and development
 
-The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Tailscale; it holds the only live copy of the DB. VM-wide setup (systemd `app@.service`, deploy hook, nightly backups, port table) lives in `~/Github/personal/home-server`, not here; `deploy/gtd.env.example` is this app's `/etc/apps/gtd.env`. It runs as `gunicorn -w 1 --threads 4` (one worker keeps the timer and SQLite simple); `connect()` sets WAL and a 5 s busy timeout.
+The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Tailscale; it holds the only live copy of the DB. VM-wide setup (systemd `app@.service`, deploy hook, nightly backups, port table) lives in `~/Github/personal/GCP-home-server`, not here; `deploy/gtd.env.example` is this app's `/etc/apps/gtd.env`. It runs as `gunicorn -w 1 --threads 4` (one worker keeps the timer and SQLite simple); `connect()` sets WAL and a 5 s busy timeout.
 - Develop on the Mac only, with `GTD dev`. Never point a local server at the live DB. Don't develop on the VM (its 1 GB RAM is for the apps).
 - Deploy with `git push home main` once tests pass. The hook backs up the DB (`/var/lib/apps/gtd/backups/gtd-predeploy-*.db`), checks out, `uv sync`s and restarts; a failed start prints the journal in the push output.
 - A `_migrate()` change runs on the live DB as soon as it is deployed. Before pushing one, run `GTD dev` and check the migration on real data.
