@@ -17,8 +17,8 @@ Delete anything here that has become wrong.
 
 ```bash
 GTD                                             # open the live app: https://home.<tailnet>.ts.net (GTD_URL to override)
-GTD dev                                         # run locally on dev.db (a snapshot of live data), open http://127.0.0.1:5005
-GTD dev --fresh                                 # same, re-pulling the snapshot from the VM first
+GTD dev                                         # pull a fresh snapshot of live data into dev.db, run locally, open http://127.0.0.1:5005
+GTD dev --keep                                  # same, reusing the existing dev.db
 git push home main                              # deploy (after tests pass); also push origin
 uv run app.py                                   # bare dev server (GTD_HOST / GTD_PORT to override)
 uv run pytest                                   # all tests
@@ -42,7 +42,7 @@ There is no build step, linter config or JS bundler.
 The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Tailscale; it holds the only live copy of the DB. VM-wide setup (systemd `app@.service`, deploy hook, nightly backups, port table) lives in `~/Github/personal/home-server`, not here; `deploy/gtd.env.example` is this app's `/etc/apps/gtd.env`. It runs as `gunicorn -w 1 --threads 4` (one worker keeps the timer and SQLite simple); `connect()` sets WAL and a 5 s busy timeout.
 - Develop on the Mac only, with `GTD dev`. Never point a local server at the live DB. Don't develop on the VM (its 1 GB RAM is for the apps).
 - Deploy with `git push home main` once tests pass. The hook backs up the DB (`/var/lib/apps/gtd/backups/gtd-predeploy-*.db`), checks out, `uv sync`s and restarts; a failed start prints the journal in the push output.
-- A `_migrate()` change runs on the live DB as soon as it is deployed. Before pushing one, run `GTD dev --fresh` and check the migration on real data.
+- A `_migrate()` change runs on the live DB as soon as it is deployed. Before pushing one, run `GTD dev` and check the migration on real data.
 - Rollback: `git push -f home <good-sha>:main`; if a migration damaged data, also restore the pre-deploy backup.
 - The VM's timezone is America/New_York (and `TZ` in the env file): `today()` and the timer's local times use the server's zone.
 - Fallback to the old local + Dropbox setup: branch `pre-cloud-local`.

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # GTD              open the live app on the `home` VM (over Tailscale).
-# GTD dev          run the app locally on dev.db, a snapshot of the live data, and open it.
-# GTD dev --fresh  the same, re-pulling the snapshot first.
+# GTD dev          pull a fresh snapshot of the live data into dev.db, run the app locally on it, and open it.
+# GTD dev --keep   the same, reusing the existing dev.db (offline, or to keep local test data).
 # The local server never touches the live DB; anything done in dev is thrown away.
 # Installed as a global command with: ln -s "$PWD/gtd.sh" ~/.local/bin/GTD
-set -e
+set -eo pipefail
 
 open_url() {
   if command -v open >/dev/null 2>&1; then
@@ -46,7 +46,7 @@ stop() {
   for _ in {1..25}; do running || break; sleep 0.2; done
 }
 
-if [[ ! -e $dev_db || $2 == --fresh ]]; then
+if [[ ! -e $dev_db || $2 != --keep ]]; then
   # .dump gives a consistent copy even while the live app is writing.
   echo "GTD: pulling a snapshot of the live data into dev.db"
   running && stop
