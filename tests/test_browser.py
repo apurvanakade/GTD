@@ -4,12 +4,13 @@ Run these when a change touches templates/, static/ or the JS in base.html. The 
 hook do that automatically. Everything else in the suite checks only the HTML contract with the JS.
 """
 import threading
+from datetime import timedelta
 
 import pytest
 from werkzeug.serving import make_server
 
 import db
-from app import app
+from app import app, local_input
 from conftest import NOW, seed
 
 pytestmark = pytest.mark.browser
@@ -118,6 +119,63 @@ def test_running_timer_clock_ticks(page, live):
     before = page.inner_text(".running-timer .clock")
     page.clock.run_for(3000)
     assert page.inner_text(".running-timer .clock") != before
+
+
+def test_running_timer_stays_in_view_and_stops_from_anywhere(page, live, conn):
+    page.set_viewport_size({"width": 900, "height": 400})
+    page.goto(live + "/done")
+    page.mouse.wheel(0, 10000)
+    page.wait_for_function("window.scrollY > 0")
+    assert page.locator(".running-timer").is_visible()
+    box = page.locator(".running-timer").bounding_box()
+    assert 0 <= box["y"] and box["y"] + box["height"] <= 400
+    with page.expect_navigation():
+        page.click(".running-timer button")
+    assert db.timer_running(conn) is None
+    assert page.url.endswith("/done")
+
+
+def test_timer_entry_saves_when_focus_leaves_the_row(page, live, conn):
+    page.goto(live + "/timer")
+    entry = page.locator("form.entry", has=page.get_by_role("link", name="buy tiles", exact=True))
+    new_start = local_input(db.iso(NOW - timedelta(hours=3)))
+    entry.locator("input[name=start]").fill(new_start)
+    entry.locator("input[name=end]").focus()  # moving within the row doesn't save yet
+    page.wait_for_timeout(200)
+    assert local_input(db.get_entry(conn, 1)["start_time"]) != new_start
+    with page.expect_navigation():
+        page.locator("h1").click()
+    assert local_input(db.get_entry(conn, 1)["start_time"]) == new_start
+    assert page.url.endswith("/timer")
+
+
+def test_timer_entry_enter_saves_and_unchanged_blur_does_not(page, live, conn):
+    page.goto(live + "/timer")
+    entry = page.locator("form.entry", has=page.get_by_role("link", name="call mum", exact=True))
+    entry.locator("input[name=start]").focus()
+    page.locator("h1").click()
+    page.wait_for_timeout(200)
+    assert db.get_entry(conn, 2)["end_time"] is None
+    entry.locator("input[name=end]").fill(local_input(db.iso(NOW - timedelta(minutes=5))))
+    with page.expect_navigation():
+        entry.locator("input[name=end]").press("Enter")
+    assert db.get_entry(conn, 2)["end_time"] is not None  # stopped, not restarted by ▶
+    assert db.timer_running(conn) is None
+
+
+def test_timer_entry_end_before_start_is_marked_not_saved(page, live, conn):
+    page.goto(live + "/timer")
+    entry = page.locator("form.entry", has=page.get_by_role("link", name="buy tiles", exact=True))
+    before = db.get_entry(conn, 1)["end_time"]
+    entry.locator("input[name=end]").fill(local_input(db.iso(NOW - timedelta(hours=5))))
+    page.locator("h1").click()
+    page.wait_for_timeout(200)
+    assert "bad" in entry.get_attribute("class")
+    assert db.get_entry(conn, 1)["end_time"] == before
+    entry.locator("input[name=end]").fill(local_input(db.iso(NOW - timedelta(minutes=30))))
+    with page.expect_navigation():
+        page.locator("h1").click()
+    assert db.get_entry(conn, 1)["end_time"] != before
 
 
 def test_theme_toggle_overrides_system_and_persists(page, live):

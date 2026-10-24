@@ -22,7 +22,7 @@
   <input type="datetime-local" name="end" value="{{ local_input(e.end_time) if e.end_time else '' }}" aria-label="End (set to stop)">
   <span class="dur">{{ e.start_time|elapsed if not e.end_time else ((e.end_time|epoch_ms - e.start_time|epoch_ms) / 1000)|hm }}</span>
   <span class="actions">
-    <button>Save</button>
+    <button hidden>Save</button>{# times save on leaving the row (JS); kept as the default so Enter saves, not ▶ #}
     {% if e.end_time and e.task_status not in ('done', 'abandoned') %}<button formaction="{{ url_for('task_start', id=e.task_id) }}" title="Start this task again" aria-label="Start this task again">▶</button>{% endif %}
     <button formaction="{{ url_for('entry_delete', id=e.id) }}" class="danger" title="Delete this time entry" aria-label="Delete this time entry" onclick="return confirm('Delete this time entry?')">✕</button>
   </span>

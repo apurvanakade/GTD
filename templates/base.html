@@ -179,6 +179,17 @@ document.querySelectorAll('ul[data-reorder]').forEach(list => {
   input.addEventListener('focus', () => { if (items.length) box.hidden = false; });
   document.addEventListener('pointerdown', e => { if (!form.contains(e.target)) box.hidden = true; });
 })();
+// A time entry saves once focus leaves its row with a time changed, never mid-typing, so start and end
+// can be fixed together. An end before the start isn't sent; the row is marked until it's fixed.
+document.addEventListener('focusout', e => {
+  const f = e.target.closest('form.entry');
+  if (!f || f.contains(e.relatedTarget)) return;
+  const [start, end] = [f.elements.start, f.elements.end];
+  if (start.value === start.defaultValue && end.value === end.defaultValue) return;
+  const bad = !start.value || (end.value && end.value < start.value);
+  f.classList.toggle('bad', bad);
+  if (!bad) f.requestSubmit();
+});
 // Tick off a task in place instead of reloading the page.
 document.addEventListener('submit', async e => {
   const f = e.target;

@@ -86,9 +86,10 @@ There is no build step, linter config or JS bundler.
   - Table `time_entries` (`task_id` → `tasks`, `ON DELETE CASCADE`; `start_time`, `end_time` as UTC ISO-8601 to the second, written by `db.iso()`). No `end_time` means running. A partial unique index allows only one running entry.
   - `now()` in `app.py` reads `app.config["NOW"]` (pinned in tests), like `today()`. Never call `datetime.now()` in a route. Forms show and take local time (`local_input()`).
   - `db.timer_start()` stops whatever is running first. `complete_task()` stops the task's timer.
-  - ▶ on every open task row (`row()` macro) and the task page starts it. The running timer shows as a bar under the nav on every page; its clock is the only timer JS (in `base.html`).
+  - ▶ on every open task row (`row()` macro) and the task page starts it. The running timer shows as a pill pinned to the bottom of the window on every page (task link, clock, ■ stop), so it never scrolls away; its clock is the only timer JS (in `base.html`).
   - The Timer page's start box matches an open task by title (case-insensitive), or captures what you typed to the inbox and times that, so everything timed is in the system.
   - Editing an entry saves only fields that differ from what the form showed, so untouched times keep their seconds. Setting an end on the running entry stops it.
+  - The history has no visible Save: the JS in `base.html` submits an entry when focus leaves its row with a time changed (moving between its start and end doesn't), or on Enter. An end before the start isn't sent; the row gets `.bad` until fixed. A hidden Save stays first in the form so Enter saves rather than pressing ▶.
   - Totals: time spent on the task page, the project total on the project page (done steps included), and per project this week on the Timer page (`db.week_totals()`).
   - `_migrate()` dropped the first timer's free-text `time_entries` table.
 - **`import_mindwtr.py`** was a one-off migration from Mindwtr's Local API, already applied on 2026-10-22.
@@ -155,7 +156,7 @@ Layout (Flask test client, temporary DB):
   - `seed(c)` builds one of everything the UI can show (each task status, H0, repeats, waiting/someday/done projects, horizons). Its ids are deterministic.
   - New date-dependent behavior should be tested against the fixed date.
 - `tests/test_app.py` holds the targeted tests: GTD rules, routes, recurrence, migrations, the import, edge cases.
-- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, a live server on a random port with the seeded DB) drives the JS: tick-off, search suggestions, theme toggle, capture dialog, dragging project steps, the project rows' ▸ and Expand all, `/` and `f` keys, date picker, timer clock, the add line and "＋ New…" reveals, calendar day click, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
+- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, a live server on a random port with the seeded DB) drives the JS: tick-off, search suggestions, theme toggle, capture dialog, dragging project steps, the project rows' ▸ and Expand all, `/` and `f` keys, date picker, timer clock, timer entry autosave, the add line and "＋ New…" reveals, calendar day click, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
 - `tests/test_crawl.py` holds the generic tests. They usually catch accidental bugs before anyone writes a targeted test for them:
   - Every link reachable from `/` must load.
   - Every form, with each submit button and each `<select>` option, must submit and land on a 200 page. Each submission gets a fresh copy of the seeded DB and sends its own page as the Referer.
