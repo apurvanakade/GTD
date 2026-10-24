@@ -26,7 +26,7 @@ LEGACY_TASKS = """CREATE TABLE tasks (
 @pytest.mark.parametrize("rule,expected", [
     ("weekly", (1, "week")), ("every 2 weeks", (2, "week")), ("every 6 months", (6, "month")),
     ("Daily", (1, "day")), ("every year", (1, "year")), ("every 0 days", None), ("fortnightly", None),
-    ("every 2 weeks after done", (2, "week")), ("weekly after completion", None),
+    ("every 2 weeks after done", (2, "week")), ("weekly after completion", (1, "week")),
     ("every 12 months", (12, "month")), ("Every  10  Days ", (10, "day")),
 ])
 def test_parse(rule, expected):
@@ -231,7 +231,7 @@ def test_tasks_need_a_project_or_h0(client, conn):
         assert db.get_task(conn, item)["inbox"]
     client.post(f"/process/{item}", data={"action": "next", "project_id": "h0"})
     assert db.get_task(conn, item)["ground"] and db.get_task(conn, item)["step"] is None
-    assert [t["id"] for t in db.ground_level(conn)] == [item]
+    assert [t["id"] for t in db.h0_actions(conn)] == [item]
     html = client.get("/horizons").data.decode()
     assert "inbox item" in html and f'href="/projects/{pid}">P</a>' in html  # H0 tasks and H1 projects
 
@@ -898,7 +898,7 @@ def test_h0_tasks_stay_off_next_actions(client, conn):
     page = client.get("/next").data
     assert b"real step" in page and b"stretch" not in page
     assert db.counts(conn, date(2026, 10, 22))["next"] == 1
-    assert gid in [t["id"] for t in db.ground_level(conn)]
+    assert gid in [t["id"] for t in db.h0_actions(conn)]
 
 
 def test_h0_tab_lists_every_ground_task_by_due_date(client, conn):
@@ -1214,3 +1214,121 @@ def test_links_filter_skips_markdown_and_trailing_punctuation():
     from app import links
     assert links("[site](https://example.com) and obsidian://open?vault=x, or (https://a.b/c).") == \
         ["https://example.com", "obsidian://open?vault=x", "https://a.b/c"]
+
+
+# --- review fixes (2026-10-24) ----------------------------------------------
+
+def test_making_a_project_keeps_the_items_time(client, conn):
+    client.post("/timer/start", data={"title": "plan trip"})  # captured to the inbox and timed
+    client.post("/timer/stop")
+    (t,) = db.inbox_tasks(conn)
+    client.post(f"/process/{t['id']}", data={"action": "project", "title": "Plan trip"})
+    task = db.get_task(conn, t["id"])
+    (p,) = [p for p in db.projects(conn) if p["title"] == "Plan trip"]
+    assert (task["project_id"], task["step"]) == (p["id"], "later")
+    assert db.has_time(conn, t["id"])  # the entry survived
+    assert [x["title"] for x in db.stalled_projects(conn)] == ["Plan trip"]  # still needs a next action
+    u = db.add_task(conn, "timed someday")
+    db.timer_start(conn, u, NOW - timedelta(minutes=5))
+    client.post(f"/process/{u}", data={"action": "someday", "someday_target": "new"})
+    assert db.get_task(conn, u)["project_id"] == db.projects(conn, "someday")[0]["id"]
+
+
+def test_process_ignores_items_no_longer_in_the_inbox(client, conn):
+    pid = db.add_project(conn, "P")
+    step = db.add_task(conn, "filed", project_id=pid, step="next")
+    done = db.add_task(conn, "finished", ground=1)
+    db.complete_task(conn, done, TODAY)
+    for action in ("project", "trash", "done", "someday"):
+        r = client.post(f"/process/{step}", data={"action": action, "someday_target": "new"})
+        assert r.headers["Location"] == "/process"
+    client.post(f"/process/{done}", data={"action": "trash"})
+    assert (db.get_task(conn, step)["state"], db.get_task(conn, step)["step"]) == ("open", "next")
+    assert db.get_task(conn, done)["state"] == "done"
+    assert [p["title"] for p in db.projects(conn, "someday")] == []
+
+
+def test_reviving_a_step_reopens_its_done_project(client, conn):
+    pid = db.add_project(conn, "Q")
+    t = db.add_task(conn, "q1", project_id=pid, step="next")
+    client.post(f"/tasks/{t}/delete")
+    client.post(f"/projects/{pid}", data={"status": "done"})
+    assert db.get_project(conn, pid)["completed_at"]
+    client.post(f"/tasks/{t}/revive")
+    p = db.get_project(conn, pid)
+    assert (p["status"], p["completed_at"]) == ("active", None)
+
+
+def test_reactivating_a_project_clears_its_completion(client, conn):
+    pid = db.add_project(conn, "P")
+    db.update_project(conn, pid, status="done")
+    db.update_project(conn, pid, status="active")
+    assert db.get_project(conn, pid)["completed_at"] is None
+
+
+def test_completion_dates_show_in_local_time(client, conn, monkeypatch):
+    import time
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    try:
+        t = db.add_task(conn, "late night", ground=1)
+        db.complete_task(conn, t, TODAY)
+        conn.execute("UPDATE tasks SET completed_at = '2026-10-23 01:30:00' WHERE id = ?", (t,))  # 21:30 on the 22nd
+        conn.commit()
+        html = client.get("/h0?done=1").get_data(as_text=True)
+        assert "2026-10-22" in html and "2026-10-23" not in html
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+def test_calendar_projects_repeats_only_after_today(client, conn):
+    db.add_task(conn, "overdue daily", ground=1, recur="daily", due_date="2026-10-15")
+    html = client.get("/calendar?w=2026-10-19").get_data(as_text=True)
+    assert html.count(">↻ overdue daily<") == 3  # Oct 23-25: completing it today skips the days before
+
+
+@pytest.mark.parametrize("rule,after", [
+    ("every 2 weeks after  done", True), ("weekly after done", True), ("Daily after completion", True),
+    ("every 2 weeks", False), ("monthly", False),
+])
+def test_after_done_matches_the_parser(rule, after):
+    assert recur.parse(rule) and recur.after_done(rule) == after
+
+
+def test_toggle_url_survives_a_clashing_query_arg(client, conn):
+    pid = db.add_project(conn, "P")
+    assert client.get(f"/projects/{pid}?id=99").status_code == 200
+
+
+def test_new_project_is_not_created_without_a_task(client, conn):
+    for url in ("/next/add", "/waiting/add", "/calendar"):
+        client.post(url, data={"title": " ", "project_id": "__new__", "new_project": "Ghost"})
+    pid = db.add_project(conn, "P")
+    t = db.add_task(conn, "t", project_id=pid, step="next")
+    client.post(f"/tasks/{t}", data={"title": "t", "due_date": "bogus date", "project_id": "__new__", "new_project": "Real"})
+    assert [p["title"] for p in db.open_projects(conn)] == ["P", "Real"]  # the task page still files it
+
+
+def test_h0_task_can_join_a_project_directly(client, conn):
+    pid = db.add_project(conn, "P")
+    g = db.add_task(conn, "h", ground=1)
+    db.update_task(conn, g, project_id=pid)
+    t = db.get_task(conn, g)
+    assert (t["ground"], t["step"], t["project_id"]) == (0, "later", pid)
+
+
+def test_review_overdue_skips_parked_projects(client, conn):
+    ids = seed(conn)
+    parked = db.add_task(conn, "parked overdue", project_id=ids["someday"], step="waiting", due_date="2026-10-01")
+    assert parked not in [t["id"] for t in db.overdue(conn, TODAY)]
+    assert "buy tiles" in [t["title"] for t in db.overdue(conn, TODAY)]
+
+
+def test_next_repeat_keeps_its_place_in_the_project(client, conn):
+    pid = db.add_project(conn, "P")
+    a = db.add_task(conn, "a", project_id=pid, step="next", recur="weekly", due_date="2026-10-22")
+    b = db.add_task(conn, "b", project_id=pid, step="later")
+    db.reorder_project(conn, pid, [a, b])
+    new = db.complete_task(conn, a, TODAY)
+    assert [t["id"] for t in db.project_tasks(conn, pid)] == [new, b]

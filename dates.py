@@ -3,6 +3,8 @@ import calendar
 import re
 from datetime import date, timedelta
 
+from recur import add_months
+
 WEEKDAYS = {name.lower(): i for i, name in enumerate(calendar.day_name)}
 WEEKDAYS.update({name.lower(): i for i, name in enumerate(calendar.day_abbr)})
 WEEKDAYS["tues"], WEEKDAYS["thur"], WEEKDAYS["thurs"] = 1, 3, 3
@@ -11,12 +13,6 @@ MONTHS.update({name.lower(): i for i, name in enumerate(calendar.month_abbr) if 
 MONTHS["sept"] = 9
 IN = re.compile(r"^in\s+(\d+)\s+(day|week|month|year)s?$")
 MONTH_DAY = re.compile(r"^(?:([a-z]+)\s+(\d{1,2})|(\d{1,2})\s+([a-z]+))(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$")
-
-
-def _add_months(d, n):
-    m = d.month - 1 + n
-    year, month = d.year + m // 12, m % 12 + 1
-    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
 def parse(text, today):
@@ -37,7 +33,7 @@ def parse(text, today):
     if s == "next_week":
         return today + timedelta(days=7 - today.weekday())  # next Monday
     if s == "next_month":
-        return _add_months(today, 1)
+        return add_months(today, 1)
     if s.startswith("next_") and s[5:] in WEEKDAYS:
         s = s[5:]
     if s in WEEKDAYS:
@@ -49,7 +45,7 @@ def parse(text, today):
             return today + timedelta(days=n)
         if unit == "week":
             return today + timedelta(weeks=n)
-        return _add_months(today, n * (12 if unit == "year" else 1))
+        return add_months(today, n * (12 if unit == "year" else 1))
     m = MONTH_DAY.match(s)
     if m:
         month = MONTHS.get(m.group(1) or m.group(4))

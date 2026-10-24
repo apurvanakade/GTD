@@ -10,7 +10,7 @@
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
     {% if t.step == 'later' %}<span>later</span>{% endif %}
-    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at[:10] }}</span>{% endif %}
+    {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>{% endif %}
     {% if t.due_date and not closed %}<span class="date">{{ t.due_date }}</span>{% endif %}
     {# Always there, empty when not repeating, so dates line up down the list. #}
     <span class="recur"{% if t.recur %} title="{{ t.recur }}"{% endif %}>{{ '↻' if t.recur }}</span>

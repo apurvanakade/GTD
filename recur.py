@@ -4,25 +4,26 @@ import calendar
 import re
 from datetime import date, timedelta
 
-ALIASES = {"daily": "every 1 day", "weekly": "every 1 week",
-           "monthly": "every 1 month", "yearly": "every 1 year"}
-PATTERN = re.compile(r"^every\s+(?:(\d+)\s+)?(day|week|month|year)s?(\s+after\s+(?:done|completion))?$")
+UNITS = {"daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"}
+PATTERN = re.compile(r"^(?:every (?:(\d+) )?(day|week|month|year)s?|(daily|weekly|monthly|yearly))( after (?:done|completion))?$")
+
+
+def _match(rule):
+    return PATTERN.match(" ".join((rule or "").lower().split()))
 
 
 def parse(rule):
     """Return (n, unit) or None if the rule is not understood."""
-    if not rule:
-        return None
-    rule = ALIASES.get(rule.strip().lower(), rule.strip().lower())
-    m = PATTERN.match(rule)
+    m = _match(rule)
     if not m:
         return None
     n = int(m.group(1) or 1)
-    return (n, m.group(2)) if n > 0 else None
+    return (n, m.group(2) or UNITS[m.group(3)]) if n > 0 else None
 
 
 def after_done(rule):
-    return bool(rule) and rule.strip().lower().endswith(("after done", "after completion"))
+    m = _match(rule)
+    return bool(m and m.group(4))
 
 
 def add_months(d, n):

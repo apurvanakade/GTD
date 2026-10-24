@@ -78,16 +78,18 @@ CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NO
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
-TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground"}  # state changes via complete/abandon/revive
+TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground", "position"}  # state changes via complete/abandon/revive
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
 TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox
   FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"""
 # Next Actions leave out H0 tasks (they have their own tab), recurring tasks until their due day, and tasks of waiting/someday projects.
-READY = """t.state = 'open' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"""
-VISIBLE_NEXT = f"""{READY} AND t.step = 'next' AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')"""
-VISIBLE_H0 = f"{READY} AND t.ground"
+ACTIVE = "t.project_id IN (SELECT id FROM projects WHERE status = 'active')"
+NEXT = f"t.state = 'open' AND t.step = 'next' AND {ACTIVE}"
+READY = "(t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
+VISIBLE_NEXT = f"{NEXT} AND {READY}"
+VISIBLE_H0 = f"t.state = 'open' AND t.ground AND {READY}"
 STEP_ORDER = "CASE WHEN t.ground OR t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2 ELSE 3 END"
 
 
@@ -162,11 +164,14 @@ def update_task(c, id, **fields):
 
 def _fit_step(fields, current=None):
     """Only a project's tasks have a step: a task without one (H0, inbox) drops any step it's given, and one
-    joining a project becomes a later step unless told otherwise."""
+    joining a project leaves H0 and becomes a later step unless told otherwise."""
     project_id = fields["project_id"] if "project_id" in fields else current and current["project_id"]
     if not project_id:
         fields["step"] = None
-    elif not fields.get("step") and not (current and current["step"]):
+        return fields
+    if "project_id" in fields:
+        fields["ground"] = 0
+    if not fields.get("step") and not (current and current["step"]):
         fields["step"] = "later"
     elif "step" in fields and not fields["step"]:
         fields.pop("step")
@@ -195,6 +200,10 @@ def get_task(c, id):
     return c.execute(f"{TASK_SELECT} WHERE t.id = ?", (id,)).fetchone()
 
 
+def has_time(c, task_id):
+    return c.execute("SELECT 1 FROM time_entries WHERE task_id = ?", (task_id,)).fetchone() is not None
+
+
 def delete_task(c, id):
     """Hard delete, time included. The UI abandons a task first; only an abandoned one is deleted for good."""
     c.execute("DELETE FROM tasks WHERE id = ?", (id,))
@@ -211,7 +220,10 @@ def abandon_task(c, id, now=None):
 
 
 def revive_task(c, id):
-    """An abandoned task comes back where it was: a later step of its project, an H0 task, or an inbox item."""
+    """An abandoned task comes back where it was: a later step of its project, an H0 task, or an inbox item.
+    A done project it belongs to is reopened, since it has an open task again."""
+    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL WHERE status = 'done'
+        AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'abandoned')""", (id,))
     c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN NULL ELSE 'later' END,
         completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
     c.commit()
@@ -230,7 +242,7 @@ def complete_task(c, id, today, now=None):
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
         new_id = add_task(c, t["title"], notes=t["notes"], step=t["step"], project_id=t["project_id"],
-                          ground=t["ground"], recur=t["recur"],
+                          ground=t["ground"], recur=t["recur"], position=t["position"],
                           due_date=recur.next_due(t["recur"], due, today).isoformat())
     c.commit()
     return new_id
@@ -242,6 +254,7 @@ def tasks_with_step(c, step):
 
 
 def next_actions(c, today):
+    """Next actions that count today: next_list() minus repeats not yet due."""
     return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_NEXT}
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""", (today.isoformat(),)).fetchall()
 
@@ -259,20 +272,13 @@ def inbox_tasks(c):
 def next_list(c):
     """The Next tab: every next action outside H0 and waiting/someday projects, repeats not yet due included,
     soonest due first; undated ones last."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.step = 'next'
-        AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')
+    return c.execute(f"""{TASK_SELECT} WHERE {NEXT}
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
 def overdue(c, today):
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND (t.step IN ('next', 'waiting') OR t.ground) AND t.due_date < ?
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND (t.ground OR t.step IN ('next', 'waiting') AND {ACTIVE}) AND t.due_date < ?
         ORDER BY t.due_date""", (today.isoformat(),)).fetchall()
-
-
-def ground_level(c):
-    """H0: open tasks deliberately kept outside any project."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.ground
-        ORDER BY t.due_date IS NULL, t.due_date, lower(t.title)""").fetchall()
 
 
 def project_tasks(c, project_id):
@@ -350,8 +356,9 @@ def add_project(c, title, **fields):
 
 
 def update_project(c, id, **fields):
-    if fields.get("status") == "done":
-        c.execute("UPDATE projects SET completed_at = datetime('now') WHERE id = ?", (id,))
+    if "status" in fields:
+        c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END"
+                  " WHERE id = ?", (fields["status"], id))
     _update(c, "projects", PROJECT_FIELDS, id, fields)
 
 

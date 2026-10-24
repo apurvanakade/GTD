@@ -22,7 +22,7 @@
 <h2>Completed</h2>
 <ul class="tasks">
   {% for p in done_projects|sort(attribute='completed_at', reverse=True) %}
-  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at[:10] }}</span>{% endif %}</li>
+  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at|local_date }}</span>{% endif %}</li>
   {% else %}
   <li class="empty">No finished projects.</li>
   {% endfor %}

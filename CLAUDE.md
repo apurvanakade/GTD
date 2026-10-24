@@ -64,8 +64,8 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Rules are `daily|weekly|monthly|yearly` or `every N day|week|month|year(s)`.
   - Both step from their anchor by `n*k`, so month-end days don't drift.
   - `next_due()` returns the first such date after today, stepping from the old due date.
-  - `occurrences()` yields every such date up to an end date. Use it for projections such as the calendar.
-  - A rule ending in `after done` (e.g. `every 2 weeks after done`) counts from the completion date: `next_due()` steps from today, and `occurrences()` yields nothing, so the calendar shows no projection.
+  - `occurrences()` yields every such date up to an end date. Use it for projections such as the calendar, which shows only those after today (completing an overdue repeat skips the days before).
+  - A rule ending in `after done` or `after completion` (e.g. `every 2 weeks after done`, `weekly after done`) counts from the completion date: `next_due()` steps from today, and `occurrences()` yields nothing, so the calendar shows no projection.
 - **`dates.py`** is pure date parsing (`parse(text, today)`): ISO, `today|tomorrow|yesterday`, weekdays (always the next one after today), `next week|month`, `in N days|weeks|months`, `oct 30`.
   - `task_fields_from_form()` runs every `due_date` through it, so the task page, Process and the add lines take words. Their `date_input()` macro (`_task.html`) is a text box plus a 📅 button; the button opens a hidden native `<input type="date">` and the JS in `base.html` copies the pick into the text box. An unparseable date is flashed and ignored. The calendar's add form keeps its native date picker.
 - **Done** (`/done`, `db.done_tasks()`) lists done projects, the latest 100 done tasks and the latest 100 abandoned tasks (`state="abandoned"`), newest first. Abandoned rows show ✕ and a Revive button.
@@ -74,6 +74,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Each task has a colored left stripe and tint by kind (`k-next|h0|later|waiting|someday|inbox`; H0 wins, then an inbox item, then a someday project, then waiting task or project, else the status), with a dot legend below the grid.
   - The header's actions are `‹ Today ›` and a Month|Week toggle. Clicking a day number sets the add line's date and placeholder.
   - The crawler follows calendar links only within `CALENDAR_MONTHS`.
+- **Timestamps** (`created_at`, `completed_at`) are SQLite `datetime('now')`, i.e. UTC. Show their date with the `local_date` filter, never `[:10]`, or an evening's work shows as tomorrow.
 - **Templates** extend `base.html`. Keep it lean and uniform: every page has the same layout, built from the same parts, so no page needs its own reading.
   - Nav: three groups split by a thin rule. Timer, Calendar (minute-by-minute work); Next, H0, Waiting, Inbox (task lists); Projects, Someday, Reference (lists you file into). Review, Horizons and Done (the weekly-review pages) sit muted on the right in `nav .aux`.
   - The top bar is identical on every page so switching tabs never moves anything: a round `+` (capture), search, ◐. Then the running timer, the capture `<dialog>`, and the page's JS (plus `static/notes.js`, below).
@@ -116,15 +117,15 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **A task has a state and, only inside a project, a step.** There is no task "status".
   - `tasks.state` is `open | done | abandoned`; every open-task query says `state = 'open'` and never looks at `step` for that.
   - `tasks.step` is `next | waiting | later`, and is `NULL` exactly when `project_id` is: H0 tasks and inbox items have none. `later` means a project step that isn't the next action yet. Beware SQL's `NULL`: `step != 'later'` skips every task without a step.
-  - The schema enforces it: `CHECK ((step IS NULL) = (project_id IS NULL))` and no H0 task in a project. `_fit_step()` (run by `add_task`/`update_task`) drops a step given to a projectless task and makes a task joining a project a `later` step unless a step is given.
+  - The schema enforces it: `CHECK ((step IS NULL) = (project_id IS NULL))` and no H0 task in a project. `_fit_step()` (run by `add_task`/`update_task`) drops a step given to a projectless task, and takes a task joining a project out of H0 and makes it a `later` step unless a step is given.
   - Writes reject unknown fields (`_insert` as well as `_update`), so a stray `status=` raises.
   - `_migrate()` split the old `status` column: done/abandoned became the state; a project task kept next/waiting/later as its step (inbox, someday → `later`); a task without a project got no step.
 - **The inbox is not a step or a state.** It is every open task with neither a project nor H0, "ground level" (`tasks.ground`): `INBOX` in `db.py`, `db.inbox_tasks()`, and an `inbox` column on every `TASK_SELECT` row. Only H0 is a deliberate choice of no project; any other projectless task is an orphan, and orphans are the inbox.
   - The task page shows the step picker only for a project's open task. `orphaned()` in `app.py` flashes when a task lands in the inbox.
 - **H0 tasks are always next actions**, so they have no step: the H0 tab lists every open H0 task.
   - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. Its "＋ New…" option reveals a `new_project` box; `task_fields_from_form()` creates an active project from it and uses it, overriding the dropdown. A repeat rule doesn't exempt a task.
-  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open tasks have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, due date, repeat), so a ground-level task needs no Inbox or Process trip.
-  - Process refuses next/waiting with neither, and waiting with H0. The task form and the Next, calendar and Waiting add lines send such a task to the inbox instead.
+  - H0 tasks are listed on the Horizons page (`db.h0_actions()`), and their rows show an H0 tag. Their open tasks have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, due date, repeat), so a ground-level task needs no Inbox or Process trip.
+  - Process acts only on inbox items (a stale tab or resubmit is refused), and refuses next/waiting with neither, and waiting with H0. The task form and the Next, calendar and Waiting add lines send such a task to the inbox instead.
   - The Next page's add line (`/next/add`, `add_next_action()` in `app.py`, shared with the calendar) adds a next action directly: a `later` step if its project already has one.
   - The Waiting page's add box (`/waiting/add`: title, project (no H0 option), follow-up date) adds a `waiting` task; the Someday page's (`/someday/add`) adds a someday project.
 - **Weekly review** (`/review`) is a checklist you finish.
@@ -146,11 +147,11 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **Recurring tasks** keep their step (or H0) but don't count until their due date: the nav counts, the weekly review and `db.next_actions()` use `VISIBLE_NEXT`/`VISIBLE_H0`.
   - `complete_task()` marks the task done and inserts the next instance.
   - A repeat rule without a due date gets today as its due date.
-- **Projects can't be marked done while they have open tasks.**
+- **Projects can't be marked done while they have open tasks.** Moving a project out of done clears its `completed_at`.
 - **Only an empty project can be deleted** (no tasks at all, done ones included). The project page shows the button only then.
 - **Deleting a task abandons it** (`db.abandon_task()`: state `abandoned`, `completed_at` set, its timer stopped, its time kept). Process → trash does the same.
-  - Revive (`/tasks/<id>/revive`, `db.revive_task()`) brings it back where it was: a later step of its project, an H0 task, or the inbox.
-  - Deleting an abandoned task is a hard delete (its time too). So is `db.delete_task()`, which Process also uses when an item becomes a project.
+  - Revive (`/tasks/<id>/revive`, `db.revive_task()`) brings it back where it was: a later step of its project (reopening the project if it's done), an H0 task, or the inbox.
+  - Deleting an abandoned task is a hard delete (its time too). So is `db.delete_task()`, which Process also uses when an item becomes a project (`into_new_project()` in `app.py`), unless the item has tracked time: then it stays as a `later` step of the new project.
   - Completing an abandoned task does nothing. Search and suggestions include abandoned tasks with the done ones.
 - **Horizons** live in one table keyed by `level`:
   - `purpose` and `vision` are single seeded notes that can't be deleted.
