@@ -22,16 +22,17 @@ uv run app.py
 
 Then open <http://127.0.0.1:5005>.
 
-### Optional: the `GTD` command (macOS or Linux)
+## Hosting it
 
-The author hosts the app on a small always-on server reached over Tailscale and deploys with `git push home main`. `gtd.sh` reflects that: `GTD` opens the hosted app (`GTD_URL`, or `https://home.<tailnet>.ts.net`), and `GTD dev` runs a local server on `dev.db` (pulled from the server with `ssh home`), restarting it when code or templates change. To install it globally:
+To run it on an always-on machine, use gunicorn with one worker (it keeps SQLite and the timer simple):
 
 ```bash
-mkdir -p ~/.local/bin
-ln -s "$PWD/gtd.sh" ~/.local/bin/GTD
+GTD_DB=/path/to/gtd.db GTD_SECRET=<random string> uv run gunicorn -w 1 --threads 4 -b 127.0.0.1:5005 app:app
 ```
 
-Make sure `~/.local/bin` is on your `PATH`. Server output goes to `server.log`. For production, `gunicorn -w 1 --threads 4 -b 127.0.0.1:5005 app:app` (see `deploy/gtd.env.example`).
+The app has no login. Reach it only over a private network (Tailscale, a VPN, an SSH tunnel) or put an authenticating proxy in front of it.
+
+`gtd.sh` and `deploy/` are the author's own launcher and server config (a VM named `home` on a Tailscale network). They are examples and won't work unchanged.
 
 ## Configuration
 
