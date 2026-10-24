@@ -1222,3 +1222,10 @@ def test_actions_stay_on_the_page_they_were_made_on(client, conn):
     assert loc(client.post(f"/process/{i}", data={"action": "project"})) == "/process"
     r = client.get("/process")
     assert r.status_code == 200 and b"Inbox zero." in r.data
+
+
+def test_favicon(client):
+    html = client.get("/next").get_data(as_text=True)
+    assert 'rel="icon"' in html
+    r = client.get("/static/favicon.svg")
+    assert r.status_code == 200 and b"<svg" in r.data
