@@ -5,7 +5,7 @@ doesn't expect, a redirect to a page that no longer exists. Each form submission
 copy of the seeded DB, and every page is requested with itself as the Referer (as after a save).
 """
 import re
-import shutil
+import sqlite3
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
@@ -180,10 +180,18 @@ def test_every_page_has_the_same_skeleton(client, conn):
     assert checked > 25
 
 
+def copy_db(src, dest):
+    """Copy a WAL-mode database, including what is still in its -wal file (a plain file copy would miss it)."""
+    src = src if isinstance(src, sqlite3.Connection) else sqlite3.connect(src)
+    with sqlite3.connect(dest) as d:
+        src.backup(d)
+    d.close()
+
+
 def test_every_form_submits(client, conn, tmp_path):
     seed(conn)
     template = tmp_path / "seeded.db"
-    shutil.copy(app.config["DB_PATH"], template)
+    copy_db(conn, template)
     pages, _ = crawl(client)
     seen, failures = set(), []
     for page_url, page in pages.items():
@@ -193,8 +201,8 @@ def test_every_form_submits(client, conn, tmp_path):
                 if key in seen:
                     continue
                 seen.add(key)
-                fresh = tmp_path / "fresh.db"
-                shutil.copy(template, fresh)
+                fresh = tmp_path / f"fresh{len(seen)}.db"
+                copy_db(template, fresh)
                 app.config["DB_PATH"] = str(fresh)
                 headers = {"Referer": f"http://localhost{page_url}"}
                 if method == "post":

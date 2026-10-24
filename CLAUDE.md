@@ -16,8 +16,11 @@ Delete anything here that has become wrong.
 ## Commands
 
 ```bash
-GTD                                             # global command (~/.local/bin/GTD -> gtd.sh): (re)start server, open browser
-uv run app.py                                   # http://127.0.0.1:5005 (GTD_HOST / GTD_PORT to override)
+GTD                                             # open the live app: https://home.<tailnet>.ts.net (GTD_URL to override)
+GTD dev                                         # run locally on dev.db (a snapshot of live data), open http://127.0.0.1:5005
+GTD dev --fresh                                 # same, re-pulling the snapshot from the VM first
+git push home main                              # deploy (after tests pass); also push origin
+uv run app.py                                   # bare dev server (GTD_HOST / GTD_PORT to override)
 uv run pytest                                   # all tests
 uv run pytest tests/test_app.py::test_horizons  # one test
 uv run pytest -k calendar                       # by keyword
@@ -25,13 +28,24 @@ uv run pytest -m browser                        # browser tests (real Chromium, 
 ```
 
 Env vars:
-- `GTD_DB` points to a different SQLite file. The default is `~/Dropbox/Apps/GTD/gtd.db` when that folder exists (the database syncs between machines through Dropbox, one machine at a time; stop the server and let Dropbox finish before switching), else `./gtd.db`. Either way it holds the user's real data; `gtd.db*` is gitignored. See `default_db_path()` in `db.py`.
+- `GTD_DB` points to the SQLite file. Default: `gtd.db` next to the code. On the VM it is `/var/lib/apps/gtd/gtd.db`; `GTD dev` sets it to `dev.db`. `gtd.db*` and `dev.db*` are gitignored (the repo is public).
 - `GTD_SECRET` sets the Flask session key used for flash messages.
 - `GTD_DEBUG=1` turns on Flask's debug mode and auto-reload.
+- `GTD_URL` overrides the live URL `GTD` opens.
 
 There is no build step, linter config or JS bundler.
 
-`GTD` restarts a running server when any `*.py`, template or static file is newer than `.server-started`, which it touches on every start. A server it didn't start counts as stale. Without this, a long-running server would serve new templates with old Python code.
+`GTD dev` restarts a running local server when any `*.py`, template or static file is newer than `.server-started`, which it touches on every start. A server it didn't start counts as stale.
+
+## Hosting and development
+
+The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Tailscale; it holds the only live copy of the DB. VM-wide setup (systemd `app@.service`, deploy hook, nightly backups, port table) lives in `~/Github/personal/home-server`, not here; `deploy/gtd.env.example` is this app's `/etc/apps/gtd.env`. It runs as `gunicorn -w 1 --threads 4` (one worker keeps the timer and SQLite simple); `connect()` sets WAL and a 5 s busy timeout.
+- Develop on the Mac only, with `GTD dev`. Never point a local server at the live DB. Don't develop on the VM (its 1 GB RAM is for the apps).
+- Deploy with `git push home main` once tests pass. The hook backs up the DB (`/var/lib/apps/gtd/backups/gtd-predeploy-*.db`), checks out, `uv sync`s and restarts; a failed start prints the journal in the push output.
+- A `_migrate()` change runs on the live DB as soon as it is deployed. Before pushing one, run `GTD dev --fresh` and check the migration on real data.
+- Rollback: `git push -f home <good-sha>:main`; if a migration damaged data, also restore the pre-deploy backup.
+- The VM's timezone is America/New_York (and `TZ` in the env file): `today()` and the timer's local times use the server's zone.
+- Fallback to the old local + Dropbox setup: branch `pre-cloud-local`.
 
 ## Architecture
 

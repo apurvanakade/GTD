@@ -24,15 +24,14 @@ Then open <http://127.0.0.1:5005>.
 
 ### Optional: the `GTD` command (macOS or Linux)
 
-`gtd.sh` starts the server in the background if it isn't running, restarts it when code or templates have changed, and opens the browser (`open` on macOS, `xdg-open` on Linux). To install it globally:
+The author hosts the app on a small always-on server reached over Tailscale and deploys with `git push home main`. `gtd.sh` reflects that: `GTD` opens the hosted app (`GTD_URL`, or `https://home.<tailnet>.ts.net`), and `GTD dev` runs a local server on `dev.db` (pulled from the server with `ssh home`), restarting it when code or templates change. To install it globally:
 
 ```bash
 mkdir -p ~/.local/bin
 ln -s "$PWD/gtd.sh" ~/.local/bin/GTD
-GTD
 ```
 
-Make sure `~/.local/bin` is on your `PATH`. Server output goes to `server.log`.
+Make sure `~/.local/bin` is on your `PATH`. Server output goes to `server.log`. For production, `gunicorn -w 1 --threads 4 -b 127.0.0.1:5005 app:app` (see `deploy/gtd.env.example`).
 
 ## Configuration
 
@@ -42,7 +41,7 @@ Environment variables, all optional:
 | --- | --- | --- |
 | `GTD_HOST` | `127.0.0.1` | Address to listen on |
 | `GTD_PORT` | `5005` | Port to listen on |
-| `GTD_DB` | `~/Dropbox/Apps/GTD/gtd.db` if that folder exists, else `./gtd.db` | Path to the SQLite file |
+| `GTD_DB` | `./gtd.db` | Path to the SQLite file |
 | `GTD_SECRET` | random on each start | Flask session key (used for flash messages) |
 | `GTD_DEBUG` | off | Set to `1` for Flask debug mode and auto-reload |
 

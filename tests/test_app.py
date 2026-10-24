@@ -1,3 +1,4 @@
+import os
 import re
 import sqlite3
 from datetime import date, timedelta
@@ -968,11 +969,22 @@ def test_add_h0_task_straight_from_h0_tab(client, conn):
     assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=''").fetchone()[0] == 0
 
 
-def test_default_db_path_prefers_dropbox_folder(tmp_path):
-    assert db.default_db_path(str(tmp_path)).endswith("gtd.db")
-    assert not db.default_db_path(str(tmp_path)).startswith(str(tmp_path))  # no Dropbox folder: next to the code
-    (tmp_path / "Dropbox" / "Apps" / "GTD").mkdir(parents=True)
-    assert db.default_db_path(str(tmp_path)) == str(tmp_path / "Dropbox" / "Apps" / "GTD" / "gtd.db")
+def test_default_db_path_sits_next_to_the_code(monkeypatch):
+    import importlib
+    monkeypatch.delenv("GTD_DB", raising=False)
+    try:
+        assert importlib.reload(db).DB_PATH == os.path.join(os.path.dirname(os.path.abspath(db.__file__)), "gtd.db")
+        monkeypatch.setenv("GTD_DB", "/var/lib/apps/gtd/gtd.db")
+        assert importlib.reload(db).DB_PATH == "/var/lib/apps/gtd/gtd.db"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(db)
+
+
+def test_connect_uses_wal_and_waits_for_locks(tmp_path):
+    c = db.connect(str(tmp_path / "w.db"))
+    assert c.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+    assert c.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
 
 
 def test_reorder_project_tasks(client, conn):

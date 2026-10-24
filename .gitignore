@@ -5,3 +5,4 @@ reference.md
 __pycache__/
 server.log
 .server-started
+dev.db*

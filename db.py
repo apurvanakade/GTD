@@ -5,15 +5,8 @@ from datetime import date, datetime, timezone
 import fuzzy
 import recur
 
-def default_db_path(home):
-    """The database lives in Dropbox (synced between machines) if ~/Dropbox/Apps/GTD exists, else next to the code."""
-    synced = os.path.join(home, "Dropbox", "Apps", "GTD")
-    if os.path.isdir(synced):
-        return os.path.join(synced, "gtd.db")
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
-
-
-DB_PATH = os.environ.get("GTD_DB") or default_db_path(os.path.expanduser("~"))
+# On the server GTD_DB points to /var/lib/apps/gtd/gtd.db; locally `GTD dev` points it to dev.db.
+DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
 # Someday and waiting are project statuses only. A deleted task is first "abandoned" (revivable), like done. An active project has exactly one next action;
 # its other open steps are "later".
@@ -99,6 +92,8 @@ def connect(path=None):
     c = sqlite3.connect(path or DB_PATH)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    c.execute("PRAGMA busy_timeout = 5000")  # gunicorn threads share the file; wait for a lock instead of failing
+    c.execute("PRAGMA journal_mode = WAL")
     _migrate(c)
     c.executescript(SCHEMA)
     return c
