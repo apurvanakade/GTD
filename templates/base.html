@@ -35,7 +35,7 @@
 </nav>
 {# The bar is identical on every page so switching tabs never moves it. #}
 <div class="bar">
-  <button type="button" class="add-inbox icon" title="Add to inbox ( / )" aria-label="Add to inbox">+</button>
+  <button type="button" class="add-inbox icon" title="Add to inbox ( / ) — all shortcuts ( ? )" aria-label="Add to inbox">+</button>
   <form class="search" action="{{ url_for('search') }}">
     <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search  ( f )" aria-label="Search" autocomplete="off" required>
     <div class="suggest" hidden></div>
@@ -50,6 +50,21 @@
   <button class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
 </form>
 {% endif %}
+{# One list drives both the key handler and the help overlay. #}
+{% set go_keys = [('t', 'timer_view', 'Timer'), ('c', 'calendar_view', 'Calendar'), ('n', 'next_view', 'Next'), ('h', 'h0_view', 'H0'),
+  ('w', 'waiting', 'Waiting'), ('i', 'inbox', 'Inbox'), ('p', 'projects_view', 'Projects'), ('s', 'someday', 'Someday'),
+  ('r', 'reference', 'Reference'), ('v', 'review', 'Review'), ('o', 'horizons_view', 'Horizons'), ('d', 'done', 'Done')] %}
+<dialog class="help-dialog">
+  <h2>Keyboard shortcuts</h2>
+  <dl>
+    <dt><kbd>/</kbd> <kbd>+</kbd></dt><dd>Add to inbox</dd>
+    <dt><kbd>f</kbd></dt><dd>Search</dd>
+    <dt><kbd>?</kbd></dt><dd>This list</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close a dialog or the search suggestions</dd>
+    {% for key, ep_name, label in go_keys %}<dt><kbd>{{ key }}</kbd></dt><dd>Go to {{ label }}</dd>{% endfor %}
+  </dl>
+  <p class="row"><button type="button" onclick="this.closest('dialog').close()">Close</button></p>
+</dialog>
 <dialog class="capture-dialog">
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <h2>Add to inbox</h2>
@@ -71,7 +86,11 @@ document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
+  if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
+  const go = GO[e.key];
+  if (go && !document.querySelector('dialog[open]')) location = go;
 });
+const GO = {{ '{' }}{% for key, ep_name, label in go_keys %}{{ key|tojson }}: {{ url_for(ep_name)|tojson }},{% endfor %}{{ '}' }};
 // Capture goes to the Inbox page's own box, or elsewhere to the dialog.
 function capture() {
   const inline = document.querySelector('main .capture input');

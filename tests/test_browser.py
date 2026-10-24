@@ -307,3 +307,16 @@ def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
     edges = {t: row(page, t).locator(".date").evaluate("e => Math.round(e.getBoundingClientRect().right)")
              for t in ("vacuum", "dentist")}
     assert edges["vacuum"] == edges["dentist"], edges
+
+
+def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
+    page.goto(live + "/next")
+    page.keyboard.press("?")
+    assert page.locator(".help-dialog").evaluate("d => d.open")
+    page.keyboard.press("n")  # ignored while the overlay is open
+    page.keyboard.press("Escape")
+    assert not page.locator(".help-dialog").evaluate("d => d.open")
+    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("p", "/projects"), ("h", "/h0")):
+        with page.expect_navigation():
+            page.keyboard.press(key)
+        assert page.url == live + path
