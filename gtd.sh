@@ -18,7 +18,8 @@ if [[ $1 != dev ]]; then
   # GTD_URL overrides; otherwise https://home.<tailnet>.ts.net from Tailscale's MagicDNS suffix.
   url=${GTD_URL:-}
   if [[ -z $url ]]; then
-    suffix=$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["MagicDNSSuffix"])' 2>/dev/null) || true
+    ts=$(command -v tailscale || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)  # the Mac app has no CLI on PATH
+    suffix=$("$ts" status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["MagicDNSSuffix"])' 2>/dev/null) || true
     [[ -n $suffix ]] || { echo "GTD: Tailscale isn't running; start it or set GTD_URL." >&2; exit 1; }
     url=https://home.$suffix
   fi
