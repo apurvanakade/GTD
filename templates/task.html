@@ -13,12 +13,13 @@
   <input type="hidden" name="next" value="{{ back or '' }}">
   <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
   <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
-  <label>Status
+  {# Only a project's step picks a status: an inbox item is waiting to be filed, an H0 task is always next. #}
+  {% if t.project_id or t.status in ('done', 'abandoned') %}<label>Status
     <select name="status">
-      {% for s in ['inbox', 'next', 'waiting', 'later'] %}<option{% if s == t.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
+      {% for s in ['next', 'waiting', 'later'] %}<option{% if s == t.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
       {% if t.status in ('done', 'abandoned') %}<option selected>{{ t.status }}</option>{% endif %}
     </select>
-  </label>
+  </label>{% endif %}
   <label>Project
     {{ project_select(projects, 'h0' if t.ground else t.project_id) }}
   </label>
@@ -27,7 +28,7 @@
   <div class="row">
     <button class="primary">Save</button>
     <button name="exit" value="1">Save &amp; exit</button>
-    {% if t.status == 'abandoned' %}<button formaction="{{ url_for('revive', id=t.id) }}" title="Back to the inbox">Revive</button>
+    {% if t.status == 'abandoned' %}<button formaction="{{ url_for('revive', id=t.id) }}" title="Bring it back">Revive</button>
     {% else %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Mark done" aria-label="Mark done">✓</button>
     {% if t.project_id and t.status != 'done' %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
     {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>

@@ -43,7 +43,7 @@ def test_after_done_counts_from_completion():
 
 def test_capture_and_process_to_next(client, conn):
     client.post("/capture", data={"title": "call dentist"})
-    t = db.tasks_with_status(conn, "inbox")[0]
+    t = db.inbox_tasks(conn)[0]
     pid = db.add_project(conn, "Teeth")
     client.post(f"/process/{t['id']}", data={"action": "next", "title": "Call dentist",
                                              "project_id": str(pid), "due_date": ""})
@@ -69,7 +69,7 @@ def test_process_other_actions(client, conn):
     ids = [db.add_task(conn, n) for n in ("a", "b", "c", "d", "e")]
     client.post(f"/process/{ids[0]}", data={"action": "trash"})
     client.post(f"/process/{ids[1]}", data={"action": "someday"})  # must say where it goes
-    assert db.get_task(conn, ids[1])["status"] == "inbox"
+    assert db.get_task(conn, ids[1])["inbox"]
     client.post(f"/process/{ids[1]}", data={"action": "someday", "someday_target": "new"})
     client.post(f"/process/{ids[2]}", data={"action": "done"})
     pid = db.add_project(conn, "Deck")
@@ -130,7 +130,8 @@ def test_move_project_to_someday_from_task(client, conn):
 # --- recurring + projects --------------------------------------------------
 
 def test_recurring_complete_spawns_hidden_next(client, conn):
-    tid = db.add_task(conn, "vacuum", status="next", recur="weekly", due_date="2026-10-22")
+    tid = db.add_task(conn, "vacuum", status="next", project_id=db.add_project(conn, "Home"), recur="weekly",
+                      due_date="2026-10-22")
     assert [t["id"] for t in db.next_actions(conn, TODAY)] == [tid]
     client.post(f"/tasks/{tid}/complete", headers={"X-Requested-With": "fetch"})
     assert db.next_actions(conn, TODAY) == []
@@ -207,9 +208,7 @@ def test_tasks_need_a_project_or_h0(client, conn):
     for status in ("next", "waiting", "later"):
         db.update_task(conn, tid, status=status, project_id=pid)
         client.post(f"/tasks/{tid}", data={"status": status, "project_id": "", "recur": "weekly"})
-        assert db.get_task(conn, tid)["status"] == "inbox"  # repeating doesn't exempt it
-    client.post(f"/tasks/{tid}", data={"status": "later", "project_id": "h0"})
-    assert db.get_task(conn, tid)["status"] == "inbox"  # later steps always need a project
+        assert db.get_task(conn, tid)["inbox"]  # repeating doesn't exempt it
     client.post(f"/tasks/{tid}", data={"status": "next", "project_id": "h0"})
     t = db.get_task(conn, tid)
     assert (t["status"], t["ground"], t["project_id"]) == ("next", 1, None)
@@ -221,18 +220,73 @@ def test_tasks_need_a_project_or_h0(client, conn):
     for action in ("next", "waiting"):
         client.post(f"/process/{item}", data={"action": action,
                                               "project_id": "", "recur": "monthly"})
-        assert db.get_task(conn, item)["status"] == "inbox"
+        assert db.get_task(conn, item)["inbox"]
     client.post(f"/process/{item}", data={"action": "next", "project_id": "h0"})
     assert db.get_task(conn, item)["status"] == "next"
     assert [t["id"] for t in db.ground_level(conn)] == [item]
     html = client.get("/horizons").data.decode()
     assert "inbox item" in html and f'href="/projects/{pid}">P</a>' in html  # H0 tasks and H1 projects
 
-    orphan = db.add_task(conn, "legacy", status="next")  # e.g. from before the rule
-    stray = db.add_task(conn, "stray wait", status="waiting")
-    db.add_task(conn, "h0 wait", status="waiting", ground=1)
-    assert [t["id"] for t in db.orphans(conn)] == [orphan, stray]
-    assert b"legacy" in client.get("/review").data
+    stray = db.add_task(conn, "stray wait", status="waiting")  # no project, not H0: it's an inbox item
+    assert db.get_task(conn, stray)["inbox"] and stray not in [t["id"] for t in db.next_list(conn)]
+
+
+def test_inbox_is_not_a_status(client, conn):
+    """The inbox is every open task with neither a project nor H0; filing one into a project makes it a later step."""
+    with pytest.raises(sqlite3.IntegrityError):
+        db.add_task(conn, "x", status="inbox")
+    conn.rollback()
+    client.post("/capture", data={"title": "call dentist"})
+    (t,) = db.inbox_tasks(conn)
+    assert t["status"] == "later" and client.get("/inbox").status_code == 200
+    page = client.get(f"/tasks/{t['id']}").get_data(as_text=True)
+    assert 'name="status"' not in page  # nothing to pick until it's in a project
+    pid = db.add_project(conn, "Teeth")
+    db.add_task(conn, "find number", status="later", project_id=pid)  # project has no next action: still later
+    client.post(f"/tasks/{t['id']}", data={"title": "call dentist", "project_id": str(pid)})
+    t = db.get_task(conn, t["id"])
+    assert (t["status"], t["project_id"], t["inbox"]) == ("later", pid, 0) and db.inbox_tasks(conn) == []
+    assert 'name="status"' in client.get(f"/tasks/{t['id']}").get_data(as_text=True)
+    # Taking the project away puts it back in the inbox, whatever its status was.
+    db.update_task(conn, t["id"], status="waiting")
+    r = client.post(f"/tasks/{t['id']}", data={"project_id": "", "status": "waiting"}, follow_redirects=True)
+    assert db.get_task(conn, t["id"])["status"] == "later" and b"went to the inbox" in r.data
+    assert [x["id"] for x in db.inbox_tasks(conn)] == [t["id"]] and db.counts(conn, TODAY)["inbox"] == 1
+
+
+def test_h0_tasks_are_always_next(client, conn):
+    for status in ("waiting", "later"):
+        assert db.get_task(conn, db.add_task(conn, status, status=status, ground=1))["status"] == "next"
+    pid = db.add_project(conn, "P")
+    tid = db.add_task(conn, "w", status="waiting", project_id=pid)
+    r = client.post(f"/tasks/{tid}", data={"project_id": "h0", "status": "waiting"}, follow_redirects=True)
+    assert db.get_task(conn, tid)["status"] == "next" and b"always next actions" in r.data
+    assert 'name="status"' not in client.get(f"/tasks/{tid}").get_data(as_text=True)
+    item = db.add_task(conn, "item")
+    client.post(f"/process/{item}", data={"action": "waiting", "project_id": "h0"})
+    assert db.get_task(conn, item)["inbox"]  # refused: a waiting-for needs a project
+    assert 'value="h0"' not in client.get("/waiting").get_data(as_text=True).split("<main>")[1]
+    client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
+    assert [t["title"] for t in db.inbox_tasks(conn)] == ["item", "parcel"]
+
+
+def test_migration_drops_the_inbox_status(tmp_path):
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + db.TASKS_TABLE.format(name="tasks")
+                      .replace("CHECK (status IN (", "CHECK (status IN ('inbox', ") + """;
+      INSERT INTO projects (id, title) VALUES (1, 'P');
+      INSERT INTO tasks (title, status, project_id, ground) VALUES ('loose', 'inbox', NULL, 0),
+        ('filed', 'inbox', 1, 0), ('h0 wait', 'waiting', NULL, 1), ('orphan', 'next', NULL, 0),
+        ('n', 'next', 1, 0), ('d', 'done', NULL, 0);""")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    got = {r["title"]: r["status"] for r in c.execute("SELECT * FROM tasks")}
+    assert got == {"loose": "later", "filed": "later", "h0 wait": "next", "orphan": "later", "n": "next", "d": "done"}
+    assert "'inbox'" not in c.execute("SELECT sql FROM sqlite_master WHERE name = 'tasks'").fetchone()[0]
+    assert [t["title"] for t in db.inbox_tasks(c)] == ["loose", "orphan"]
+    c.close()
 
 
 def test_migrates_someday_tasks(tmp_path):
@@ -254,7 +308,7 @@ def test_migrates_someday_tasks(tmp_path):
     old.close()
     c = db.connect(path)
     got = {r["title"]: (r["status"], r["project_id"]) for r in c.execute("SELECT * FROM tasks")}
-    assert got == {"in project": ("later", 1), "loose": ("inbox", None), "n": ("next", 1)}
+    assert got == {"in project": ("later", 1), "loose": ("later", None), "n": ("next", 1)}
     db.update_project(c, 1, status="waiting")  # new CHECK is in place
     c.close()
     db.connect(path).close()  # second connect is a no-op
@@ -373,7 +427,7 @@ def test_calendar_add(client, conn):
     assert db.get_task(conn, t["id"])["status"] == "next"  # existing next action is kept
     assert [x["title"] for x in db.tasks_with_status(conn, "later")] == ["send forms"]
     client.post("/calendar", data={"title": "loose", "due_date": "2027-04-02"})
-    assert [x["title"] for x in db.tasks_with_status(conn, "inbox")] == ["loose"]
+    assert [x["title"] for x in db.inbox_tasks(conn)] == ["loose"]
     client.post("/calendar", data={"title": "bins", "due_date": "2027-04-02", "recur": "weekly", "project_id": "h0"})
     assert db.tasks_with_status(conn, "next")[-1]["title"] == "bins"
 
@@ -434,13 +488,13 @@ def test_migration_drops_contexts(tmp_path):
     old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + db.TASKS_TABLE.format(name="tasks")
                       .replace("project_id INTEGER", "context TEXT, project_id INTEGER") + """;
       CREATE TABLE contexts (name TEXT PRIMARY KEY); INSERT INTO contexts VALUES ('@home');
-      INSERT INTO tasks (title, status, context) VALUES ('a', 'next', '@home'), ('b', 'inbox', NULL);""")
+      INSERT INTO tasks (title, status, context) VALUES ('a', 'next', '@home'), ('b', 'later', NULL);""")
     old.commit()
     old.close()
     c = db.connect(path)
     assert "context" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]
     assert not c.execute("SELECT 1 FROM sqlite_master WHERE name = 'contexts'").fetchone()
-    assert [(r["title"], r["status"]) for r in c.execute("SELECT * FROM tasks ORDER BY id")] == [("a", "next"), ("b", "inbox")]
+    assert [(r["title"], r["status"]) for r in c.execute("SELECT * FROM tasks ORDER BY id")] == [("a", "next"), ("b", "later")]
     c.close()
     db.connect(path).close()  # second connect is a no-op
 
@@ -477,10 +531,10 @@ def test_import_mapping():
 def test_search(client, conn):
     pid = db.add_project(conn, "Kitchen remodel", notes="call the plumber")
     db.add_task(conn, "Buy tiles", status="next", project_id=pid)
-    db.add_task(conn, "Pick tile grout", status="inbox")
+    db.add_task(conn, "Pick tile grout")
     done = db.add_task(conn, "Measure kitchen tiles", status="next", project_id=pid)
     db.complete_task(conn, done, TODAY)
-    db.add_task(conn, "100% sure", status="inbox")
+    db.add_task(conn, "100% sure")
     r = db.search(conn, "TILE")
     assert [t["title"] for t in r["tasks"]] == ["Pick tile grout", "Buy tiles"]
     assert [t["title"] for t in r["done"]] == ["Measure kitchen tiles"]
@@ -529,13 +583,6 @@ def test_delete_empty_project_only(client, conn):
     assert db.get_project(conn, full) is not None
     r = client.post(f"/projects/{empty}/delete")
     assert db.get_project(conn, empty) is None and r.headers["Location"] == "/projects"
-
-
-def test_review_orphan_wording(client, conn):
-    html = client.get("/review").get_data(as_text=True)
-    assert "Every open task has a project or is H0" in html and "repeat" not in html
-    db.add_task(conn, "legacy", status="next")
-    assert "mark it H0" in client.get("/review").get_data(as_text=True)
 
 
 def test_review_next_actions_skip_scheduled(client, conn):
@@ -593,7 +640,7 @@ def test_process_edges(client, conn):
     assert client.post(f"/process/{tid}", data={}).status_code == 400
     assert client.post("/process/999", data={"action": "trash"}).status_code == 404
     client.post(f"/process/{tid}", data={"action": "someday", "someday_target": "999"})
-    assert db.get_task(conn, tid)["status"] == "inbox"  # unknown project: asks again
+    assert db.get_task(conn, tid)["inbox"]  # unknown project: asks again
 
 
 def test_projects_create_and_status(client, conn):
@@ -623,7 +670,7 @@ def test_capture_on_inbox_has_no_flash_and_blank_is_ignored(client, conn):
                     follow_redirects=True)
     assert b"Added to inbox" not in r.data and b"milk" in r.data
     client.post("/capture", data={"title": "   "})
-    assert [t["title"] for t in db.tasks_with_status(conn, "inbox")] == ["milk"]
+    assert [t["title"] for t in db.inbox_tasks(conn)] == ["milk"]
 
 
 def test_home_and_horizon_page(client, conn):
@@ -683,7 +730,7 @@ def test_timer_page_start_uses_a_task_or_captures_to_inbox(client, conn):
     client.post("/timer/start", data={"title": "write REPORT "})
     assert db.timer_running(conn)["task_id"] == t
     r = client.post("/timer/start", data={"title": "Yoga"}, follow_redirects=True)
-    (yoga,) = db.tasks_with_status(conn, "inbox")
+    (yoga,) = db.inbox_tasks(conn)
     assert yoga["title"] == "Yoga" and db.timer_running(conn)["task_id"] == yoga["id"]
     assert "Captured to inbox: Yoga" in r.get_data(as_text=True)
     client.post("/timer/start", data={"title": " "})
@@ -726,14 +773,19 @@ def test_abandoned_tasks_leave_every_list_and_show_on_done(client, conn):
     assert db.get_task(conn, t)["status"] == "abandoned"
 
 
-def test_revive_sends_an_abandoned_task_back_to_the_inbox(client, conn):
+def test_revive_brings_an_abandoned_task_back_where_it_was(client, conn):
     pid = db.add_project(conn, "P")
     t = db.add_task(conn, "x", status="next", project_id=pid)
-    client.post(f"/tasks/{t}/delete")
+    h0, loose = db.add_task(conn, "h", status="next", ground=1), db.add_task(conn, "loose")
+    for i in (t, h0, loose):
+        client.post(f"/tasks/{i}/delete")
     r = client.post(f"/tasks/{t}/revive")
     task = db.get_task(conn, t)
-    assert task["status"] == "inbox" and task["completed_at"] is None and task["project_id"] == pid
+    assert task["status"] == "later" and task["completed_at"] is None and task["project_id"] == pid
     assert r.headers["Location"] == "/next"  # no Referer: the default
+    client.post(f"/tasks/{h0}/revive")
+    client.post(f"/tasks/{loose}/revive")
+    assert db.get_task(conn, h0)["status"] == "next" and db.get_task(conn, loose)["inbox"]
 
 
 def test_process_trash_abandons(client, conn):
@@ -818,7 +870,7 @@ def test_old_time_entries_table_is_replaced(tmp_path):
 
 
 def test_new_project_from_task_form(client, conn):
-    tid = db.add_task(conn, "ring Bob", status="inbox")
+    tid = db.add_task(conn, "ring Bob")
     r = client.post(f"/tasks/{tid}", data={"project_id": "h0", "new_project": " Garden ", "status": "next"})
     assert r.status_code in (200, 302)
     t = db.get_task(conn, tid)
@@ -830,12 +882,12 @@ def test_new_project_from_task_form(client, conn):
 
 def test_new_option_without_a_name_picks_nothing(client, conn):
     """The pickers' "＋ New…" option only reveals the name box; picked with the box left empty, it's no choice."""
-    tid = db.add_task(conn, "ring Bob", status="inbox")
+    tid = db.add_task(conn, "ring Bob")
     conn.commit()
     html = client.get(f"/tasks/{tid}").data.decode()
     assert html.count('value="__new__"') == 1
     client.post(f"/tasks/{tid}", data={"project_id": "__new__",
-                                       "new_project": "", "status": "inbox"})
+                                       "new_project": ""})
     t = db.get_task(conn, tid)
     assert t["project_id"] is None and not t["ground"]
     assert not conn.execute("SELECT 1 FROM projects WHERE title = '__new__'").fetchone()
@@ -1023,7 +1075,7 @@ def test_migration_keeps_project_order(tmp_path):
                       .replace("position INTEGER,", "") + """;
       INSERT INTO projects (id, title) VALUES (1, 'P');
       INSERT INTO tasks (title, status, project_id) VALUES ('a', 'later', 1), ('b', 'next', 1), ('c', 'waiting', 1),
-        ('loose', 'inbox', NULL);""")
+        ('loose', 'later', NULL);""")
     old.commit()
     old.close()
     c = db.connect(path)
@@ -1098,11 +1150,9 @@ def test_add_waiting_for_on_the_waiting_page(client, conn):
     client.post("/waiting/add", data={"title": "quote from Bob", "project_id": str(pid), "due_date": "fri"})
     t = db.tasks_with_status(conn, "waiting")[0]
     assert (t["title"], t["project_id"], t["due_date"]) == ("quote from Bob", pid, "2026-10-23")
-    client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
-    assert db.tasks_with_status(conn, "waiting")[-1]["ground"] == 1
     # Neither a project nor H0: it is not dropped, it goes to the inbox to be processed.
     r = client.post("/waiting/add", data={"title": "mystery", "project_id": "", "due_date": ""}, follow_redirects=True)
-    assert [t["title"] for t in db.tasks_with_status(conn, "inbox")] == ["mystery"]
+    assert [t["title"] for t in db.inbox_tasks(conn)] == ["mystery"]
     assert b"went to the inbox" in r.data
 
 
@@ -1166,7 +1216,7 @@ def test_add_a_next_action_on_the_next_page(client, conn):
     assert status["dig"]["status"] == "next"
     assert status["second"]["status"] == "later"  # Busy already has its one next action
     assert status["first"]["status"] == "next"
-    assert status["loose"]["status"] == "inbox"  # no project, not H0: an orphan goes to be processed
+    assert status["loose"]["project_id"] is None and not status["loose"]["ground"]  # an inbox item, to be processed
     assert status["sweep"]["status"] == "next" and status["sweep"]["ground"]
 
 

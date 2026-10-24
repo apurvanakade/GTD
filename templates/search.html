@@ -13,8 +13,13 @@
   {% endfor %}
 </ul>
 {% endif %}
-{% for status, label in [('inbox', 'Inbox'), ('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later')] %}
-{% set tasks = r.tasks|selectattr('status', 'equalto', status)|list %}
+{% set inbox = r.tasks|selectattr('inbox')|list %}
+{% if inbox %}
+<h2>Inbox</h2>
+<ul class="tasks">{% for t in inbox %}{{ row(t) }}{% endfor %}</ul>
+{% endif %}
+{% for status, label in [('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later')] %}
+{% set tasks = r.tasks|rejectattr('inbox')|selectattr('status', 'equalto', status)|list %}
 {% if tasks %}
 <h2>{{ label }}</h2>
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>

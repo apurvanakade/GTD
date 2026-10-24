@@ -231,12 +231,9 @@ def test_saving_an_edit_page_unchanged_changes_nothing(client, conn):
     """Each edit form must render the record's current values, or saving it quietly rewrites the record."""
     seed(conn)
     columns = lambda row: {k: row[k] for k in row.keys()}
-    orphans = [t["id"] for t in db.orphans(conn)]
     for (tid,) in conn.execute("SELECT id FROM tasks WHERE status != 'done'").fetchall():
         before = columns(db.get_task(conn, tid))
         submit_unchanged(client, f"/tasks/{tid}")
-        if tid in orphans:  # by design, saving an orphan sends it to the inbox
-            before["status"] = "inbox"
         assert columns(db.get_task(conn, tid)) == before, before["title"]
     for (pid,) in conn.execute("SELECT id FROM projects").fetchall():
         before = columns(db.get_project(conn, pid))

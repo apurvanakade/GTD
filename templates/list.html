@@ -3,7 +3,7 @@
 {% block title %}{{ title }}{% endblock %}
 {% block body %}
 {% call add_form(url_for('waiting_add'), 'Waiting for… (who, what)') %}
-  {{ project_select(open_projects) }}
+  {{ project_select(open_projects, h0=False) }}
   {{ date_input(placeholder='follow up on…') }}
 {% endcall %}
 {% if projects %}

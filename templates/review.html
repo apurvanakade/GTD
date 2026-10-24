@@ -25,12 +25,6 @@
     <p class="hint">Pick its one next action, mark it waiting or someday, or mark it done.</p>
     {% else %}<p>✓ No stalled projects.</p>{% endif %}
   </li>
-  <li id="orphans" class="{{ 'ticked' if 'orphans' in checked }}">
-    <h2>{{ tick('orphans') }}Every task has a project</h2>
-    {% if orphans %}<ul class="plain">{% for t in orphans %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.status }}</span></li>{% endfor %}</ul>
-    <p class="hint">Give each a project or mark it H0 · ground level, finish it or delete it.</p>
-    {% else %}<p>✓ Every open task has a project or is H0.</p>{% endif %}
-  </li>
   <li id="nexts" class="{{ 'ticked' if 'nexts' in checked }}">
     <h2>{{ tick('nexts') }}Scan next actions</h2>
     <p><a href="{{ url_for('next_view') }}">Next actions ({{ nexts|length }})</a>: tick off what's done, delete what's dead.</p>

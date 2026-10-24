@@ -90,11 +90,9 @@ def task_fields_from_form():
     return fields
 
 
-def orphaned(status, project_id, ground):
-    """Open tasks need a project unless marked H0 (ground level); later steps always need one."""
-    if project_id:
-        return False
-    return status == "later" or (status in ("next", "waiting") and not ground)
+def orphaned(project_id, ground):
+    """Open tasks need a project unless marked H0 (ground level); those with neither are inbox items."""
+    return not project_id and not ground
 
 
 def back(default="next_view"):
@@ -111,7 +109,7 @@ def home():
 def capture():
     title = form_value("title")
     if title:
-        db.add_task(conn(), title, status="inbox")
+        db.add_task(conn(), title)
         if not (request.referrer or "").endswith(url_for("inbox")):  # the inbox list already shows it
             flash(f"Added to inbox: {title}")
     return back()
@@ -121,12 +119,12 @@ def capture():
 
 @app.route("/inbox")
 def inbox():
-    return render_template("inbox.html", tasks=db.tasks_with_status(conn(), "inbox"))
+    return render_template("inbox.html", tasks=db.inbox_tasks(conn()))
 
 
 @app.route("/process")
 def process():
-    items = db.tasks_with_status(conn(), "inbox")
+    items = db.inbox_tasks(conn())
     return render_template("process.html", t=items[0] if items else None, remaining=len(items),
                            projects=db.open_projects(conn()))
 
@@ -162,8 +160,11 @@ def process_item(id):
         fields = task_fields_from_form()
         fields.update(title=title, notes=notes, status=action)
         pid = fields.get("project_id")
-        if orphaned(action, pid, fields.get("ground")):
+        if orphaned(pid, fields.get("ground")):
             flash("Pick a project, or H0 · ground level if it really belongs to none.")
+            return redirect(url_for("process"))
+        if action == "waiting" and fields.get("ground"):
+            flash("H0 tasks are always next actions: a waiting-for needs a project.")
             return redirect(url_for("process"))
         if action == "next" and pid and db.project_next(c, pid):
             fields["status"] = "later"
@@ -201,8 +202,7 @@ def add_next_action():
     if fields.get("title"):
         pid = fields.get("project_id")
         status = "later" if pid and db.project_next(conn(), pid) else "next"
-        if orphaned(status, pid, fields.get("ground")):
-            status = "inbox"
+        if orphaned(pid, fields.get("ground")):
             flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
         db.add_task(conn(), fields.pop("title"), status=status, **fields)
     return fields
@@ -250,11 +250,11 @@ def waiting():
 def waiting_add():
     fields = task_fields_from_form()
     if fields.get("title"):
-        status = "waiting"
-        if orphaned(status, fields.get("project_id"), fields.get("ground")):
-            status = "inbox"
-            flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
-        db.add_task(conn(), fields.pop("title"), status=status, **fields)
+        if fields.get("ground"):  # H0 tasks are always next actions
+            fields["ground"] = 0
+        if orphaned(fields.get("project_id"), fields.get("ground")):
+            flash("No project, so it went to the inbox to be processed.")
+        db.add_task(conn(), fields.pop("title"), status="waiting", **fields)
     return redirect(url_for("waiting"))
 
 
@@ -318,7 +318,7 @@ def done():
 
 
 # The weekly review's steps, in order; review.html has one section per key.
-REVIEW_STEPS = ("sweep", "inbox", "overdue", "stalled", "orphans", "nexts", "waiting", "someday", "ahead", "horizons")
+REVIEW_STEPS = ("sweep", "inbox", "overdue", "stalled", "nexts", "waiting", "someday", "ahead", "horizons")
 
 
 @app.template_filter()
@@ -332,7 +332,7 @@ def review():
     all_next = db.next_actions(c, today())
     nexts = [t for t in all_next if not (t["due_date"] and t["due_date"] >= today().isoformat())]
     return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()),
-                           orphans=db.orphans(c), nexts=nexts, scheduled=len(all_next) - len(nexts),
+                           nexts=nexts, scheduled=len(all_next) - len(nexts),
                            steps=REVIEW_STEPS, checked=db.review_checked(c), past=db.reviews(c))
 
 
@@ -363,7 +363,8 @@ def search_suggest():
     for kind, r in db.suggest(conn(), request.args.get("q") or ""):
         if kind == "task":
             out.append({"title": r["title"], "url": url_for("task_view", id=r["id"]),
-                         "kind": "H0" if r["ground"] and r["status"] not in ("done", "abandoned") else r["status"],
+                         "kind": "H0" if r["ground"] and r["status"] not in ("done", "abandoned")
+                                 else "inbox" if r["inbox"] else r["status"],
                          "meta": r["project_title"] or ""})
         elif kind == "project":
             out.append({"title": r["title"], "url": url_for("project_view", id=r["id"]), "kind": "project",
@@ -389,9 +390,10 @@ def task_view(id):
             fields.pop("title", None)
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
         ground = fields["ground"] if "ground" in fields else t["ground"]
-        if orphaned(fields.get("status", t["status"]), project_id, ground):
-            fields["status"] = "inbox"
-            flash("No project and not H0 · ground level (later steps always need a project), so this went back to the inbox.")
+        if orphaned(project_id, ground) and not t["inbox"] and t["status"] not in ("done", "abandoned"):
+            flash("No project and not H0 · ground level, so this went to the inbox to be processed.")
+        elif ground and fields.get("status") in ("waiting", "later"):
+            flash("H0 tasks are always next actions.")
         flash_demoted(db.update_task(c, id, **fields))
         nxt = request.form.get("next") or None
         if request.form.get("exit"):
@@ -444,7 +446,7 @@ def delete(id):
 @app.post("/tasks/<int:id>/revive")
 def revive(id):
     db.revive_task(conn(), id)
-    flash("Revived into the inbox.")
+    flash("Revived.")
     return back()
 
 
@@ -622,7 +624,7 @@ def timer_start():
     if t:
         tid = t["id"]
     else:
-        tid = db.add_task(c, title, status="inbox")
+        tid = db.add_task(c, title)
         flash(f"Captured to inbox: {title}")
     db.timer_start(c, tid, now())
     return back("timer_view")

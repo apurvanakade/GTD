@@ -9,7 +9,8 @@ import recur
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
 # Someday and waiting are project statuses only. A deleted task is first "abandoned" (revivable), like done. An active project has exactly one next action;
-# its other open steps are "later".
+# its other open steps are "later". The inbox isn't a status: it's every open task with neither a project nor H0
+# (stored as "later", so giving it a project makes it a later step). H0 tasks are always "next".
 PROJECTS_TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
@@ -25,7 +26,7 @@ CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'inbox' CHECK (status IN ('inbox', 'next', 'waiting', 'later', 'done', 'abandoned')),
+  status TEXT NOT NULL DEFAULT 'later' CHECK (status IN ('next', 'waiting', 'later', 'done', 'abandoned')),
   project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
   due_date TEXT,
   recur TEXT,
@@ -76,14 +77,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_
 
 TASK_FIELDS = {"title", "notes", "status", "project_id", "due_date", "recur", "ground"}
 PROJECT_FIELDS = {"title", "notes", "status"}
-TASK_SELECT = "SELECT t.*, p.title AS project_title, p.status AS project_status FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"
-# Next Actions leave out H0 tasks (they live on Horizons), recurring tasks until their due day, and tasks of waiting/someday projects.
-# Open tasks need a project unless deliberately marked H0 (ground level); later steps always need one.
-# Inbox items aren't processed yet.
-ORPHAN = """t.project_id IS NULL AND (t.status = 'later' OR (t.status IN ('next', 'waiting') AND NOT t.ground))"""
+# Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
+INBOX = "t.status NOT IN ('done', 'abandoned') AND t.project_id IS NULL AND NOT t.ground"
+TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox
+  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"""
+# Next Actions leave out H0 tasks (they have their own tab), recurring tasks until their due day, and tasks of waiting/someday projects.
 READY = """t.status = 'next' AND (t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"""
-VISIBLE_NEXT = f"""{READY} AND NOT t.ground
-  AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))"""
+VISIBLE_NEXT = f"""{READY} AND NOT t.ground AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')"""
 VISIBLE_H0 = f"{READY} AND t.ground"
 STATUS_ORDER = "CASE t.status WHEN 'next' THEN 0 WHEN 'waiting' THEN 1 WHEN 'later' THEN 2 ELSE 3 END"
 
@@ -120,7 +120,7 @@ def _migrate(c):
         # Someday tasks inside a project become later steps; loose ones go back to the inbox.
         steps += [TASKS_TABLE.format(name="tasks_new"), """INSERT INTO tasks_new (id, title, notes, status,
             project_id, due_date, recur, created_at, completed_at) SELECT id, title, notes,
-            CASE WHEN status != 'someday' THEN status WHEN project_id IS NULL THEN 'inbox' ELSE 'later' END,
+            CASE WHEN status NOT IN ('someday', 'inbox') THEN status ELSE 'later' END,
             project_id, due_date, recur, created_at, completed_at FROM tasks""",
                   "DROP TABLE tasks", "ALTER TABLE tasks_new RENAME TO tasks"]
     if steps:
@@ -142,11 +142,16 @@ def _migrate(c):
               {STATUS_ORDER}, created_at, id) AS n FROM tasks t WHERE project_id IS NOT NULL) o WHERE o.id = tasks.id;
             COMMIT;""")
     tasks_sql = c.execute("SELECT sql FROM sqlite_master WHERE name = 'tasks'").fetchone()
-    if tasks_sql and "'abandoned'" not in tasks_sql[0]:
-        # Deleting a task became abandoning it. Foreign keys off, or dropping tasks would delete their time.
+    if tasks_sql and ("'abandoned'" not in tasks_sql[0] or "'inbox'" in tasks_sql[0]):
+        # Deleting a task became abandoning it, and the inbox stopped being a status: inbox items and
+        # orphans become "later" (a later step if they have a project), H0 tasks "next".
+        # Foreign keys off, or dropping tasks would delete their time.
         cols = ", ".join(r[1] for r in c.execute("PRAGMA table_info(tasks)"))
         c.execute("PRAGMA foreign_keys = OFF")
-        c.executescript(f"""BEGIN; {TASKS_TABLE.format(name="tasks_new")};
+        c.executescript(f"""BEGIN; UPDATE tasks SET status = 'later' WHERE status = 'inbox';
+            UPDATE tasks SET status = CASE WHEN ground THEN 'next' ELSE 'later' END
+              WHERE project_id IS NULL AND status IN ('next', 'waiting', 'later');
+            {TASKS_TABLE.format(name="tasks_new")};
             INSERT INTO tasks_new ({cols}) SELECT {cols} FROM tasks;
             DROP TABLE tasks; ALTER TABLE tasks_new RENAME TO tasks; COMMIT;""")
         c.execute("PRAGMA foreign_keys = ON")
@@ -175,6 +180,7 @@ def _update(c, table, allowed, id, fields):
 
 def add_task(c, title, **fields):
     id = _insert(c, "tasks", TASK_FIELDS, {"title": title, **fields})
+    _settle(c, id)
     _one_next(c, id)
     return id
 
@@ -182,7 +188,15 @@ def add_task(c, title, **fields):
 def update_task(c, id, **fields):
     """Returns the titles of project tasks demoted to later because this one became next."""
     _update(c, "tasks", TASK_FIELDS, id, fields)
+    _settle(c, id)
     return _one_next(c, id)
+
+
+def _settle(c, id):
+    """A task without a project is "next" if H0, else "later" (an inbox item): those are the only statuses it can have."""
+    c.execute("""UPDATE tasks SET status = CASE WHEN ground THEN 'next' ELSE 'later' END
+        WHERE id = ? AND project_id IS NULL AND status IN ('next', 'waiting', 'later')""", (id,))
+    c.commit()
 
 
 def _one_next(c, id):
@@ -222,8 +236,9 @@ def abandon_task(c, id, now=None):
 
 
 def revive_task(c, id):
-    """An abandoned task goes back to the inbox (keeping its project) to be processed again."""
-    c.execute("UPDATE tasks SET status = 'inbox', completed_at = NULL WHERE id = ? AND status = 'abandoned'", (id,))
+    """An abandoned task comes back where it was: a later step of its project, an H0 next action, or the inbox."""
+    c.execute("""UPDATE tasks SET status = CASE WHEN ground AND project_id IS NULL THEN 'next' ELSE 'later' END,
+        completed_at = NULL WHERE id = ? AND status = 'abandoned'""", (id,))
     c.commit()
 
 
@@ -261,21 +276,21 @@ def h0_actions(c):
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
+def inbox_tasks(c):
+    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY t.created_at, t.id").fetchall()
+
+
 def next_list(c):
     """The Next tab: every next action outside H0 and waiting/someday projects, repeats not yet due included,
     soonest due first; undated ones last."""
     return c.execute(f"""{TASK_SELECT} WHERE t.status = 'next' AND NOT t.ground
-        AND (t.project_id IS NULL OR t.project_id IN (SELECT id FROM projects WHERE status = 'active'))
+        AND t.project_id IN (SELECT id FROM projects WHERE status = 'active')
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
 
 
 def overdue(c, today):
     return c.execute(f"""{TASK_SELECT} WHERE t.status IN ('next', 'waiting') AND t.due_date < ?
         ORDER BY t.due_date""", (today.isoformat(),)).fetchall()
-
-
-def orphans(c):
-    return c.execute(f"{TASK_SELECT} WHERE {ORPHAN} ORDER BY t.created_at, t.id").fetchall()
 
 
 def ground_level(c):
@@ -300,7 +315,7 @@ def reorder_project(c, project_id, ids):
 def counts(c, today):
     one = lambda sql, *a: c.execute(sql, a).fetchone()[0]
     return {
-        "inbox": one("SELECT count(*) FROM tasks WHERE status = 'inbox'"),
+        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}"),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_NEXT}", today.isoformat()),
         "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE status = 'waiting'")
@@ -326,7 +341,7 @@ def search(c, q):
     """Tasks (open, then the latest 50 done), projects, horizons and reference whose text contains every word of q."""
     where, args = _matching(q, ["t.title", "t.notes"])
     tasks = c.execute(f"""{TASK_SELECT} WHERE t.status NOT IN ('done', 'abandoned') AND {where} ORDER BY
-        CASE t.status WHEN 'inbox' THEN 0 WHEN 'next' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END,
+        {INBOX} DESC, CASE t.status WHEN 'next' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END,
         lower(t.title)""", args).fetchall()
     done = c.execute(f"""{TASK_SELECT} WHERE t.status IN ('done', 'abandoned') AND {where}
         ORDER BY t.completed_at DESC LIMIT 50""", args).fetchall()
@@ -514,7 +529,7 @@ def reviews(c):
 # --- timer -----------------------------------------------------------------
 
 ENTRY_FIELDS = {"task_id", "start_time", "end_time"}
-ENTRY_SELECT = """SELECT e.*, t.title, t.status AS task_status, t.ground, t.project_id, p.title AS project_title
+ENTRY_SELECT = f"""SELECT e.*, t.title, t.status AS task_status, t.ground, t.project_id, p.title AS project_title, ({INBOX}) AS inbox
   FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id"""
 SECONDS = "(julianday(coalesce(e.end_time, ?)) - julianday(e.start_time)) * 86400"
 
@@ -570,7 +585,7 @@ def project_seconds(c, project_id, now):
 def week_totals(c, since, now):
     """[(project title, or H0 / inbox / no project, seconds)] for entries started since `since`, most time first."""
     rows = c.execute(f"""SELECT CASE WHEN p.title IS NOT NULL THEN p.title WHEN t.ground THEN 'H0 · ground level'
-          WHEN t.status = 'inbox' THEN 'Inbox (unprocessed)' ELSE '(no project)' END AS label, sum({SECONDS}) AS secs
+          WHEN t.status NOT IN ('done', 'abandoned') THEN 'Inbox (unprocessed)' ELSE '(no project)' END AS label, sum({SECONDS}) AS secs
         FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id
         WHERE e.start_time >= ? GROUP BY label ORDER BY secs DESC""", (iso(now), iso(since))).fetchall()
     return [(r["label"], round(r["secs"])) for r in rows]

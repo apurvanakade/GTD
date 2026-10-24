@@ -9,7 +9,7 @@
   <span class="meta">
     {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
-    {% if t.status == 'later' %}<span>later</span>{% endif %}
+    {% if t.status == 'later' and t.project_id %}<span>later</span>{% endif %}
     {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.status == 'done' else 'Abandoned' }}">{{ t.completed_at[:10] }}</span>{% endif %}
     {% if t.due_date and not closed %}<span class="date">{{ t.due_date }}</span>{% endif %}
     {# Always there, empty when not repeating, so dates line up down the list. #}
@@ -18,7 +18,7 @@
   {% if project and t.project_id and not closed %}<form method="post" action="{{ url_for('complete_then_project', id=t.id) }}" class="then"><button title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button></form>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
-  {% if t.status == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Back to the inbox">Revive</button></form>{% endif %}
+  {% if t.status == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Bring it back">Revive</button></form>{% endif %}
   {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>{% endif %}
 </li>
 {% endmacro %}
@@ -46,10 +46,10 @@
 {% endmacro %}
 
 {# "＋ New…" (value __new__) reveals the name box beside it, in CSS; the server ignores it without a name. #}
-{% macro project_select(projects, selected=none) %}
+{% macro project_select(projects, selected=none, h0=True) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>
-  <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
+  {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
   {% for p in projects %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{% if p.status != 'active' %} ({{ p.status }}){% endif %}</option>{% endfor %}
   <option value="__new__">＋ New project…</option>
 </select>

@@ -89,7 +89,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.fill(".capture-dialog input[name=title]", "from the dialog")
     with page.expect_navigation():
         page.keyboard.press("Enter")
-    assert any(t["title"] == "from the dialog" for t in db.tasks_with_status(conn, "inbox"))
+    assert any(t["title"] == "from the dialog" for t in db.inbox_tasks(conn))
 
 
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):

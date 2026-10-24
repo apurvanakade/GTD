@@ -17,7 +17,7 @@
 {% for e in entries %}
 <form method="post" action="{{ url_for('entry_edit', id=e.id) }}" class="entry{% if not e.end_time %} running{% endif %}">
   <a class="entry-task" href="{{ url_for('task_view', id=e.task_id) }}">{{ e.title }}</a>
-  <span class="entry-area">{% if e.project_title %}{{ e.project_title }}{% elif e.ground %}H0{% elif e.task_status == 'inbox' %}inbox{% endif %}</span>
+  <span class="entry-area">{% if e.project_title %}{{ e.project_title }}{% elif e.ground %}H0{% elif e.inbox %}inbox{% endif %}</span>
   <input type="datetime-local" name="start" value="{{ local_input(e.start_time) }}" aria-label="Start">
   <input type="datetime-local" name="end" value="{{ local_input(e.end_time) if e.end_time else '' }}" aria-label="End (set to stop)">
   <span class="dur">{{ e.start_time|elapsed if not e.end_time else ((e.end_time|epoch_ms - e.start_time|epoch_ms) / 1000)|hm }}</span>
