@@ -5,8 +5,7 @@
 {% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="crumb">
   <a href="{{ url_for('project_view', id=t.project_id) }}">← {{ t.project_title }}</a>
   {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
-</form>
-{% elif t.ground %}<p class="crumb"><a href="{{ url_for('horizons_view') }}">← Horizons</a> · H0 · ground level</p>{% endif %}
+</form>{% endif %}
 {% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}

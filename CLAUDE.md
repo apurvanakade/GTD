@@ -117,7 +117,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - `later` means a project step that isn't the next action yet.
 - **No orphaned tasks:** a `next`/`waiting` task needs a project unless it is deliberately marked H0, "ground level" (`tasks.ground`); a `later` task always needs a project. See `ORPHAN` in `db.py` and `orphaned()` in `app.py`.
   - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. Its "＋ New…" option reveals a `new_project` box; `task_fields_from_form()` creates an active project from it and uses it, overriding the dropdown. A repeat rule doesn't exempt a task.
-  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open next actions have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, repeat), so a ground-level task needs no Inbox or Process trip.
+  - H0 tasks are listed on the Horizons page (`db.ground_level()`), and their rows show an H0 tag. Their open next actions have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, due date, repeat), so a ground-level task needs no Inbox or Process trip.
   - The `ground` column was added by `_migrate()`, which marked the open repeating tasks that had no project as H0.
   - Process refuses next/waiting with neither. The task form and the Next, calendar and Waiting add lines send such a task to the inbox instead.
   - The Next page's add line (`/next/add`, `add_next_action()` in `app.py`, shared with the calendar) adds a next action directly: a `later` step if its project already has one.
@@ -128,7 +128,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Ticking the last step records the date in `reviews` (`db.complete_review()`), flashes "Weekly review completed on …" and clears the ticks. Past reviews are listed at the bottom, newest first.
   - It lists next actions to scan, leaving out any due today or later (overdue ones stay), so the review can be finished.
 - **Project statuses:** `active | waiting | someday | done`. Someday and waiting exist only on projects, never on tasks.
-  - A task page links up to its project (or Horizons for H0) and can move the whole project to someday from there.
+  - A task page links up to its project (an H0 task has no such link) and can move the whole project to someday from there.
   - Process → "Someday / maybe" asks where the item goes: a new someday project, or a `later` step of an existing project. Nothing happens until you pick.
 - **One next action per project.** `db.update_task`/`add_task` enforce it: when a project task becomes `next`, the project's other `next` tasks become `later`.
   - When a project's next action is finished, nothing is promoted automatically and nothing navigates: the project shows as stalled (⚠) until you pick one with "Make next" on its page.

@@ -969,6 +969,19 @@ def test_add_h0_task_straight_from_h0_tab(client, conn):
     assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=''").fetchone()[0] == 0
 
 
+def test_h0_add_line_takes_a_due_date(client, conn):
+    assert b'name="due_date"' in client.get("/h0").data
+    client.post("/h0/add", data={"title": "taxes", "due_date": "tomorrow", "recur": ""})
+    t = conn.execute("SELECT * FROM tasks WHERE title='taxes'").fetchone()
+    assert (t["due_date"], t["ground"]) == ("2026-10-23", 1)
+
+
+def test_h0_task_page_has_no_back_link(client, conn):
+    tid = db.add_task(conn, "stretch", status="next", ground=1)
+    page = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert 'class="crumb"' not in page
+
+
 def test_default_db_path_sits_next_to_the_code(monkeypatch):
     import importlib
     monkeypatch.delenv("GTD_DB", raising=False)
