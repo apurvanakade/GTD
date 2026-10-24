@@ -156,7 +156,8 @@ document.querySelectorAll('ul[data-reorder]').forEach(list => {
     e.preventDefault();
     if (over === dragged) return;
     const r = over.getBoundingClientRect();
-    if (e.clientY < r.top + r.height / 2) over.before(dragged); else over.after(dragged);
+    // A project's next action is pinned to the top: nothing goes above it.
+    if (e.clientY < r.top + r.height / 2 && !('pinned' in over.dataset)) over.before(dragged); else over.after(dragged);
   });
   list.addEventListener('drop', e => e.preventDefault());
   list.addEventListener('dragend', () => {

@@ -986,17 +986,43 @@ def test_reorder_project_tasks(client, conn):
     ids = seed(conn)
     titles = lambda: [t["title"] for t in db.project_tasks(conn, ids["active"])]
     assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]  # never dragged: oldest first
-    r = client.post(f"/projects/{ids['active']}/order", data={"ids": "3,2,4"}, headers={"X-Requested-With": "fetch"})
+    r = client.post(f"/projects/{ids['active']}/order", data={"ids": "2,4,3"}, headers={"X-Requested-With": "fetch"})
     assert r.status_code == 204
-    assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
     assert db.get_task(conn, 2)["step"] == "next"  # order only, statuses untouched
     db.add_task(conn, "grout", step="later", project_id=ids["active"])
     assert titles()[-1] == "grout"  # new steps go to the end
     # Ids from another project are ignored.
+    before = db.get_task(conn, 8)["position"]
     client.post(f"/projects/{ids['active']}/order", data={"ids": "8,4,3,2"})
-    assert titles() == ["quote from Bob", "lay tiles", "buy tiles", "grout"] and db.get_task(conn, 8)["position"] is None
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles", "grout"] and db.get_task(conn, 8)["position"] == before
 
 
+
+
+def test_becoming_next_moves_a_step_to_the_top(client, conn):
+    pid = db.add_project(conn, "P")
+    a, b, c, d = (db.add_task(conn, t, step="later", project_id=pid) for t in "abcd")
+    titles = lambda: [t["title"] for t in db.project_tasks(conn, pid)]
+    db.reorder_project(conn, pid, [a, b, c, d])
+    client.post(f"/tasks/{c}/make-next")
+    assert titles() == ["c", "a", "b", "d"]  # the rest shift down in order, not swapped
+    client.post(f"/tasks/{d}", data={"title": "d", "step": "next", "project_id": pid})  # the task page's step picker
+    assert titles() == ["d", "c", "a", "b"]
+    db.add_task(conn, "e", step="next", project_id=pid)
+    assert titles()[0] == "e"
+    db.reorder_project(conn, pid, [b, a, db.project_next(conn, pid)["id"], c, d])
+    assert titles() == ["e", "b", "a", "c", "d"]  # the next action shows first even if dragged down
+    db.update_task(conn, a, title="a!")  # saving without touching the step keeps the dragged order
+    db.update_task(conn, db.project_next(conn, pid)["id"], step="next")  # already next: nothing renumbered
+    assert titles() == ["e", "b", "a!", "c", "d"]
+
+
+def test_project_next_action_has_no_grip(client, conn):
+    ids = seed(conn)
+    page = client.get(f"/projects/{ids['active']}").get_data(as_text=True)
+    rows = re.findall(r'<li class="task[^"]*" data-id="(\d+)"[^>]*>\s*<span class="grip( slot)?"', page)
+    assert dict(rows) == {"2": " slot", "3": "", "4": ""}  # buy tiles is next: pinned, but its column is kept
 
 
 def test_done_page_lists_finished_tasks_and_projects(client, conn):

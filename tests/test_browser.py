@@ -197,12 +197,16 @@ def test_drag_reorders_project_steps(page, live, conn):
     titles = lambda: page.locator("ul.tasks li.task a.title").all_inner_texts()
     assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
     with page.expect_response(lambda r: r.url.endswith("/order")) as saved:
-        row(page, "lay tiles").locator(".grip").drag_to(row(page, "buy tiles"), target_position={"x": 5, "y": 2})
+        row(page, "quote from Bob").locator(".grip").drag_to(row(page, "lay tiles"), target_position={"x": 5, "y": 2})
     assert saved.value.status == 204
-    assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
-    assert [t["title"] for t in db.project_tasks(conn, 1)] == ["lay tiles", "buy tiles", "quote from Bob"]
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
+    assert [t["title"] for t in db.project_tasks(conn, 1)] == ["buy tiles", "quote from Bob", "lay tiles"]
     page.reload()
-    assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
+    # Nothing goes above the next action ("buy tiles").
+    with page.expect_response(lambda r: r.url.endswith("/order")):
+        row(page, "lay tiles").locator(".grip").drag_to(row(page, "buy tiles"), target_position={"x": 5, "y": 2})
+    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
 
 
 def test_drag_reorders_someday_projects(page, live, conn):

@@ -156,14 +156,15 @@ def _update(c, table, allowed, id, fields):
 
 def add_task(c, title, **fields):
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}))
-    _one_next(c, id)
+    _one_next(c, id, was_next=False)
     return id
 
 
 def update_task(c, id, **fields):
     """Returns the titles of project tasks demoted to later because this one became next."""
-    _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, get_task(c, id)))
-    return _one_next(c, id)
+    current = get_task(c, id)
+    _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current))
+    return _one_next(c, id, was_next=current is not None and current["step"] == "next")
 
 
 def _fit_step(fields, current=None):
@@ -182,8 +183,9 @@ def _fit_step(fields, current=None):
     return fields
 
 
-def _one_next(c, id):
+def _one_next(c, id, was_next):
     """A project has at most one next action: if this task is it, the project's other next tasks become later.
+    A task that has just become next moves to the top of its project, the others shifting down.
     Returns the titles it demoted."""
     t = get_task(c, id)
     if not t or t["state"] != "open" or t["step"] != "next":
@@ -191,6 +193,8 @@ def _one_next(c, id):
     others = c.execute("SELECT id, title FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open' AND id != ?",
                        (t["project_id"], id)).fetchall()
     c.executemany("UPDATE tasks SET step = 'later' WHERE id = ?", [(o["id"],) for o in others])
+    if not was_next:
+        reorder_project(c, t["project_id"], [id, *(s["id"] for s in project_tasks(c, t["project_id"]) if s["id"] != id)])
     c.commit()
     return [o["title"] for o in others]
 
@@ -286,9 +290,10 @@ def overdue(c, today):
 
 
 def project_tasks(c, project_id):
-    """Open steps in the order dragged on the project page; steps never dragged go last, oldest first."""
+    """Open steps: the next action first, then the order dragged on the project page; steps never dragged go last,
+    oldest first."""
     return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.state = 'open'
-        ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (project_id,)).fetchall()
+        ORDER BY t.step = 'next' DESC, t.position IS NULL, t.position, t.created_at, t.id""", (project_id,)).fetchall()
 
 
 def reorder_project(c, project_id, ids):
