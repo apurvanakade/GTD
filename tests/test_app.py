@@ -1347,3 +1347,40 @@ def test_project_page_rows_line_up(client, conn):
         assert f'<span class="step">{step}</span>' in row
         assert row.count('class="date"') == 1
         assert row.count('class="make-next') == 1
+
+
+@pytest.mark.parametrize("status, page", [("someday", "/someday"), ("active", "/projects")])
+def test_projects_reorder(client, conn, status, page):
+    """Project rows keep the order they're dragged to; undragged ones go last, by title. Other lists are ignored."""
+    a, b, c = (db.add_project(conn, t, status=status) for t in ("a", "b", "c"))
+    other = db.add_project(conn, "other", status="waiting")
+    assert [p["title"] for p in db.projects(conn, status)] == ["a", "b", "c"]
+    assert client.post(f"/projects/order/{status}", data={"ids": f"{c},{other},{a}"},
+                       headers={"X-Requested-With": "fetch"}).status_code == 204
+    assert [p["title"] for p in db.projects(conn, status)] == ["c", "a", "b"]
+    assert db.get_project(conn, other)["position"] is None
+    html = client.get(page).get_data(as_text=True)
+    assert f'data-reorder="/projects/order/{status}"' in html and html.count('class="grip"') == 3
+
+
+def test_moved_project_goes_to_the_bottom_of_its_new_list(client, conn):
+    a, b = db.add_project(conn, "a"), db.add_project(conn, "b")
+    s = db.add_project(conn, "s", status="someday")
+    db.reorder_projects(conn, "active", [b, a])
+    db.reorder_projects(conn, "someday", [s])
+    db.update_project(conn, s, status="active")
+    assert [p["title"] for p in db.projects(conn)] == ["b", "a", "s"]
+
+
+def test_migration_adds_project_position(tmp_path):
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.execute("""CREATE TABLE projects (id INTEGER PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT (datetime('now')), completed_at TEXT)""")
+    old.execute("INSERT INTO projects (title, status) VALUES ('s', 'someday')")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    assert [(p["title"], p["position"]) for p in db.projects(c, "someday")] == [("s", None)]
+    c.close()
+    db.connect(path).close()  # second connect is a no-op

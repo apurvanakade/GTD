@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS {name} (
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done')),
+  position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
 )
@@ -125,6 +126,9 @@ def _migrate(c):
             FROM tasks;
             DROP TABLE tasks; ALTER TABLE tasks_new RENAME TO tasks; COMMIT;""")
         c.execute("PRAGMA foreign_keys = ON")
+    if "projects" in old and "position" not in [r[1] for r in c.execute("PRAGMA table_info(projects)")]:
+        c.execute("ALTER TABLE projects ADD COLUMN position INTEGER")  # drag order on Projects and Someday
+        c.commit()
 
 
 def _insert(c, table, allowed, fields):
@@ -357,8 +361,10 @@ def add_project(c, title, **fields):
 
 def update_project(c, id, **fields):
     if "status" in fields:
-        c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END"
-                  " WHERE id = ?", (fields["status"], id))
+        # A project changing lists goes to the bottom of the new one, rather than to its place in the old one.
+        c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END,"
+                  " position = CASE WHEN status = ? THEN position END WHERE id = ?",
+                  (fields["status"], fields["status"], id))
     _update(c, "projects", PROJECT_FIELDS, id, fields)
 
 
@@ -376,11 +382,19 @@ def get_project(c, id):
 
 
 def projects(c, status="active"):
-    return c.execute("""SELECT p.*,
+    """Projects with the given status in the order dragged; undragged ones go last, by title."""
+    return c.execute(f"""SELECT p.*,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open') AS open_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'done') AS done_count
-        FROM projects p WHERE p.status = ? ORDER BY lower(p.title)""", (status,)).fetchall()
+        FROM projects p WHERE p.status = ? ORDER BY p.position IS NULL, p.position, lower(p.title), p.id""", (status,)).fetchall()
+
+
+def reorder_projects(c, status, ids):
+    """Number the projects with this status in the given order; other projects' ids are ignored."""
+    c.executemany("UPDATE projects SET position = ? WHERE id = ? AND status = ?",
+                  [(n, id, status) for n, id in enumerate(ids)])
+    c.commit()
 
 
 def open_steps(c, status="active"):

@@ -485,6 +485,15 @@ def projects_view():
                            done_projects=db.projects(conn(), "done") if show else [])
 
 
+@app.post("/projects/order/<any(active, someday):status>")
+def projects_order(status):
+    """The Projects and Someday pages' drag-and-drop sends the project ids in their new order."""
+    db.reorder_projects(conn(), status, [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return back()
+
+
 @app.post("/projects")
 def project_create():
     title = form_value("title")

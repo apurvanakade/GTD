@@ -205,6 +205,20 @@ def test_drag_reorders_project_steps(page, live, conn):
     assert titles() == ["lay tiles", "buy tiles", "quote from Bob"]
 
 
+def test_drag_reorders_someday_projects(page, live, conn):
+    db.add_project(conn, "Another dream", status="someday")  # Projects shares the code; this covers both
+    page.goto(live + "/someday")
+    page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
+    titles = lambda: page.locator("ul.tasks > li.task > a.title").all_inner_texts()
+    assert titles() == ["Another dream", "Someday proj"]
+    with page.expect_response(lambda r: r.url.endswith("/order/someday")) as saved:
+        row(page, "Someday proj").locator(".grip").drag_to(row(page, "Another dream"), target_position={"x": 5, "y": 2})
+    assert saved.value.status == 204
+    assert [p["title"] for p in db.projects(conn, "someday")] == ["Someday proj", "Another dream"]
+    page.reload()
+    assert titles() == ["Someday proj", "Another dream"]
+
+
 def test_slash_on_inbox_focuses_its_add_box(page, live):
     page.goto(live + "/inbox")
     page.keyboard.press("/")

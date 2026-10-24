@@ -4,9 +4,10 @@
 {% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('someday_add'), 'Someday I might…') }}
-<ul class="tasks">
+<ul class="tasks" data-reorder="{{ url_for('projects_order', status='someday') }}">
   {% for p in projects %}
-  <li class="task">
+  <li class="task" data-id="{{ p.id }}">
+    <span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>
     {{ peek_button() }}
     <a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>
     <span class="meta">{{ p.open_count }} open</span>
