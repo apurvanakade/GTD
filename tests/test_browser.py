@@ -320,3 +320,36 @@ def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
         with page.expect_navigation():
             page.keyboard.press(key)
         assert page.url == live + path
+
+
+def test_notes_render_markdown_and_save_what_you_typed(page, live, conn):
+    pid = db.add_reference(conn, "Markdown", notes="# Head\nsee **bold** and https://example.com")
+    page.goto(live + f"/reference/{pid}")
+    ed = page.locator(".md-editor")
+    assert page.locator("textarea[name=notes]").is_hidden()
+    assert ed.locator(".h1").inner_text() == "Head"
+    assert ed.locator("b").inner_text() == "bold"  # ** hidden while the caret is elsewhere
+    assert ed.locator("a").get_attribute("href") == "https://example.com"
+    ed.click()
+    page.keyboard.press("ControlOrMeta+End")
+    page.keyboard.press("Enter")
+    page.keyboard.type("- *new* line")
+    assert ed.locator("i").count() == 1
+    page.keyboard.press("n")  # typing in the editor never fires a go-key
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.wait_for_load_state()
+    assert db.get_reference(conn, pid)["notes"].replace("\r\n", "\n") == \
+        "# Head\nsee **bold** and https://example.com\n- *new* linen"
+
+
+def test_notes_editor_undo(page, live, conn):
+    pid = db.add_reference(conn, "Undo", notes="abc")
+    page.goto(live + f"/reference/{pid}")
+    ed = page.locator(".md-editor")
+    ed.click()
+    page.keyboard.press("ControlOrMeta+End")
+    page.keyboard.type("def")
+    assert ed.text_content() == "abcdef"
+    page.keyboard.press("ControlOrMeta+z")
+    assert ed.text_content() == "abc"
+    assert page.locator("textarea[name=notes]").input_value() == "abc"

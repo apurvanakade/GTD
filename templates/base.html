@@ -84,7 +84,7 @@
 </main>
 <script>
 document.addEventListener('keydown', e => {
-  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
   if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
@@ -219,5 +219,6 @@ document.addEventListener('submit', async e => {
   if (r.ok) f.closest('li').classList.add('gone');
 });
 </script>
+<script src="{{ url_for('static', filename='notes.js') }}"></script>
 </body>
 </html>

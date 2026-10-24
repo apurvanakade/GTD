@@ -60,6 +60,23 @@ input, textarea, select, button, .button {
 input, textarea { width: 100%; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; }
+/* Notes: live Markdown (static/notes.js). Markers stay in the text, faint; ** _ ` [](…) show only at the caret. */
+.md-editor {
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+  white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; caret-color: var(--fg); position: relative;
+}
+.md-editor:focus { outline: none; border-color: var(--accent); }
+.md-editor.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
+.md-editor .md { color: var(--muted); }
+.md-editor .fmt:not(.md-on) > .hide { display: none; }
+.md-editor .h { font-weight: 700; }
+.md-editor .h1 { font-size: 1.3em; }
+.md-editor .h2 { font-size: 1.15em; }
+.md-editor .quote { color: var(--muted); font-style: italic; }
+.md-editor code, .md-editor .code-line { font: .88em ui-monospace, Menlo, monospace; }
+.md-editor code { background: var(--soft); border-radius: 3px; }
+.md-editor a { text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 2px; }
+.mod .md-editor a { cursor: pointer; }
 button, .button {
   cursor: pointer; display: inline-block; background: transparent; border-color: transparent; color: var(--muted);
 }
@@ -150,7 +167,7 @@ select:has(option[value="__new__"]:checked) + input { display: block; }
 
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
-.process textarea, .project textarea, .edit textarea { margin-top: 6px; }
+.process textarea, .project textarea, .edit textarea, .process .md-editor, .project .md-editor, .edit .md-editor { margin-top: 6px; }
 .project textarea { field-sizing: content; min-height: 2.6em; }
 .edit label { display: block; margin: 10px 0; color: var(--muted); font-size: .9rem; }
 .edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }

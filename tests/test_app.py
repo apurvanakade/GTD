@@ -1242,3 +1242,9 @@ def test_favicon(client):
     assert 'rel="icon"' in html
     r = client.get("/static/favicon.svg")
     assert r.status_code == 200 and b"<svg" in r.data
+
+
+def test_links_filter_skips_markdown_and_trailing_punctuation():
+    from app import links
+    assert links("[site](https://example.com) and obsidian://open?vault=x, or (https://a.b/c).") == \
+        ["https://example.com", "obsidian://open?vault=x", "https://a.b/c"]
