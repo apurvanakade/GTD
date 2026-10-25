@@ -51,13 +51,3 @@ def next_due(rule, due, today):
         k += 1
     return d
 
-
-def occurrences(rule, due, end):
-    """Future dates after `due` up to `end`, each stepped from `due` so month-end days don't drift."""
-    n, unit = parse(rule)
-    if after_done(rule):  # next date depends on when it is completed, so project nothing
-        return
-    k = 1
-    while (d := step(due, n * k, unit)) <= end:
-        yield d
-        k += 1

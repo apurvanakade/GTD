@@ -262,8 +262,9 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
   background: color-mix(in srgb, var(--k, var(--line)) 10%, transparent);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cal .ev.ghost { background: transparent; color: var(--muted); border-left-style: dotted; }
 .cal .ev.overdue { color: var(--danger); }
+.cal .ev.dragging { opacity: .4; }
+.cal td.drop { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .cal.week td { height: 320px; }
 .cal.week .ev { white-space: normal; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0; font-size: .75rem; color: var(--muted); }

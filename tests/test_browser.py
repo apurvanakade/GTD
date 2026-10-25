@@ -319,6 +319,22 @@ def test_clicking_a_calendar_day_sets_the_add_date(page, live):
     assert page.locator("main form.add input[name=due_date]").input_value() == "2026-10-29"
 
 
+def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, conn):
+    page.goto(live + "/calendar?m=2026-10")
+    ev = page.locator(".cal .ev", has_text="buy tiles")  # due Oct 1, overdue
+    assert "overdue" in ev.get_attribute("class")
+    target = page.locator('.cal td', has=page.locator('.day[data-date="2026-10-29"]'))
+    with page.expect_response(lambda r: r.url.endswith("/due")) as saved:
+        ev.drag_to(target)
+    assert saved.value.status == 204
+    assert target.locator(".ev", has_text="buy tiles").count() == 1  # moved in place, no reload
+    assert "overdue" not in ev.get_attribute("class")
+    tid = next(t["id"] for t in db.next_list(conn) if t["title"] == "buy tiles")
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-29"
+    page.reload()
+    assert target.locator(".ev", has_text="buy tiles").count() == 1
+
+
 def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
     db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-30")
     page.goto(live + "/h0")

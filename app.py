@@ -560,6 +560,28 @@ def project_add_task(id):
 
 # --- calendar --------------------------------------------------------------
 
+def sunday(d):
+    """The Sunday starting d's calendar week."""
+    return d - timedelta(days=(d.weekday() + 1) % 7)
+
+
+@app.post("/tasks/<int:id>/due")
+def task_due(id):
+    """The calendar's drag-and-drop moves an open task to the day it was dropped on."""
+    c = conn()
+    t = db.get_task(c, id) or abort(404)
+    try:
+        due = date.fromisoformat(request.form.get("due_date", "")).isoformat()
+    except ValueError:
+        abort(400)
+    if t["state"] != "open":
+        abort(400)
+    db.update_task(c, id, due_date=due)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return back("calendar_view")
+
+
 @app.route("/calendar", methods=["GET", "POST"])
 def calendar_view():
     if request.method == "POST":
@@ -572,7 +594,7 @@ def calendar_view():
             week = date.fromisoformat(request.args.get("w", ""))
         except ValueError:
             week = today()
-        week -= timedelta(days=week.weekday())  # weeks start on Monday
+        week = sunday(week)
         first = week.replace(day=1)
         start, end = week, week + timedelta(days=6)
     else:
@@ -581,19 +603,10 @@ def calendar_view():
         except ValueError:
             first = today().replace(day=1)
         last = recur.add_months(first, 1) - timedelta(days=1)
-        start = first - timedelta(days=first.weekday())
-        end = last + timedelta(days=6 - last.weekday())
-    shown = []  # (iso date, task, is_projected_repeat)
+        start, end = sunday(first), sunday(last) + timedelta(days=6)
+    by_day = defaultdict(list)  # iso date -> [task]; a repeat shows only on its due date, no future copies
     for t in db.dated_tasks(conn(), start, end):
-        shown.append((t["due_date"], t, False))
-    for t in db.recurring_tasks(conn()):
-        if recur.parse(t["recur"]):
-            for d in recur.occurrences(t["recur"], date.fromisoformat(t["due_date"]), end):
-                if d >= start and d > today():  # completing an overdue repeat skips to after today
-                    shown.append((d.isoformat(), t, True))
-    by_day = defaultdict(list)  # iso date -> [(task, is_projected_repeat)]
-    for iso, t, ghost in shown:
-        by_day[iso].append((t, ghost))
+        by_day[t["due_date"]].append(t)
     weeks = [[start + timedelta(days=7 * w + i) for i in range(7)] for w in range(((end - start).days + 1) // 7)]
     if week:
         prev, next_ = ((week + timedelta(days=d)).isoformat() for d in (-7, 7))
@@ -602,7 +615,7 @@ def calendar_view():
     resp = make_response(render_template(
         "calendar.html", first=first, week=week, end=end, projects=db.open_projects(conn()), weeks=weeks,
         by_day=by_day, prev=prev, next=next_,
-        this_week=(today() - timedelta(days=today().weekday())).isoformat(), this_month=today().strftime("%Y-%m")))
+        this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", "week" if week else "month", max_age=365 * 86400, samesite="Lax")
     return resp
 

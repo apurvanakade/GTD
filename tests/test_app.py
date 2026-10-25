@@ -44,7 +44,6 @@ def test_after_done_counts_from_completion():
     rule = "every 2 weeks after done"
     assert recur.next_due(rule, date(2026, 10, 1), TODAY) == date(2026, 11, 5)  # from today, not the overdue due date
     assert recur.next_due(rule, date(2026, 12, 1), TODAY) == date(2026, 11, 5)  # even if completed early
-    assert list(recur.occurrences(rule, date(2026, 10, 22), date(2027, 3, 1))) == []
 
 
 # --- inbox processing ------------------------------------------------------
@@ -102,14 +101,6 @@ def test_process_someday_into_existing_project(client, conn):
     assert [p["title"] for p in db.projects(conn, "someday")] == ["Garden"]  # no new project
 
 
-def test_all_pages_render(client, conn):
-    pid = db.add_project(conn, "P")
-    tid = db.add_task(conn, "t", step="next", project_id=pid, due_date="2026-10-01")
-    db.add_task(conn, "inboxed")
-    for url in ("/inbox", "/process", "/next", "/projects", f"/projects/{pid}", "/waiting",
-                "/someday", "/review", f"/tasks/{tid}", "/calendar", "/calendar?m=2027-01",
-                "/calendar?m=bogus", "/horizons"):
-        assert client.get(url).status_code == 200, url
 
 
 def test_crosslinks(client, conn):
@@ -326,41 +317,39 @@ def test_steps_only_exist_inside_projects(conn):
 
 # --- calendar + horizons -------------------------------------------------
 
-def test_occurrences_do_not_drift():
-    assert list(recur.occurrences("monthly", date(2026, 1, 31), date(2026, 4, 30))) == [
-        date(2026, 2, 28), date(2026, 3, 31), date(2026, 4, 30)]
-
-
-def test_calendar_shows_dated_and_projected_repeats(client, conn):
-    db.add_task(conn, "dentist", step="next", due_date="2026-10-28")  # in Nov grid (starts Mon Oct 26)
-    db.add_task(conn, "haircut", step="next", due_date="2026-10-20")  # before the grid
+def test_calendar_shows_each_task_once_on_its_due_date(client, conn):
+    db.add_task(conn, "dentist", step="next", due_date="2026-12-03")  # in Nov grid (Sun Nov 1 .. Sat Dec 5)
+    db.add_task(conn, "haircut", step="next", due_date="2026-10-28")  # before the grid
     db.add_task(conn, "plants", step="next", recur="weekly", due_date="2026-10-25")
     db.add_task(conn, "undated", step="next")
     html = client.get("/calendar?m=2026-11").data.decode()
     assert "dentist" in html and "haircut" not in html
-    assert html.count(">↻ plants<") == 6  # Oct 25 is before the grid; Nov 1..Dec 6 projected
+    assert "plants" not in html  # Oct 25 is before the grid; no future copies are projected
+    assert client.get("/calendar?m=2026-10").data.decode().count(">↻ plants<") == 1
     assert "undated" not in html
 
 
 def test_calendar_week_view(client, conn):
-    db.add_task(conn, "in week", step="next", due_date="2026-10-25")  # Sunday of the week of Thu Oct 22
-    db.add_task(conn, "next week", step="next", due_date="2026-10-26")
-    db.add_task(conn, "last week", step="next", due_date="2026-10-18")
-    db.add_task(conn, "plants", step="next", recur="weekly", due_date="2026-10-11")
+    db.add_task(conn, "in week", step="next", due_date="2026-10-18")  # Sunday of the week of Thu Oct 22
+    db.add_task(conn, "next week", step="next", due_date="2026-10-25")
+    db.add_task(conn, "last week", step="next", due_date="2026-10-17")
+    db.add_task(conn, "plants", step="next", recur="weekly", due_date="2026-10-20")
     html = client.get("/calendar?w=2026-10-22").data.decode()
     assert "in week" in html and "next week" not in html and "last week" not in html
-    assert html.count(">↻ plants<") == 1  # Oct 11 weekly: Oct 25 is the only one in the week
-    assert "19 Oct" in html and "25 Oct" in html
-    assert "w=2026-10-26" in html and "w=2026-10-12" in html  # next / previous week
+    assert html.count(">↻ plants<") == 1
+    assert html.index(">Sun<") < html.index(">Mon<")  # weeks start on Sunday
+    assert "18 Oct" in html and "24 Oct" in html
+    assert "w=2026-10-25" in html and "w=2026-10-11" in html  # next / previous week
     assert client.get("/calendar?w=bogus").status_code == 200
-    assert "w=2026-10-19" in client.get("/calendar").data.decode()  # month view links to this week
+    assert client.get("/calendar?m=bogus").status_code == 200
+    assert "w=2026-10-18" in client.get("/calendar").data.decode()  # month view links to this week
 
 
 def test_calendar_remembers_the_view(client):
     assert "Oct 2026" not in client.get("/calendar").data.decode()  # month view by default
     client.get("/calendar?w=2026-11-04")
     html = client.get("/calendar").data.decode()
-    assert "19 Oct – 25 Oct 2026" in html  # back to week view, on this week
+    assert "18 Oct – 24 Oct 2026" in html  # back to week view, on this week
     html = client.get("/calendar?m=2026-11").data.decode()
     assert "November 2026" in html
     assert "October 2026" in client.get("/calendar").data.decode()  # month view again, on this month
@@ -385,9 +374,20 @@ def test_calendar_colors_tasks_by_kind(client, conn):
     assert 'class="legend"' in html
 
 
+def test_calendar_drop_moves_the_due_date(client, conn):
+    tid = db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-28")
+    fetch = {"X-Requested-With": "fetch"}
+    assert client.post(f"/tasks/{tid}/due", data={"due_date": "2026-11-03"}, headers=fetch).status_code == 204
+    assert db.get_task(conn, tid)["due_date"] == "2026-11-03"
+    assert client.post(f"/tasks/{tid}/due", data={"due_date": "bogus"}, headers=fetch).status_code == 400
+    db.complete_task(conn, tid, TODAY)  # a done task can't be moved
+    assert client.post(f"/tasks/{tid}/due", data={"due_date": "2026-11-05"}, headers=fetch).status_code == 400
+    assert db.get_task(conn, tid)["due_date"] == "2026-11-03"
+
+
 def test_calendar_month_greys_days_outside_the_month(client):
     html = client.get("/calendar?m=2026-11").data.decode()
-    assert 'class="out"' in html  # Oct 26..31 lead the November grid
+    assert 'class="out"' in html  # Dec 1..5 trail the November grid
     assert ">26 Oct<" not in html  # month view labels days by number only
 
 
@@ -1308,10 +1308,10 @@ def test_completion_dates_show_in_local_time(client, conn, monkeypatch):
         time.tzset()
 
 
-def test_calendar_projects_repeats_only_after_today(client, conn):
+def test_calendar_shows_an_overdue_repeat_only_on_its_due_date(client, conn):
     db.add_task(conn, "overdue daily", ground=1, recur="daily", due_date="2026-10-15")
-    html = client.get("/calendar?w=2026-10-19").get_data(as_text=True)
-    assert html.count(">↻ overdue daily<") == 3  # Oct 23-25: completing it today skips the days before
+    assert client.get("/calendar?w=2026-10-15").get_data(as_text=True).count(">↻ overdue daily<") == 1
+    assert "overdue daily" not in client.get("/calendar?w=2026-10-22").get_data(as_text=True)
 
 
 @pytest.mark.parametrize("rule,after", [

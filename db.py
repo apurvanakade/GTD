@@ -443,11 +443,6 @@ def dated_tasks(c, start, end):
         ORDER BY t.due_date, t.created_at""", (start.isoformat(), end.isoformat())).fetchall()
 
 
-def recurring_tasks(c):
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.recur IS NOT NULL
-        AND t.due_date IS NOT NULL""").fetchall()
-
-
 # --- horizons (H5 purpose .. H2 areas) -------------------------------------
 
 HORIZON_FIELDS = {"level", "title", "notes"}

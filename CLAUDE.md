@@ -64,15 +64,15 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Rules are `daily|weekly|monthly|yearly` or `every N day|week|month|year(s)`.
   - Both step from their anchor by `n*k`, so month-end days don't drift.
   - `next_due()` returns the first such date after today, stepping from the old due date.
-  - `occurrences()` yields every such date up to an end date. Use it for projections such as the calendar, which shows only those after today (completing an overdue repeat skips the days before).
-  - A rule ending in `after done` or `after completion` (e.g. `every 2 weeks after done`, `weekly after done`) counts from the completion date: `next_due()` steps from today, and `occurrences()` yields nothing, so the calendar shows no projection.
+  - A rule ending in `after done` or `after completion` (e.g. `every 2 weeks after done`, `weekly after done`) counts from the completion date: `next_due()` steps from today.
 - **`dates.py`** is pure date parsing (`parse(text, today)`): ISO, `today|tomorrow|yesterday`, weekdays (always the next one after today), `next week|month`, `in N days|weeks|months`, `oct 30`.
   - `task_fields_from_form()` runs every `due_date` through it, so the task page, Process and the add lines take words. Their `date_input()` macro (`_task.html`) is a text box plus a 📅 button; the button opens a hidden native `<input type="date">` and the JS in `base.html` copies the pick into the text box. An unparseable date is flashed and ignored. The calendar's add form keeps its native date picker.
 - **Done** (`/done`, `db.done_tasks()`) lists done projects, the latest 100 done tasks and the latest 100 abandoned tasks (`state="abandoned"`), newest first. Abandoned rows show ✕ and a Revive button.
   - A "Show completed" toggle (`?done=1`, `completed()` in `app.py`, `_done_toggle.html`) does the same on Next (non-H0 tasks), H0, and a project page (that project's steps); Projects lists done projects. Done rows show a ✓ and the completion date instead of a tick-off button, so a done repeating task can't be completed twice.
-- **Calendar** (`/calendar`) shows a month (`?m=YYYY-MM`) or one week (`?w=<any date>`, Monday-first); the Month/Week buttons switch. A bare `/calendar` (the nav link) opens the view last used, kept in the `cal_view` cookie, on today's month or week.
+- **Calendar** (`/calendar`) shows a month (`?m=YYYY-MM`) or one week (`?w=<any date>`, Sunday-first; the Timer's week totals still start Monday); the Month/Week buttons switch. Each task shows once, on its due date: a repeat's future dates aren't projected. A bare `/calendar` (the nav link) opens the view last used, kept in the `cal_view` cookie, on today's month or week.
   - Each task has a colored left stripe and tint by kind (`k-next|h0|later|waiting|someday|inbox`; H0 wins, then an inbox item, then a someday project, then waiting task or project, else the status), with a dot legend below the grid.
   - The header's actions are `‹ Today ›` and a Month|Week toggle. Clicking a day number sets the add line's date and placeholder.
+  - Dragging a task onto another day moves its due date (`/tasks/<id>/due`, 204 for fetch); the JS in `calendar.html` moves it in place, so the page doesn't reload. Only open tasks move.
   - The crawler follows calendar links only within `CALENDAR_MONTHS`.
 - **Timestamps** (`created_at`, `completed_at`) are SQLite `datetime('now')`, i.e. UTC. Show their date with the `local_date` filter, never `[:10]`, or an evening's work shows as tomorrow.
 - **Templates** extend `base.html`. Keep it lean and uniform: every page has the same layout, built from the same parts, so no page needs its own reading.
