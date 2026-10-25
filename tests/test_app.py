@@ -7,7 +7,6 @@ import pytest
 
 import dates
 import db
-import import_mindwtr
 import recur
 from app import REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
@@ -470,33 +469,6 @@ def test_search_finds_reference(client, conn):
 
 
 # --- import ----------------------------------------------------------------
-
-def test_import_mapping():
-    projects = [{"id": "p1", "title": "Basement", "status": "active"},
-                {"id": "p2", "title": "Old", "status": "archived"}]
-    tasks = [
-        {"id": "1", "title": "measure", "status": "next", "contexts": ["@home", "@errands"], "projectId": "p1"},
-        {"id": "2", "title": "plants", "status": "next", "contexts": ["@home"], "dueDate": "2026-10-25",
-         "recurrence": {"rule": "weekly", "byDay": ["SU"], "rrule": "FREQ=WEEKLY;BYDAY=SU"}},
-        {"id": "3", "title": "oil", "status": "next", "recurrence": {"rule": "monthly", "rrule": "FREQ=MONTHLY;INTERVAL=6"}},
-        {"id": "4", "title": "odd", "status": "next", "recurrence": {"rule": "weekly", "rrule": "FREQ=WEEKLY;BYDAY=MO,WE"}},
-        {"id": "5", "title": "ref", "status": "reference"},
-        {"id": "6", "title": "gone", "status": "next", "deletedAt": "x"},
-        {"id": "7", "title": "done", "status": "done"},
-        {"id": "8", "title": "orphan", "status": "someday", "projectId": "p2"},
-    ]
-    out_p, out_t, ref, warnings = import_mindwtr.plan(tasks, projects)
-    assert [p["title"] for p in out_p] == ["Basement"]
-    by = {t["title"].lstrip("⚠ "): t for t in out_t}
-    assert set(by) == {"measure", "plants", "oil", "odd", "orphan"}
-    assert "context" not in by["measure"] and by["measure"]["notes"] == "Contexts: @home @errands"
-    assert by["measure"]["project_src"] == "p1" and by["orphan"]["project_src"] is None
-    assert by["plants"]["recur"] == "every 1 week"
-    assert by["oil"]["recur"] == "every 6 months"
-    assert by["odd"]["recur"] is None and by["odd"]["title"].startswith("⚠")
-    assert [r["title"] for r in ref] == ["ref"]
-    assert len(warnings) == 2
-
 
 def test_search(client, conn):
     pid = db.add_project(conn, "Kitchen remodel", notes="call the plumber")

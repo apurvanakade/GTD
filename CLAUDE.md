@@ -112,9 +112,6 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Editing an entry saves only fields that differ from what the form showed, so untouched times keep their seconds. Setting an end on the running entry stops it.
   - The history has no visible Save: the JS in `base.html` submits an entry when focus leaves its row with a time changed (moving between its start and end doesn't), or on Enter. An end before the start isn't sent; the row gets `.bad` until fixed. A hidden Save stays first in the form so Enter saves rather than pressing ▶.
   - Totals: time spent on the task page, the project total on the project page (done steps included), and per project this week on the Timer page (`db.week_totals()`).
-- **`import_mindwtr.py`** was a one-off migration from Mindwtr's Local API, already applied on 2026-10-22.
-  - `plan()` is a pure function and is tested.
-  - `--apply` refuses to run if the DB already has tasks.
 ## GTD rules encoded in the code
 
 - **A task has a state and, only inside a project, a step.** There is no task "status".
