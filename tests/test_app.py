@@ -430,8 +430,8 @@ def test_reference(client, conn):
     client.post("/reference/add", data={"title": "  "}, headers={"Referer": "/reference"})
     assert db.references(conn) == []
     r = client.post("/reference/add", data={"title": "Wifi password"}, headers={"Referer": "/reference"})
-    assert r.headers["Location"].endswith("/reference")
     rid = db.references(conn)[0]["id"]
+    assert r.headers["Location"].endswith(f"/reference/{rid}")  # a new item opens, to add its details
     r = client.post(f"/reference/{rid}", data={"title": "Wifi", "notes": "hunter2\nsee https://example.com/a?b=1 and obsidian://open?vault=j"},
                     headers={"Referer": f"/reference/{rid}"})
     assert r.headers["Location"].endswith(f"/reference/{rid}")  # Save stays on the page

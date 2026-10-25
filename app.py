@@ -293,8 +293,8 @@ def reference():
 @app.post("/reference/add")
 def reference_add():
     title = form_value("title")
-    if title:
-        db.add_reference(conn(), title)
+    if title:  # a new item opens at once, so its details can go straight in
+        return redirect(url_for("reference_view", id=db.add_reference(conn(), title)))
     return back("reference")
 
 

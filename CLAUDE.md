@@ -86,7 +86,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Small bars show proportions: project progress (done steps / all steps, `done_count` in `db.projects()`) and time per project on the Timer page.
   - Buttons inside a task row (▶, ■, Make next, Activate) are compact, so every row is the same height.
   - That JS submits `form.done` with the header `X-Requested-With: fetch`. The complete route returns `204` for that header, and the row fades out in place.
-  - **No jumps.** An action stays on the page it was made on (`back()` in `app.py` redirects to the Referer). Only a link, "Save & exit", ✓→ (below), or deleting the page's own record (a project, a horizon, an abandoned task) goes elsewhere. Don't add helpful redirects.
+  - **No jumps.** An action stays on the page it was made on (`back()` in `app.py` redirects to the Referer). Only a link, "Save & exit", ✓→ (below), adding a reference item (it opens, for its details), or deleting the page's own record (a project, a horizon, an abandoned task) goes elsewhere. Don't add helpful redirects.
   - Search suggests as you type: the JS fetches `/search/suggest?q=` (JSON, `db.suggest()`), the 10 best fuzzy title matches among tasks (open, plus the newest 200 done), projects, horizons and reference; open items rank before done ones. ↑/↓ move, Enter or a click opens the highlighted one, Esc closes.
   - Fuzzy scoring is `fuzzy.score()` (pure): each query word must appear in the title as a substring (best, more so at a word start) or as letters in order; shorter titles win ties.
   - Enter with no suggestions submits to the full-text page (`/search?q=`, `db.search()`), a plain case-insensitive `LIKE`: every word must appear in a task's title/notes, or a project's, horizon's or reference item's title/notes. Done tasks are included, newest 50 only.
@@ -101,6 +101,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - A row's date and ↻ slots are always rendered, empty when unused, so columns line up. On a project page every open step is labeled (next/waiting/later), and rows without "Make next" hold its width with a hidden `.make-next.slot`.
   - `project_select()` ends with a "＋ New…" option (`__new__`, `NEW` in `app.py`). Picking it reveals the `new_project` box in CSS; on its own it means no choice.
 - **Reference** (`/reference`, table `reference`, `REFERENCE_FIELDS`) is one flat list of title + notes: information with no action, kept here so it needn't live in another app. No projects, tags or folders (yet); search finds it.
+  - Adding an item opens its page, so its notes go in right away.
   - An item's page (`/reference/<id>`) lists the URLs in its notes as links above the textarea (the `links` filter in `app.py`: any `scheme://`, so `obsidian://` too). Deleting is a hard delete and returns to the list.
 - **Timer** (`/timer`) replaced a standalone time tracker on 2026-10-22. Every time entry belongs to a task.
   - Table `time_entries` (`task_id` → `tasks`, `ON DELETE CASCADE`; `start_time`, `end_time` as UTC ISO-8601 to the second, written by `db.iso()`). No `end_time` means running. A partial unique index allows only one running entry.
