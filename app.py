@@ -432,7 +432,11 @@ def complete(id):
     c = conn()
     db.get_task(c, id) or abort(404)
     db.complete_task(c, id, today(), now())
-    return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    if request.form.get("exit"):
+        return redirect(request.form.get("next") or url_for("next_view"))
+    return back()
 
 
 @app.post("/tasks/<int:id>/done-then-project")

@@ -28,13 +28,14 @@
     <button class="primary">Save</button>
     <button name="exit" value="1">Save &amp; exit</button>
     {% if t.state == 'abandoned' %}<button formaction="{{ url_for('revive', id=t.id) }}" title="Bring it back">Revive</button>
-    {% else %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Mark done" aria-label="Mark done">✓</button>
-    {% if t.project_id and t.state == 'open' %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
+    {% else %}<button formaction="{{ url_for('complete', id=t.id) }}">Done</button>
+    <button formaction="{{ url_for('complete', id=t.id) }}" name="exit" value="1" title="Mark done and go back">Done &amp; exit</button>
+    {% if t.project_id and t.state == 'open' %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" title="Done, then pick the project's next action">Done &amp; next</button>{% endif %}{% endif %}
     {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
     {% elif t.state == 'open' %}<button formaction="{{ url_for('task_start', id=t.id) }}" class="icon" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
     {% if seconds %}<span class="hint">{{ seconds|hm }} spent</span>{% endif %}
-    {% if t.state == 'abandoned' %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this task for good?')">✕</button>
-    {% else %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Abandon (stays on Done, revivable)" aria-label="Abandon task">✕</button>{% endif %}
+    {% if t.state == 'abandoned' %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" onclick="return confirm('Delete this task for good?')">Delete for good</button>
+    {% else %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Stays on Done, revivable">Delete</button>{% endif %}
   </div>
 </form>
 {% endblock %}

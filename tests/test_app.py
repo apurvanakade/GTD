@@ -183,6 +183,17 @@ def test_done_then_pick_next(client, conn):
     assert r.headers["Location"].endswith("/h0") and db.get_task(conn, h)["state"] == "done"
 
 
+def test_done_and_exit_completes_and_goes_back(client, conn):
+    """Done & exit: like Save & exit, but also marks the task done."""
+    tid = db.add_task(conn, "x", step="next", ground=1)
+    r = client.post(f"/tasks/{tid}/complete", data={"next": "/h0", "exit": "1"})
+    assert r.headers["Location"] == "/h0" and db.get_task(conn, tid)["state"] == "done"
+    # Plain Done (no exit) stays on the page it was posted from.
+    tid2 = db.add_task(conn, "y", step="next", ground=1)
+    r = client.post(f"/tasks/{tid2}/complete", headers={"Referer": f"http://localhost/tasks/{tid2}"})
+    assert r.headers["Location"] == f"http://localhost/tasks/{tid2}"
+
+
 def test_process_next_into_project_with_next_becomes_later(client, conn):
     pid = db.add_project(conn, "P")
     db.add_task(conn, "a", step="next", project_id=pid)
