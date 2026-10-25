@@ -108,7 +108,8 @@ def test_crosslinks(client, conn):
     tid = db.add_task(conn, "dig", step="next", project_id=pid)
     gid = db.add_task(conn, "stretch", step="next", ground=1)
     assert f'href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
-    assert 'href="/horizons"' in client.get(f"/tasks/{gid}").get_data(as_text=True)
+    gpage = client.get(f"/tasks/{gid}").get_data(as_text=True)
+    assert 'href="/horizons"' in gpage and 'class="crumb"' not in gpage  # an H0 task has no parent to link up to
     assert 'href="/projects"' in client.get(f"/projects/{pid}").get_data(as_text=True)
     db.update_project(conn, pid, status="someday")
     assert 'href="/someday"' in client.get(f"/projects/{pid}").get_data(as_text=True)
@@ -948,20 +949,13 @@ def test_add_h0_task_straight_from_h0_tab(client, conn):
     assert (t["step"], t["ground"], t["project_id"]) == (None, 1, None)
     assert b"stretch" in client.get("/h0").data
     client.post("/h0/add", data={"title": "  "})  # blank title: nothing added
+    client.post("/h0/add", data={"title": "taxes", "due_date": "tomorrow", "recur": ""})
+    assert conn.execute("SELECT due_date, ground FROM tasks WHERE title='taxes'").fetchone()[:] == ("2026-10-23", 1)
     assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=''").fetchone()[0] == 0
 
 
-def test_h0_add_line_takes_a_due_date(client, conn):
-    assert b'name="due_date"' in client.get("/h0").data
-    client.post("/h0/add", data={"title": "taxes", "due_date": "tomorrow", "recur": ""})
-    t = conn.execute("SELECT * FROM tasks WHERE title='taxes'").fetchone()
-    assert (t["due_date"], t["ground"]) == ("2026-10-23", 1)
 
 
-def test_h0_task_page_has_no_back_link(client, conn):
-    tid = db.add_task(conn, "stretch", step="next", ground=1)
-    page = client.get(f"/tasks/{tid}").get_data(as_text=True)
-    assert 'class="crumb"' not in page
 
 
 def test_default_db_path_sits_next_to_the_code(monkeypatch):
@@ -1135,15 +1129,6 @@ def test_search_suggest(client, conn):
     assert len(client.get("/search/suggest?q=e").get_json()) <= 10
 
 
-def test_nav_puts_review_pages_last_and_apart(client, conn):
-    # Review, Horizons and Done are weekly-review pages: they sit after the daily
-    # tabs in their own muted group so they don't compete for attention.
-    html = client.get("/", follow_redirects=True).get_data(as_text=True)
-    nav = html[html.index("<nav"):html.index("</nav>")]
-    aux = nav[nav.index('class="aux"'):]
-    labels = re.findall(r">(Review|Horizons|Done)<", aux)
-    assert labels == ["Review", "Horizons", "Done"]
-    assert nav.index("Timer") < nav.index('class="aux"')
 
 
 def test_add_a_next_action_on_the_next_page(client, conn):

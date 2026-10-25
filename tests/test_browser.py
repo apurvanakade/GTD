@@ -25,14 +25,20 @@ def browser():
         b.close()
 
 
+@pytest.fixture(scope="session")
+def server():
+    """One server for the run: shutting one down waits out serve_forever's 0.5 s poll."""
+    s = make_server("127.0.0.1", 0, app, threaded=True)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{s.server_port}"
+    s.shutdown()
+
+
 @pytest.fixture
-def live(client, conn):
-    """The seeded app on a real port, fresh DB per test."""
+def live(server, client, conn):
+    """The seeded app on a real port, fresh DB per test (the app reads DB_PATH on every request)."""
     seed(conn)
-    server = make_server("127.0.0.1", 0, app, threaded=True)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    yield f"http://127.0.0.1:{server.server_port}"
-    server.shutdown()
+    return server
 
 
 @pytest.fixture

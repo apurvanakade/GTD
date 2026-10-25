@@ -24,7 +24,7 @@ uv run app.py                                   # bare dev server (GTD_HOST / GT
 uv run pytest                                   # all tests
 uv run pytest tests/test_app.py::test_horizons  # one test
 uv run pytest -k calendar                       # by keyword
-uv run pytest -m browser                        # browser tests (real Chromium, ~5s); excluded from the default run
+uv run pytest -m browser                        # browser tests (real Chromium, ~8s); excluded from the default run
 ```
 
 Env vars:
@@ -168,7 +168,7 @@ Every change must be verified before it is called done:
 3. For template or JS changes, also run `uv run pytest -m browser`, and add a browser test for new JS behavior. Click through the real app (`GTD`) for anything visual.
 
 Enforcement:
-- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail. It also runs the browser tests when `templates/` or `static/` have uncommitted changes.
+- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail. It also runs the browser tests when `templates/` or `static/` have uncommitted changes. After a green run it stores a fingerprint of the working tree (`.git/tests-green`) and skips the tests on a turn that changed nothing since.
 - `.githooks/pre-commit` refuses commits while tests fail. It also runs the browser tests when the commit touches `templates/` or `static/`. It is enabled per clone with `git config core.hooksPath .githooks`.
 
 Layout (Flask test client, temporary DB):
@@ -178,7 +178,7 @@ Layout (Flask test client, temporary DB):
   - `seed(c)` builds one of everything the UI can show (each task status, H0, repeats, waiting/someday/done projects, horizons). Its ids are deterministic.
   - New date-dependent behavior should be tested against the fixed date.
 - `tests/test_app.py` holds the targeted tests: GTD rules, routes, recurrence, migrations, the import, edge cases.
-- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, a live server on a random port with the seeded DB) drives the JS: tick-off, search suggestions, theme toggle, capture dialog, dragging project steps and projects, the project rows' ▸ and Expand all, `/` and `f` keys, date picker, timer clock, timer entry autosave, the Markdown notes editor (rendering, saving, undo), the add line and "＋ New…" reveals, calendar day click, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
+- `tests/test_browser.py` (marker `browser`, Playwright + Chromium, one live server per run on a random port, a freshly seeded DB per test) drives the JS: tick-off, search suggestions, theme toggle, capture dialog, dragging project steps and projects, the project rows' ▸ and Expand all, `/` and `f` keys, date picker, timer clock, timer entry autosave, the Markdown notes editor (rendering, saving, undo), the add line and "＋ New…" reveals, calendar day click and drag-to-reschedule, and fails on any JS error. One-time setup: `uv run playwright install chromium`.
 - `tests/test_crawl.py` holds the generic tests. They usually catch accidental bugs before anyone writes a targeted test for them:
   - Every link reachable from `/` must load.
   - Every form, with each submit button and each `<select>` option, must submit and land on a 200 page. Each submission gets a fresh copy of the seeded DB and sends its own page as the Referer.
