@@ -331,7 +331,7 @@ def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, 
     assert "overdue" in ev.get_attribute("class")
     target = page.locator('.cal td', has=page.locator('.day[data-date="2026-10-29"]'))
     with page.expect_response(lambda r: r.url.endswith("/due")) as saved:
-        ev.drag_to(target)
+        ev.drag_to(target, target_position={"x": 60, "y": 15})  # top of the cell, clear of the timer pill
     assert saved.value.status == 204
     assert target.locator(".ev", has_text="buy tiles").count() == 1  # moved in place, no reload
     assert "overdue" not in ev.get_attribute("class")
