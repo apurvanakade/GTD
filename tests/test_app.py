@@ -1031,8 +1031,8 @@ def test_done_toggle_on_lists(client, conn):
         return client.get(url).get_data(as_text=True)
 
     project = f"/projects/{ids['active']}"
-    assert "older step" not in page(project) and "Show completed" in page(project)
-    shown = page(project + "?done=1")
+    assert "older step" not in page(project + "?done=0") and "Show completed" in page(project + "?done=0")
+    shown = page(project)
     assert shown.index("newer step") < shown.index("older step")  # newest completion first
     assert "old tiles" not in shown and "Hide completed" in shown
     assert "2026-10-22" in shown and "2026-10-19" in shown  # completion dates are shown
@@ -1418,3 +1418,11 @@ def test_autosave_ignores_a_blank_title_and_a_missing_record(client, conn):
     assert client.post(f"/autosave/reference/{id}", data={"title": " ", "base_title": "Keep"}).status_code == 200
     assert db.get_reference(conn, id)["title"] == "Keep"
     assert client.post("/autosave/reference/999", data={"notes": "x", "base_notes": ""}).status_code == 404
+
+
+def test_project_page_shows_completed_by_default(client, conn):
+    pid = db.add_project(conn, "P")
+    t = db.add_task(conn, "Finished step", step="next", project_id=pid)
+    db.complete_task(conn, t, TODAY)
+    assert "Finished step" in client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert "Finished step" not in client.get(f"/projects/{pid}?done=0").get_data(as_text=True)

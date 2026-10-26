@@ -188,17 +188,18 @@ def into_new_project(c, id, title, notes, **project):
 
 # --- lists -----------------------------------------------------------------
 
-def toggle_url(show):
-    """This page's URL with ?done=1 flipped, keeping other query args."""
+def toggle_url(show, default=False):
+    """This page's URL with ?done flipped, keeping other query args. A page that shows completed by default flips ?done=0."""
     args = {k: v for k, v in request.args.items() if k != "done" and k not in request.view_args}
-    return url_for(request.endpoint, **request.view_args, **({} if show else {"done": 1}), **args)
+    flip = {} if show == default else {"done": int(not default)}
+    return url_for(request.endpoint, **request.view_args, **flip, **args)
 
 
-def completed(**filters):
-    """Template variables for the "Show completed" toggle (?done=1): the done tasks, newest completion first."""
-    show = request.args.get("done") == "1"
+def completed(default=False, **filters):
+    """Template variables for the "Show completed" toggle (?done=1, or ?done=0 to hide where shown by default): the done tasks, newest completion first."""
+    show = request.args.get("done", "1" if default else "0") == "1"
     return {"show_done": show, "done_tasks": db.done_tasks(conn(), **filters) if show else [],
-            "toggle_url": toggle_url(show)}
+            "toggle_url": toggle_url(show, default)}
 
 
 @app.route("/next")
@@ -526,7 +527,7 @@ def project_view(id):
         return back()
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
                            seconds=db.project_seconds(c, id, now()),
-                           **completed(project_id=id))
+                           **completed(default=True, project_id=id))
 
 
 @app.post("/projects/<int:id>/delete")
