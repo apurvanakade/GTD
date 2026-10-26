@@ -893,7 +893,10 @@ def test_h0_tab_lists_every_ground_task_by_due_date(client, conn):
     assert "Upcoming" not in page  # nothing folded away: future repeats are listed too
     assert page.index("soon") < page.index("later bins") < page.index("stretch")  # undated last
     assert "later bins" not in client.get("/next").get_data(as_text=True)
-    assert db.counts(conn, date(2026, 10, 22))["h0"] == 2  # the count is what's actionable now
+    # the count is only what is due today or overdue: not undated, not future
+    assert db.counts(conn, date(2026, 10, 24))["h0"] == 0
+    assert db.counts(conn, date(2026, 10, 25))["h0"] == 1
+    assert db.counts(conn, date(2026, 10, 26))["h0"] == 1
 
 
 def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, conn):
