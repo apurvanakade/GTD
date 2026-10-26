@@ -592,3 +592,23 @@ def week_totals(c, since, now):
 def open_tasks(c):
     """Every open task, for the timer's picker: next actions first."""
     return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' ORDER BY {STEP_ORDER}, lower(t.title)""").fetchall()
+
+
+# --- autosave --------------------------------------------------------------
+
+TEXT_TABLES = {"tasks": update_task, "projects": update_project, "horizons": update_horizon, "reference": update_reference}
+
+
+def save_text(c, table, id, fields, base):
+    """A record page's autosave of its title and notes. A field changed elsewhere since the page last saw it
+    (now neither `base` nor the new text) is a conflict: nothing is written and the current text is returned
+    for the page to ask about. Otherwise writes and returns None."""
+    norm = lambda s: (s or "").replace("\r\n", "\n").strip()
+    c.execute("BEGIN IMMEDIATE")  # no other save between the check and the write
+    row = c.execute(f"SELECT title, notes FROM {table} WHERE id = ?", (id,)).fetchone()
+    if any(norm(row[k]) not in (norm(base.get(k)), norm(v)) for k, v in fields.items()):
+        c.rollback()
+        return {k: row[k] for k in ("title", "notes")}
+    TEXT_TABLES[table](c, id, **fields)
+    c.commit()
+    return None

@@ -754,6 +754,24 @@ def horizon_delete(id):
     return redirect(url_for("horizons_view"))
 
 
+
+# --- autosave --------------------------------------------------------------
+
+@app.route("/autosave/<any(tasks, projects, horizons, reference):kind>/<int:id>", methods=["GET", "POST"])
+def autosave(kind, id):
+    """A record page's title and notes save themselves (static/autosave.js). Each change comes with the text the
+    page last saw (`base_<field>`); 409 with the current text when someone else changed it since."""
+    c = conn()
+    row = c.execute(f"SELECT title, notes FROM {kind} WHERE id = ?", (id,)).fetchone() or abort(404)
+    if request.method == "GET":
+        return {k: row[k] for k in ("title", "notes")}
+    fields = {k: request.form[k].replace("\r\n", "\n").strip() for k in ("title", "notes") if k in request.form}
+    if not fields.get("title", True):
+        fields.pop("title")  # a title can't be blank; keep the old one until there's a new one
+    theirs = db.save_text(c, kind, id, fields, {k: request.form.get("base_" + k) for k in fields})
+    return (theirs, 409) if theirs else {}
+
+
 if __name__ == "__main__":
     app.run(host=os.environ.get("GTD_HOST", "127.0.0.1"), port=int(os.environ.get("GTD_PORT", 5005)),
             debug=bool(os.environ.get("GTD_DEBUG")))

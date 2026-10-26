@@ -3,9 +3,10 @@
 {% block crumb %}<p class="crumb"><a href="{{ url_for('horizons_view') }}">Horizons</a> · {{ label }}</p>{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-<form method="post" class="edit">
+<form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
   <input name="title" value="{{ h.title }}" class="big" aria-label="Title" required>
   <textarea name="notes" rows="14" placeholder="{% if h.level == 'goal' %}Outcome, target date, which areas and projects it serves…{% elif h.level == 'area' %}This area is fine when… Standards, recurring responsibilities…{% endif %}">{{ h.notes }}</textarea>
+  <p class="autosave hint" aria-live="polite"></p>
   <div class="row">
     <button class="primary">Save</button>
     {% if h.level in ('goal', 'area') %}

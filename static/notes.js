@@ -129,7 +129,8 @@ function editor(ta) {
     lastEdit = now;
   }
   // Only an edit writes the textarea, so saving untouched notes sends them back unchanged.
-  function changed(text) { ta.value = text; }
+  // The input event tells autosave.js.
+  function changed(text) { ta.value = text; ta.dispatchEvent(new Event("input", { bubbles: true })); }
   function step(d) {
     if (!hist[hi + d]) return;
     hi += d;
@@ -180,6 +181,14 @@ function editor(ta) {
     if (a.getAttribute("href").startsWith("/")) location.href = a.href;
     else window.open(a.href, "_blank", "noopener");
   });
+
+  // Text loaded from elsewhere (autosave.js: someone else's edit, or a merge); undoable like an edit.
+  ta.setText = text => {
+    const sel = document.activeElement === ed ? [text.length, text.length] : null;
+    paint(text, sel);
+    record(text, sel ?? [text.length, text.length]);
+    changed(text);
+  };
 
   paint(start);
 }

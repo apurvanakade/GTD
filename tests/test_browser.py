@@ -416,3 +416,49 @@ def test_next_and_h0_rows_are_spaced_into_urgency_bands(page, live, conn):
         [e.querySelector('.title').textContent.trim(), parseFloat(getComputedStyle(e).marginTop) > 0])""")
     # Overdue + today | this week | everything later, undated included (seeded: vacuum today, bins Nov 3).
     assert [t for t, gap in rows if gap] == ["wk", "bins"]
+
+
+def test_title_and_notes_save_themselves(page, live, conn):
+    pid = db.add_reference(conn, "Auto", notes="abc")
+    page.goto(live + f"/reference/{pid}")
+    page.locator(".md-editor").click()
+    page.keyboard.press("ControlOrMeta+End")
+    page.keyboard.type("def")
+    page.locator("form[data-autosave] input[name=title]").fill("Autosaved")
+    page.locator("form[data-autosave] input[name=title]").blur()  # leaving a field saves at once, no 2 s wait
+    page.wait_for_function("document.querySelector('.autosave').textContent === 'Saved'")
+    r = db.get_reference(conn, pid)
+    assert (r["title"], r["notes"]) == ("Autosaved", "abcdef")
+
+
+def test_autosave_conflict_keep_mine_and_merge(page, live, conn):
+    pid = db.add_reference(conn, "Clash", notes="one\ntwo")
+    page.goto(live + f"/reference/{pid}")
+    db.update_reference(conn, pid, notes="one\nTHEIRS")
+    page.locator(".md-editor").click()
+    page.keyboard.press("ControlOrMeta+End")
+    page.keyboard.type(" mine")
+    page.locator("form[data-autosave] input[name=title]").focus()
+    page.get_by_role("button", name="merge").click()
+    assert page.locator(".md-editor").text_content() == \
+        "one\n<<<<<<< mine\ntwo mine\n=======\nTHEIRS\n>>>>>>> theirs"
+    page.locator("form[data-autosave] input[name=title]").focus()  # the merge saves like any edit
+    page.wait_for_function("document.querySelector('.autosave').textContent === 'Saved'")
+    assert "<<<<<<< mine" in db.get_reference(conn, pid)["notes"]
+    db.update_reference(conn, pid, title="Theirs")
+    page.locator("form[data-autosave] input[name=title]").fill("Mine")
+    page.locator(".md-editor").focus()
+    page.get_by_role("button", name="keep mine").click()
+    page.wait_for_function("document.querySelector('.autosave').textContent === 'Saved'")
+    assert db.get_reference(conn, pid)["title"] == "Mine"
+    page.errors[:] = [e for e in page.errors if "409 (CONFLICT)" not in e]  # the refusals were the point
+
+
+def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
+    pid = db.add_project(conn, "Elsewhere", notes="old")
+    page.goto(live + f"/projects/{pid}")
+    db.update_project(conn, pid, notes="new from phone")
+    page.evaluate("dispatchEvent(new Event('focus'))")
+    page.wait_for_function("document.querySelector('.md-editor').textContent === 'new from phone'")
+    assert page.locator(".autosave").text_content() == "Updated from elsewhere"
+    assert db.get_project(conn, pid)["notes"] == "new from phone"

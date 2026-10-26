@@ -9,10 +9,11 @@
 {% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-<form method="post" class="edit">
+<form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}">
   <input type="hidden" name="next" value="{{ back or '' }}">
   <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
   <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
+  <p class="autosave hint" aria-live="polite"></p>
   {# Only a project's open tasks have a step: an inbox item is waiting to be filed, an H0 task is just to be done. #}
   {% if t.step and t.state == 'open' %}<label>Step
     <select name="step">

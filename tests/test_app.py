@@ -1381,3 +1381,40 @@ def test_migration_adds_project_position(tmp_path):
     assert [(p["title"], p["position"]) for p in db.projects(c, "someday")] == [("s", None)]
     c.close()
     db.connect(path).close()  # second connect is a no-op
+
+
+# --- autosave --------------------------------------------------------------
+
+@pytest.mark.parametrize("kind,add,get", [
+    ("tasks", lambda c: db.add_task(c, "Old", notes="a"), db.get_task),
+    ("projects", lambda c: db.add_project(c, "Old", notes="a"), db.get_project),
+    ("horizons", lambda c: db.add_horizon(c, "goal", "Old"), db.get_horizon),
+    ("reference", lambda c: db.add_reference(c, "Old", notes="a"), db.get_reference),
+])
+def test_autosave_writes_only_the_fields_sent(client, conn, kind, add, get):
+    id = add(conn)
+    before = get(conn, id)
+    r = client.post(f"/autosave/{kind}/{id}", data={"notes": "new notes\n", "base_notes": before["notes"]})
+    assert r.status_code == 200
+    assert get(conn, id)["notes"] == "new notes" and get(conn, id)["title"] == "Old"
+    assert client.get(f"/autosave/{kind}/{id}").json == {"title": "Old", "notes": "new notes"}
+
+
+def test_autosave_refuses_a_field_changed_elsewhere(client, conn):
+    id = db.add_reference(conn, "Mine", notes="base")
+    db.update_reference(conn, id, notes="theirs")
+    r = client.post(f"/autosave/reference/{id}", data={"notes": "mine", "base_notes": "base"})
+    assert r.status_code == 409
+    assert r.json == {"title": "Mine", "notes": "theirs"}
+    assert db.get_reference(conn, id)["notes"] == "theirs"
+    # The same text on both sides isn't a conflict, and neither is another field changing.
+    assert client.post(f"/autosave/reference/{id}", data={"notes": "theirs", "base_notes": "base"}).status_code == 200
+    assert client.post(f"/autosave/reference/{id}", data={"title": "T", "base_title": "Mine"}).status_code == 200
+    assert db.get_reference(conn, id)["title"] == "T"
+
+
+def test_autosave_ignores_a_blank_title_and_a_missing_record(client, conn):
+    id = db.add_reference(conn, "Keep")
+    assert client.post(f"/autosave/reference/{id}", data={"title": " ", "base_title": "Keep"}).status_code == 200
+    assert db.get_reference(conn, id)["title"] == "Keep"
+    assert client.post("/autosave/reference/999", data={"notes": "x", "base_notes": ""}).status_code == 404

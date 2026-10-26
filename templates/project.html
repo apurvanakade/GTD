@@ -6,9 +6,10 @@
 {% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-<form method="post" class="project">
+<form method="post" class="project" data-autosave="{{ url_for('autosave', kind='projects', id=p.id) }}">
   <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
+  <p class="autosave hint" aria-live="polite"></p>
   <div class="row">
     <button class="primary">Save</button>
     {% if p.status != 'active' %}<button name="status" value="active">Activate</button>{% endif %}
