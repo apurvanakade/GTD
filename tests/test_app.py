@@ -881,7 +881,7 @@ def test_h0_tasks_stay_off_next_actions(client, conn):
     pt = db.add_task(conn, "real step", step="next", project_id=pid)
     page = client.get("/next").data
     assert b"real step" in page and b"stretch" not in page
-    assert db.counts(conn, date(2026, 10, 22))["next"] == 1
+    assert db.counts(conn, date(2026, 10, 22))["next"] == 0  # undated: not in the count
     assert gid in [t["id"] for t in db.h0_actions(conn)]
 
 
@@ -912,7 +912,7 @@ def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, co
     assert re.search(r'class="task[^"]* s-overdue"[^>]*>(?:(?!</li>).)*overdue one', html, re.S)
     assert re.search(r'class="task[^"]* s-later"[^>]*>(?:(?!</li>).)*weekly far', html, re.S)
     assert 'class="legend"' in html
-    assert db.counts(conn, TODAY)["next"] == 2  # the far repeat isn't actionable yet
+    assert db.counts(conn, TODAY)["next"] == 1  # only the overdue one: not undated, not a far repeat
 
 
 def test_h0_rows_are_colored_by_how_soon_they_are_due(client, conn):

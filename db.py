@@ -90,6 +90,7 @@ ACTIVE = "t.project_id IN (SELECT id FROM projects WHERE status = 'active')"
 NEXT = f"t.state = 'open' AND t.step = 'next' AND {ACTIVE}"
 READY = "(t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
 VISIBLE_NEXT = f"{NEXT} AND {READY}"
+DUE_NEXT = f"{NEXT} AND t.due_date <= ?"  # the nav count: due today or overdue only
 VISIBLE_H0 = "t.state = 'open' AND t.ground AND t.due_date <= ?"  # the tab's count: due today or overdue only
 STEP_ORDER = "CASE WHEN t.ground OR t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2 ELSE 3 END"
 
@@ -307,7 +308,7 @@ def counts(c, today):
     one = lambda sql, *a: c.execute(sql, a).fetchone()[0]
     return {
         "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}"),
-        "next": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_NEXT}", today.isoformat()),
+        "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
         "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),

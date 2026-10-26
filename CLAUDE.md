@@ -124,7 +124,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - The task page shows the step picker only for a project's open task. `orphaned()` in `app.py` flashes when a task lands in the inbox.
 - **H0 tasks are always next actions**, so they have no step: the H0 tab lists every open H0 task.
   - H0 is the `h0` option in the `project_select()` macro, so choosing a project and choosing H0 are one decision. Its "＋ New…" option reveals a `new_project` box; `task_fields_from_form()` creates an active project from it and uses it, overriding the dropdown. A repeat rule doesn't exempt a task.
-  - H0 tasks are listed on the Horizons page (`db.h0_actions()`), and their rows show an H0 tag. Their open tasks have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`: only tasks due today or overdue, so undated ones aren't in the number) and stay off Next Actions and its count (`VISIBLE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, due date, repeat), so a ground-level task needs no Inbox or Process trip.
+  - H0 tasks are listed on the Horizons page (`db.h0_actions()`), and their rows show an H0 tag. Their open tasks have their own H0 tab right of Next (`/h0`, `db.h0_actions()`, counted by `VISIBLE_H0`: only tasks due today or overdue, so undated ones aren't in the number) and stay off Next Actions and its count (`DUE_NEXT`). The H0 tab has its own add box (`/h0/add`: title, due date, repeat), so a ground-level task needs no Inbox or Process trip.
   - Process acts only on inbox items (a stale tab or resubmit is refused), and refuses next/waiting with neither, and waiting with H0. The task form and the Next, calendar and Waiting add lines send such a task to the inbox instead.
   - The Next page's add line (`/next/add`, `add_next_action()` in `app.py`, shared with the calendar) adds a next action directly: a `later` step if its project already has one.
   - The Waiting page's add box (`/waiting/add`: title, project (no H0 option), follow-up date) adds a `waiting` task; the Someday page's (`/someday/add`) adds a someday project.
@@ -144,7 +144,8 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **No contexts.** They were removed on 2026-10-23: they were never used, and having to pick one slowed processing. Don't bring them back without being asked.
 - **No areas on projects.** H2 areas exist only as notes on the Horizons page.
 - **Next and H0 tabs hide nothing** (`db.next_list()`, `db.h0_actions()`): repeats not yet due are listed too. Both sort by due date (undated last) and stripe each row by how soon it's due (`row(soon=True)`, the `soon` filter and `SOON` in `app.py`: overdue, today, ≤7 days, ≤30 days, later), with a dot legend. A gap (CSS sibling rules in `style.css`) splits the rows into three bands: overdue + today, this week, everything later.
-- **Recurring tasks** keep their step (or H0) but don't count until their due date: the nav counts, the weekly review and `db.next_actions()` use `VISIBLE_NEXT`/`VISIBLE_H0`.
+- **Recurring tasks** keep their step (or H0) but don't count until their due date: the weekly review and `db.next_actions()` use `VISIBLE_NEXT`.
+- **The Next and H0 nav counts** show only tasks due today or overdue (`DUE_NEXT`, `VISIBLE_H0`), so undated tasks and future repeats aren't in the number.
   - `complete_task()` marks the task done and inserts the next instance.
   - A repeat rule without a due date gets today as its due date.
 - **Projects can't be marked done while they have open tasks.** Moving a project out of done clears its `completed_at`.
