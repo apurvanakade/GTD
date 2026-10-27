@@ -318,6 +318,32 @@ def test_calendar_remembers_the_view(client):
     assert r.headers["Location"].endswith("w=2026-10-22")  # adding stays on the week you're looking at
 
 
+def bands(html):
+    """[(band, open, [titles])] in page order."""
+    out = []
+    for key, attrs, body in re.findall(r'<details class="band" data-band="(\w+)"([^>]*)>(.*?)</details>', html, re.S):
+        out.append((key, "open" in attrs, re.findall(r'class="title"[^>]*>([^<]*)<', body)))
+    return out
+
+
+def test_next_and_h0_fold_into_due_bands(client, conn):
+    for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"),
+                       ("mo", "2026-11-10"), ("lt", "2027-03-01"), ("nd", None)]:
+        db.add_task(conn, title, step="next", ground=1, due_date=due)
+    html = client.get("/h0").get_data(as_text=True)
+    assert bands(html) == [("now", True, ["od", "td"]), ("week", False, ["wk"]), ("later", False, ["mo", "lt"]),
+                           ("nodate", False, ["nd"])]
+    assert re.search(r'data-band="week"[^>]*>\s*<summary>This week <b>1</b></summary>', html)
+    assert re.search(r'data-band="nodate"[^>]*>\s*<summary>No date <b>1</b></summary>', html)
+    assert 'title="Ground level' not in html  # no H0 tag on the H0 page
+    assert 'class="legend"' not in html
+    pid = db.add_project(conn, "P")
+    db.add_task(conn, "loose end", step="next", project_id=pid)
+    html = client.get("/next").get_data(as_text=True)
+    assert bands(html) == [("nodate", False, ["loose end"])]  # empty bands aren't shown
+    assert 'class="legend"' not in html
+
+
 def test_calendar_colors_tasks_by_kind(client, conn):
     some = db.add_project(conn, "Dreams", status="someday")
     act = db.add_project(conn, "Act")
@@ -840,7 +866,6 @@ def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, co
     assert html.index("overdue one") < html.index("weekly far") < html.index("undated")
     assert re.search(r'class="task[^"]* s-overdue"[^>]*>(?:(?!</li>).)*overdue one', html, re.S)
     assert re.search(r'class="task[^"]* s-later"[^>]*>(?:(?!</li>).)*weekly far', html, re.S)
-    assert 'class="legend"' in html
     assert db.counts(conn, TODAY)["next"] == 1  # only the overdue one: not undated, not a far repeat
 
 
@@ -852,7 +877,6 @@ def test_h0_rows_are_colored_by_how_soon_they_are_due(client, conn):
     rows = {re.search(r'>(\w\w)</a>', li).group(1): li for li in re.findall(r'<li class="task[^"]*".*?</li>', html, re.S)}
     soon = {k: re.search(r'class="task[^"]*?(?: s-(\w+))?"', v).group(1) for k, v in rows.items()}
     assert soon == {"od": "overdue", "td": "today", "wk": "week", "mo": "month", "lt": "later", "nd": None}
-    assert 'class="legend"' in html
 
 
 def test_add_h0_task_straight_from_h0_tab(client, conn):

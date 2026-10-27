@@ -1,12 +1,11 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form with context %}
+{% from "_task.html" import banded, date_input, add_form with context %}
 {% block title %}H0 · Ground level{% endblock %}
 {% block body %}
 {% call add_form(url_for('h0_add'), 'Add an H0 task') %}
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats: weekly, every 2 weeks…" aria-label="Repeats">
 {% endcall %}
-<ul class="tasks">{% for t in tasks %}{{ row(t, soon=True) }}{% else %}<li class="empty">Nothing at ground level right now.</li>{% endfor %}</ul>
-{% if tasks %}<p class="legend">{% for k, label in SOON %}<span class="s-{{ k }}">{{ label }}</span>{% endfor %}</p>{% endif %}
+{{ banded(tasks, project=False, empty='Nothing at ground level right now.') }}
 {% include "_done_toggle.html" %}
 {% endblock %}

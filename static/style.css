@@ -25,8 +25,15 @@
 .s-overdue { --k: #dc2626; } .s-today { --k: #ea580c; } .s-week { --k: #eab308; }
 .s-month { --k: #0d9488; } .s-later { --k: #a8a29e; }
 .task[class*=" s-"] { box-shadow: inset 3px 0 0 var(--k); }
-/* The sorted rows fall into three bands, a gap between each: overdue + today, this week, everything later. */
-.task:is(.s-overdue, .s-today) + .task:not(.s-overdue, .s-today), .task.s-week + .task:not(.s-week) { margin-top: 22px; }
+/* Next and H0 fold into due bands; dates and ↻ show on hover, except an overdue date. */
+.band { margin-top: 14px; }
+.band > summary { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
+.band > summary::-webkit-details-marker { display: none; }
+.band > summary::before { content: "▸"; display: inline-block; width: 1.2em; transition: transform .15s; }
+.band[open] > summary::before { transform: rotate(90deg); }
+.band > summary b { font-weight: 600; font-size: .7rem; background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
+.tasks.soon .task:not(.overdue) :is(.date, .recur) { opacity: 0; }
+.tasks.soon .task:hover :is(.date, .recur), .tasks.soon .task:focus-within :is(.date, .recur) { opacity: 1; }
 
 * { box-sizing: border-box; }
 body {
@@ -204,9 +211,11 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
   min-height: 41px; padding: 8px 6px; border-bottom: 1px solid var(--line); border-radius: 0;
 }
 .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
-.task .title { color: var(--fg); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.task .title { color: var(--fg); flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }  /* basis 0: a long title wraps rather than pushing the buttons onto a line of their own */
 .task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: .8rem; color: var(--muted); }
-.task .proj { color: var(--muted); }
+.task .name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.task .name .title { margin-right: 6px; }
+.task .proj { color: var(--muted); font-size: .8rem; white-space: nowrap; }
 .task .date { font-variant-numeric: tabular-nums; min-width: 6.4em; text-align: right; }
 .task .step { min-width: 4.2em; }
 .task .recur { width: 1em; text-align: center; }

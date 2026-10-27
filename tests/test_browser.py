@@ -342,7 +342,7 @@ def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, 
 
 
 def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
-    db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-30")
+    db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-22")
     page.goto(live + "/h0")
     edges = {t: row(page, t).locator(".date").evaluate("e => Math.round(e.getBoundingClientRect().right)")
              for t in ("vacuum", "dentist")}
@@ -407,17 +407,34 @@ def test_notes_editor_undo(page, live, conn):
     assert page.locator("textarea[name=notes]").input_value() == "abc"
 
 
-def test_next_and_h0_rows_are_spaced_into_urgency_bands(page, live, conn):
-    for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"), ("wk2", "2026-10-27"),
-                       ("mo", "2026-11-10"), ("lt", "2027-03-01"), ("nd", None)]:
-        db.add_task(conn, title, step="next", ground=1, due_date=due)
+def test_due_bands_fold_and_remember(page, live, conn):
+    db.add_task(conn, "wk", step="next", ground=1, due_date="2026-10-25")
     page.goto(live + "/h0")
-    rows = page.eval_on_selector_all("li.task", """els => els.map(e =>
-        [e.querySelector('.title').textContent.trim(), parseFloat(getComputedStyle(e).marginTop) > 0])""")
-    # Overdue + today | this week | everything later, undated included (seeded: vacuum today, bins Nov 3).
-    assert [t for t, gap in rows if gap] == ["wk", "bins"]
+    assert not row(page, "wk").is_visible()  # This week starts folded
+    page.locator("details[data-band=week] summary").click()
+    assert row(page, "wk").is_visible()
+    page.wait_for_function("localStorage.getItem('fold:/h0:week') === '1'")
+    page.reload()
+    assert row(page, "wk").is_visible()  # remembered
+    page.locator("details[data-band=now] summary").click()
+    page.goto(live + "/next")
+    assert page.locator("details[data-band=now]").get_attribute("open") is not None  # per page
 
 
+def test_due_bands_remember_only_clicks(page, live, conn):
+    page.goto(live + "/h0")
+    page.wait_for_timeout(100)  # any toggle events from parsing have fired
+    assert page.evaluate("Object.keys(localStorage).filter(k => k.includes('/h0:'))") == []  # defaults aren't frozen
+
+
+def test_row_dates_show_on_hover(page, live, conn):
+    db.add_task(conn, "late", step="next", ground=1, due_date="2026-10-20")
+    page.goto(live + "/h0")
+    opacity = lambda t: row(page, t).locator(".date").evaluate("e => getComputedStyle(e).opacity")
+    page.mouse.move(0, 0)
+    assert opacity("vacuum") == "0" and opacity("late") == "1"  # overdue stays visible
+    row(page, "vacuum").hover()
+    assert opacity("vacuum") == "1"
 def test_title_and_notes_save_themselves(page, live, conn):
     pid = db.add_reference(conn, "Auto", notes="abc")
     page.goto(live + f"/reference/{pid}")
@@ -517,3 +534,28 @@ def test_review_arrow_keys_move_between_steps(page, live):
     page.wait_for_url("**/review?step=overdue")
     page.locator("a[rel=next]").click()
     page.wait_for_url("**/review?step=stalled")
+
+
+def test_long_title_wraps_instead_of_pushing_buttons_down(page, live, conn):
+    long = "ask AI to download all the mir publication math physics and other science books " * 2
+    tid = db.add_task(conn, long.strip(), step="next", project_id=db.add_project(conn, "Mir publications archive"),
+                      due_date="2026-10-22")  # today, so its band is open
+    db.timer_start(conn, tid, NOW)
+    page.set_viewport_size({"width": 1000, "height": 800})
+    page.goto(live + "/next")
+    r = page.locator("li.task", has=page.locator("form.timing"))
+    mid = lambda sel: r.locator(sel).evaluate("e => { const b = e.getBoundingClientRect(); return b.left + b.width / 2 }")
+    top = lambda sel: r.locator(sel).evaluate("e => e.getBoundingClientRect().top")
+    title = r.locator(".title").evaluate("e => e.getBoundingClientRect()")
+    assert top("form.timing") < title["bottom"]  # ■ sits beside the title, not on a line below it
+    assert mid("form.timing") > title["right"]
+
+
+def test_project_sits_next_to_the_task_title(page, live, conn):
+    page.set_viewport_size({"width": 1000, "height": 800})
+    page.goto(live + "/next")
+    r = row(page, "buy tiles")
+    box = lambda sel: r.locator(sel).evaluate("e => e.getBoundingClientRect().toJSON()")
+    title, proj = box(".title"), box(".proj")
+    assert 0 < proj["left"] - title["right"] < 30 and abs(proj["top"] - title["top"]) < 8, (title, proj)
+    assert r.locator(".meta .proj").count() == 0  # not out in the details column

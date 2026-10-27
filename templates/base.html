@@ -97,6 +97,13 @@ document.addEventListener('keydown', e => {
   if (go && !document.querySelector('dialog[open]')) location = go;
 });
 const GO = {{ '{' }}{% for key, ep_name, label in go_keys %}{{ key|tojson }}: {{ url_for(ep_name)|tojson }},{% endfor %}{{ '}' }};
+// Next and H0's due bands: remember which you opened or folded, per page. Only a click is saved: a band
+// that starts open fires 'toggle' too, which would freeze today's default.
+document.querySelectorAll('details.band').forEach(d => {
+  const key = `fold:${location.pathname}:${d.dataset.band}`;
+  try { const v = localStorage.getItem(key); if (v !== null) d.open = v === '1'; } catch {}
+  d.querySelector('summary').addEventListener('click', () => { try { localStorage.setItem(key, d.open ? '0' : '1'); } catch {} });
+});
 // Capture goes to the Inbox page's own box, or elsewhere to the dialog.
 function capture() {
   const inline = document.querySelector('main .capture input');

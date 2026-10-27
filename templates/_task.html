@@ -6,10 +6,11 @@
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
   {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}
-  <a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+  {# The project follows the title, in the same text flow; the meta column keeps only step, date and repeat. #}
+  <span class="name"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+    {%- if project and t.project_title %} <a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
+    {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
-    {% if project and t.project_title %}<a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
-    {% elif project and t.ground %}<a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
     {% if not project and t.step and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' %}<span>later</span>{% endif %}
     {# The date and repeat slots are always there, empty when unused, so the columns line up down the list. #}
@@ -24,6 +25,18 @@
   {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>
   {% elif grip and not closed %}<span class="make-next slot" aria-hidden="true"><button type="button" tabindex="-1" disabled>Make next</button></span>{% endif %}
 </li>
+{% endmacro %}
+
+{# Next and H0: rows folded into due bands (BANDS in app.py); base.html's JS remembers which are open, per page. #}
+{% macro banded(tasks, project=True, empty='') %}
+{% for key, label, is_open, rows in tasks|bands %}
+<details class="band" data-band="{{ key }}"{% if is_open %} open{% endif %}>
+  <summary>{{ label }} <b>{{ rows|length }}</b></summary>
+  <ul class="tasks soon">{% for t in rows %}{{ row(t, project=project, soon=True) }}{% endfor %}</ul>
+</details>
+{% else %}
+<ul class="tasks"><li class="empty">{{ empty }}</li></ul>
+{% endfor %}
 {% endmacro %}
 
 {# A project row's ▸ and the open steps it folds out (base.html's JS toggles them), read-only: a title opens its task. #}

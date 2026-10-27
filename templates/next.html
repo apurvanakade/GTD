@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, project_select, date_input, add_form with context %}
+{% from "_task.html" import banded, project_select, date_input, add_form with context %}
 {% block title %}Next actions{% endblock %}
 {% block body %}
 {% call add_form(url_for('next_add'), 'Add a next action') %}
@@ -7,7 +7,6 @@
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
 {% endcall %}
-<ul class="tasks">{% for t in tasks %}{{ row(t, soon=True) }}{% else %}<li class="empty">No next actions. Clear the inbox or check stalled projects.</li>{% endfor %}</ul>
-{% if tasks %}<p class="legend">{% for k, label in SOON %}<span class="s-{{ k }}">{{ label }}</span>{% endfor %}</p>{% endif %}
+{{ banded(tasks, empty='No next actions. Clear the inbox or check stalled projects.') }}
 {% include "_done_toggle.html" %}
 {% endblock %}

@@ -147,7 +147,10 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - Tasks of waiting and someday projects stay off Next Actions (`VISIBLE_NEXT`). Waiting projects are listed on the Waiting page.
 - **No contexts.** They were removed on 2026-10-23: they were never used, and having to pick one slowed processing. Don't bring them back without being asked.
 - **No areas on projects.** H2 areas exist only as notes on the Horizons page.
-- **Next and H0 tabs hide nothing** (`db.next_list()`, `db.h0_actions()`): repeats not yet due are listed too. Both sort by due date (undated last) and stripe each row by how soon it's due (`row(soon=True)`, the `soon` filter and `SOON` in `app.py`: overdue, today, ≤7 days, ≤30 days, later), with a dot legend. A gap (CSS sibling rules in `style.css`) splits the rows into three bands: overdue + today, this week, everything later.
+- **Next and H0 tabs hide nothing** (`db.next_list()`, `db.h0_actions()`): repeats not yet due are listed too. Both sort by due date (undated last) and stripe each row by how soon it's due (`row(soon=True)`, the `soon` filter and `SOON` in `app.py`: overdue, today, ≤7 days, ≤30 days, later), no legend.
+  - The rows fold into due bands (`banded()` in `_task.html`, `BANDS` and the `bands` filter in `app.py`), each a `<details>` with a count: Now (overdue + today) open; This week, Later and No date folded. Empty bands aren't shown. The JS in `base.html` remembers a band you click open or folded, per page (`localStorage`, `fold:<path>:<band>`); only clicks are saved, since a band that starts open fires `toggle` too.
+  - Dates and ↻ show on hover (an overdue date always), and the H0 page drops the rows' H0 tag.
+- **A task row's project link follows its title** (`.name` in `row()`), so it doesn't float alone in the right-hand column once dates hide; the title has `flex-basis: 0`, so a long one wraps instead of pushing the buttons onto a line of their own.
 - **Recurring tasks** keep their step (or H0) but don't count until their due date: the weekly review and `db.next_actions()` use `VISIBLE_NEXT`.
 - **The Next and H0 nav counts** show only tasks due today or overdue (`DUE_NEXT`, `VISIBLE_H0`), so undated tasks and future repeats aren't in the number.
   - `complete_task()` marks the task done and inserts the next instance.

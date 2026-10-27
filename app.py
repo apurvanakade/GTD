@@ -156,7 +156,7 @@ def completed(default=False, **filters):
 @app.route("/next")
 def next_view():
     return render_template("next.html", tasks=db.next_list(conn()), projects=db.open_projects(conn()),
-                           SOON=SOON, **completed(ground=0))
+                           **completed(ground=0))
 
 
 def add_next_action():
@@ -179,7 +179,7 @@ def next_add():
 
 @app.route("/h0")
 def h0_view():
-    return render_template("h0.html", tasks=db.h0_actions(conn()), SOON=SOON, **completed(ground=1))
+    return render_template("h0.html", tasks=db.h0_actions(conn()), **completed(ground=1))
 
 
 SOON = [("overdue", "Overdue"), ("today", "Today"), ("week", "This week"), ("month", "This month"), ("later", "Later")]
@@ -192,6 +192,18 @@ def soon(due):
         return ""
     days = (date.fromisoformat(due) - today()).days
     return "overdue" if days < 0 else "today" if days == 0 else "week" if days <= 7 else "month" if days <= 30 else "later"
+
+
+# Next and H0 fold into these bands: (key, label, open by default, the SOON keys in it); undated tasks are "No date".
+BANDS = [("now", "Now", True, ("overdue", "today")), ("week", "This week", False, ("week",)),
+         ("later", "Later", False, ("month", "later")), ("nodate", "No date", False, ("",))]
+
+
+@app.template_filter()
+def bands(tasks):
+    """The tasks split into BANDS, as (key, label, open, tasks), leaving out empty bands."""
+    out = [(key, label, is_open, [t for t in tasks if soon(t["due_date"]) in keys]) for key, label, is_open, keys in BANDS]
+    return [b for b in out if b[3]]
 
 
 @app.post("/h0/add")
