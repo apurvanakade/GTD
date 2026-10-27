@@ -182,19 +182,15 @@ def h0_view():
     return render_template("h0.html", tasks=db.h0_actions(conn()), **completed(ground=1))
 
 
-SOON = [("overdue", "Overdue"), ("today", "Today"), ("week", "This week"), ("month", "This month"), ("later", "Later")]
-
-
-@app.template_filter("soon")
 def soon(due):
-    """How soon an ISO due date is, as a SOON key ('' when undated), for the Next and H0 color stripes."""
+    """How soon an ISO due date is: overdue, today, week (≤7 days), month (≤30), later; '' when undated."""
     if not due:
         return ""
     days = (date.fromisoformat(due) - today()).days
     return "overdue" if days < 0 else "today" if days == 0 else "week" if days <= 7 else "month" if days <= 30 else "later"
 
 
-# Next and H0 fold into these bands: (key, label, open by default, the SOON keys in it); undated tasks are "No date".
+# Next and H0 fold into these bands: (key, label, open by default, the soon() keys in it); undated tasks are "No date".
 BANDS = [("now", "Now", True, ("overdue", "today")), ("week", "This week", False, ("week",)),
          ("later", "Later", False, ("month", "later")), ("nodate", "No date", False, ("",))]
 

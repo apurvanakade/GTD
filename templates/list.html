@@ -8,7 +8,7 @@
 {% endcall %}
 {% if projects %}
 <h2>Projects</h2>
-<ul class="tasks">
+<ul class="tasks cards">
   {% for p in projects %}
   <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta">{{ p.open_count }} open</span></li>
   {% endfor %}

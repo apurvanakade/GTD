@@ -222,7 +222,7 @@ def test_drag_reorders_someday_projects(page, live, conn):
     titles = lambda: page.locator("ul.tasks > li.task > a.title").all_inner_texts()
     assert titles() == ["Another dream", "Someday proj"]
     with page.expect_response(lambda r: r.url.endswith("/order/someday")) as saved:
-        row(page, "Someday proj").locator(".grip").drag_to(row(page, "Another dream"), target_position={"x": 5, "y": 2})
+        row(page, "Someday proj").locator(".grip").drag_to(row(page, "Another dream"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
     assert [p["title"] for p in db.projects(conn, "someday")] == ["Someday proj", "Another dream"]
     page.reload()
@@ -571,13 +571,9 @@ def test_project_counts_show_on_hover(page, live):
     assert opacity() == "1"
 
 
-def test_project_steps_are_striped_and_quiet_until_hover(page, live, conn):
-    db.add_task(conn, "chase plumber", step="waiting", project_id=1)
+def test_project_steps_are_quiet_until_hover(page, live, conn):
     page.goto(live + "/projects/1")
     page.mouse.move(0, 0)
-    stripe = lambda t: row(page, t).evaluate("e => getComputedStyle(e).boxShadow")
-    assert "37, 99, 235" in stripe("buy tiles") and "217, 119, 6" in stripe("chase plumber")  # next blue, waiting amber
-    assert stripe("lay tiles") == "none"  # later: the default, no stripe
     opacity = lambda t, sel: row(page, t).locator(sel).evaluate("e => getComputedStyle(e).opacity")
     assert opacity("lay tiles", ".step") == "0" and opacity("lay tiles", ".make-next button") == "0"
     row(page, "lay tiles").hover()
@@ -602,3 +598,19 @@ def test_all_clear_lists_show_a_big_check(page, live, conn):
         assert e.evaluate("e => getComputedStyle(e).fontSize") == "0px", url  # the sentence stays for screen readers only
     page.goto(live + "/search?q=zzz")
     assert page.locator(".empty.clear").count() == 0  # "Nothing matches" isn't good news
+
+
+def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
+    db.add_project(conn, "Deck", status="waiting")
+    page.goto(live + "/next")
+    style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
+    assert style(page.locator("li.task").first, "borderBottomWidth") == "0px"
+    for url in ("/projects", "/someday", "/waiting", "/horizons"):
+        page.goto(live + url)
+        rows = page.locator("ul.cards > li.task")
+        assert rows.count() >= 1, url
+        assert float(style(rows.first, "borderTopLeftRadius")[:-2]) >= 16, url
+        assert style(rows.first, "borderTopWidth") == "1px", url
+    page.goto(live + "/projects")
+    a, b = (page.locator("ul.cards > li.task").nth(i).bounding_box() for i in (0, 1))
+    assert b["y"] - (a["y"] + a["height"]) >= 4  # a gap between pills

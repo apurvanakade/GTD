@@ -1,6 +1,6 @@
-{% macro row(t, project=True, make_next=False, grip=False, soon=False) %}
+{% macro row(t, project=True, make_next=False, grip=False) %}
 {% set closed = t.state != 'open' %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}{% if soon and t.due_date and not closed %} s-{{ t.due_date|soon }}{% endif %}{% if not project and t.step and not closed %} k-{{ t.step }}{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
   {% if grip and t.step == 'next' and not closed %}<span class="grip slot" aria-hidden="true">⠿</span>
   {% elif grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
@@ -32,7 +32,7 @@
 {% for key, label, is_open, rows in tasks|bands %}
 <details class="band" data-band="{{ key }}"{% if is_open %} open{% endif %}>
   <summary>{{ label }} <b>{{ rows|length }}</b></summary>
-  <ul class="tasks soon">{% for t in rows %}{{ row(t, project=project, soon=True) }}{% endfor %}</ul>
+  <ul class="tasks soon">{% for t in rows %}{{ row(t, project=project) }}{% endfor %}</ul>
 </details>
 {% else %}
 <ul class="tasks"><li class="empty clear">{{ empty }}</li></ul>

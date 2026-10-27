@@ -18,13 +18,9 @@
 :root { color-scheme: light dark; }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
-/* Task kinds (calendar stripes and legend dots). */
+/* Task kinds: the calendar's colors and legend dots, the only colored stripes in the app. */
 .k-next { --k: #2563eb; } .k-h0 { --k: #16a34a; } .k-later { --k: #a8a29e; }
 .k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
-/* How soon a task is due (Next and H0 stripes and legend dots), hot to cool. */
-.s-overdue { --k: #dc2626; } .s-today { --k: #ea580c; } .s-week { --k: #eab308; }
-.s-month { --k: #0d9488; } .s-later { --k: #a8a29e; }
-.task[class*=" s-"] { box-shadow: inset 3px 0 0 var(--k); }
 /* Next and H0 fold into due bands; dates and ↻ show on hover, except an overdue date. */
 .band { margin-top: 14px; }
 .band > summary { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
@@ -210,7 +206,7 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .tasks { list-style: none; margin: 0; padding: 0; }
 .task {
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
-  min-height: 41px; padding: 8px 6px; border-bottom: 1px solid var(--line); border-radius: 0;
+  min-height: 41px; padding: 8px 6px; border-radius: 8px;  /* no divider lines: spacing and the hover tint set rows apart */
 }
 .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
 .task .title { color: var(--fg); flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }  /* basis 0: a long title wraps rather than pushing the buttons onto a line of their own */
@@ -253,9 +249,7 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .start button:hover, .task .then button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
 .task .make-next button { color: var(--accent); border-color: var(--line); }
-/* A project's steps: next and waiting get the calendar's kind stripe (later is the default, unmarked);
-   the step word and Make next show on hover. */
-.tasks.by-step > .task:is(.k-next, .k-waiting) { box-shadow: inset 3px 0 0 var(--k); }
+/* A project's steps: the step word and Make next show on hover. */
 .tasks.by-step > .task :is(.step, .make-next button) { opacity: 0; }
 .tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
 /* Holds Make next's width on rows without it, so a project page's dates line up. */
@@ -265,9 +259,13 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 /* A thin bar: time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
 .progress { display: inline-block; width: 72px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; }
+/* Lists of projects are pills: one rounded box each, a small gap between. */
+.tasks.cards { display: flex; flex-direction: column; gap: 6px; }
+.tasks.cards > .task { border: 1px solid var(--line); border-radius: 20px; padding: 7px 14px; background: var(--card); }  /* 7px: the border makes up the row height */
+.tasks.cards > .task:hover { border-color: color-mix(in srgb, var(--muted) 50%, var(--line)); }
 /* Projects: each row fills from the left as its steps get done (--done); the count shows on hover; idle ones fade. */
-.tasks.filled > .task { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 9%, transparent) var(--done), transparent var(--done)); }
-.tasks.filled > .task.stalled { background: linear-gradient(to right, color-mix(in srgb, var(--warn) 10%, transparent) var(--done), transparent var(--done)); }
+.tasks.filled > .task { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 9%, transparent) var(--done), transparent var(--done)) var(--card); }
+.tasks.filled > .task.stalled { background: linear-gradient(to right, color-mix(in srgb, var(--warn) 10%, transparent) var(--done), transparent var(--done)) var(--card); }
 .tasks.filled > .task > .meta { opacity: 0; }
 .tasks.filled > .task:hover > .meta { opacity: 1; }
 .tasks.filled > .task.idle > :is(.title, .peek) { opacity: .5; }

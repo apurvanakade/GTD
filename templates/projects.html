@@ -4,7 +4,7 @@
 {% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('project_create'), 'New project – describe the outcome') }}
-<ul class="tasks filled" data-reorder="{{ url_for('projects_order', status='active') }}">
+<ul class="tasks cards filled" data-reorder="{{ url_for('projects_order', status='active') }}">
   {# The row fills up as steps get done, and fades once the project has sat untouched for IDLE_DAYS. #}
   {% for p in projects %}{% set total = p.open_count + p.done_count %}{% set idle = p.last_active|idle_days %}
   <li class="task{% if not p.next_count %} stalled{% endif %}{% if idle >= IDLE_DAYS %} idle{% endif %}" data-id="{{ p.id }}" style="--done: {{ (100 * p.done_count / total)|round|int if total else 0 }}%" title="{{ p.done_count }} of {{ total }} steps done{% if idle >= IDLE_DAYS %} · No activity for {{ idle }} days{% endif %}">
@@ -21,7 +21,7 @@
 <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
 {% if show_done %}
 <h2>Completed</h2>
-<ul class="tasks">
+<ul class="tasks cards">
   {% for p in done_projects|sort(attribute='completed_at', reverse=True) %}
   <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at|local_date }}</span>{% endif %}</li>
   {% else %}

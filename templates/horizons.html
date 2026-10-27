@@ -31,7 +31,7 @@
 {% endfor %}
 <section class="horizon">
   <h2>H1 · Projects</h2>
-  <ul class="tasks">
+  <ul class="tasks cards">
     {% for p in projects %}
     <li class="task{% if not p.next_count %} stalled{% endif %}">
       <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>

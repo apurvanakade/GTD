@@ -344,6 +344,18 @@ def test_completed_steps_dont_repeat_their_project_or_step(client, conn):
     assert 'class="proj"' in done and ">later<" not in done  # elsewhere the project still says where it was
 
 
+def test_no_stripe_colors(client, conn):
+    """Colored stripes meant different things on different pages (due soon here, waiting there): only the calendar,
+    with its legend, colors tasks (by kind)."""
+    seed(conn)
+    for url in ("/next", "/h0", "/projects/1", "/projects", "/waiting", "/inbox", "/horizons", "/search?q=tiles"):
+        html = client.get(url).get_data(as_text=True)
+        assert not re.search(r'class="[^"]*\b[sk]-(overdue|today|week|month|later|next|h0|waiting|someday|inbox)\b', html), url
+        assert 'class="legend"' not in html, url
+    css = client.get("/static/style.css").get_data(as_text=True)
+    assert "inset 3px" not in css
+
+
 def test_nav_counts_are_dots(client, conn):
     html = client.get("/inbox").get_data(as_text=True)
     assert nav_badges(html) == {}  # nothing to count: no dots, not even Next's 0
@@ -399,6 +411,7 @@ def test_calendar_colors_tasks_by_kind(client, conn):
                         ("waiting", "waity")):
         assert re.search(rf'class="ev k-{kind}[^"]*">[^<]*{title}<', html), kind
     assert 'class="legend"' in html
+
 
 
 def test_calendar_drop_moves_the_due_date(client, conn):
@@ -927,19 +940,7 @@ def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, co
     html = client.get("/next").get_data(as_text=True)
     assert "Upcoming" not in html and "someday step" not in html and ">ground<" not in html
     assert html.index("overdue one") < html.index("weekly far") < html.index("undated")
-    assert re.search(r'class="task[^"]* s-overdue"[^>]*>(?:(?!</li>).)*overdue one', html, re.S)
-    assert re.search(r'class="task[^"]* s-later"[^>]*>(?:(?!</li>).)*weekly far', html, re.S)
     assert db.counts(conn, TODAY)["next"] == 1  # only the overdue one: not undated, not a far repeat
-
-
-def test_h0_rows_are_colored_by_how_soon_they_are_due(client, conn):
-    for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-29"),
-                       ("mo", "2026-11-21"), ("lt", "2026-11-22"), ("nd", None)]:
-        db.add_task(conn, title, step="next", ground=1, due_date=due)
-    html = client.get("/h0").get_data(as_text=True)
-    rows = {re.search(r'>(\w\w)</a>', li).group(1): li for li in re.findall(r'<li class="task[^"]*".*?</li>', html, re.S)}
-    soon = {k: re.search(r'class="task[^"]*?(?: s-(\w+))?"', v).group(1) for k, v in rows.items()}
-    assert soon == {"od": "overdue", "td": "today", "wk": "week", "mo": "month", "lt": "later", "nd": None}
 
 
 def test_add_h0_task_straight_from_h0_tab(client, conn):
