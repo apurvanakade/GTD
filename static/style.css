@@ -255,10 +255,15 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .make-next.slot { visibility: hidden; }
 @media (hover: none) { .task .start button, .task .then button { opacity: 1; } }
 
-/* A thin bar: project progress, time per project. */
+/* A thin bar: time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
 .progress { display: inline-block; width: 72px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; }
-.task.stalled span.progress > i { background: var(--warn); }
+/* Projects: each row fills from the left as its steps get done (--done); the count shows on hover; idle ones fade. */
+.tasks.filled > .task { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 9%, transparent) var(--done), transparent var(--done)); }
+.tasks.filled > .task.stalled { background: linear-gradient(to right, color-mix(in srgb, var(--warn) 10%, transparent) var(--done), transparent var(--done)); }
+.tasks.filled > .task > .meta { opacity: 0; }
+.tasks.filled > .task:hover > .meta { opacity: 1; }
+.tasks.filled > .task.idle > :is(.title, .peek) { opacity: .5; }
 
 /* Weekly review: one step card at a time, a rail of dots to move between them, past weeks as a streak. */
 .review { list-style: none; padding-left: 0; }

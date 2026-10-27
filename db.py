@@ -384,11 +384,17 @@ def get_project(c, id):
 
 
 def projects(c, status="active"):
-    """Projects with the given status in the order dragged; undragged ones go last, by title."""
+    """Projects with the given status in the order dragged; undragged ones go last, by title. last_active (UTC) is
+    the latest of the project's creation and its steps' creation, completion and timing."""
     return c.execute(f"""SELECT p.*,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open') AS open_count,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'done') AS done_count
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'done') AS done_count,
+          (SELECT max(at) FROM (SELECT datetime(p.created_at) AS at
+              UNION ALL SELECT datetime(t.created_at) FROM tasks t WHERE t.project_id = p.id
+              UNION ALL SELECT datetime(t.completed_at) FROM tasks t WHERE t.project_id = p.id
+              UNION ALL SELECT datetime(e.start_time) FROM time_entries e JOIN tasks t ON t.id = e.task_id
+                        WHERE t.project_id = p.id)) AS last_active
         FROM projects p WHERE p.status = ? ORDER BY p.position IS NULL, p.position, lower(p.title), p.id""", (status,)).fetchall()
 
 

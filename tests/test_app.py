@@ -768,7 +768,28 @@ def test_projects_show_a_progress_bar(client, conn):
     db.complete_task(conn, db.add_task(conn, "buy seeds", step="later", project_id=pid), TODAY)
     conn.commit()
     html = client.get("/projects").data.decode()
-    assert re.search(r'Garden.*?class="progress" title="1 of 2 steps done"><i style="width:\s*50%', html, re.S)
+    assert re.search(r'<li class="task[^"]*" data-id="\d+" style="--done: 50%" title="1 of 2 steps done">\s*'
+                     r'(?:(?!</li>).)*Garden', html, re.S)  # the row itself fills up
+    assert 'class="progress"' not in html
+
+
+def test_projects_fade_when_idle(client, conn):
+    old, fresh, timed = (db.add_project(conn, t) for t in ("Old", "Fresh", "Timed"))
+    for pid in (old, fresh, timed):
+        conn.execute("UPDATE projects SET created_at = '2026-09-01 10:00:00' WHERE id = ?", (pid,))
+        tid = db.add_task(conn, "step", step="next", project_id=pid)
+        conn.execute("UPDATE tasks SET created_at = '2026-09-02 10:00:00' WHERE id = ?", (tid,))
+    conn.execute("UPDATE tasks SET created_at = '2026-10-20 10:00:00' WHERE project_id = ?", (fresh,))
+    db.timer_start(conn, conn.execute("SELECT id FROM tasks WHERE project_id = ?", (timed,)).fetchone()[0],
+                   NOW - timedelta(days=3))
+    db.timer_stop(conn, NOW - timedelta(days=3, minutes=-30))
+    conn.commit()
+    active = {p["title"]: p["last_active"][:10] for p in db.projects(conn)}
+    assert active == {"Old": "2026-09-02", "Fresh": "2026-10-20", "Timed": "2026-10-19"}  # step added, or time tracked
+    html = client.get("/projects").data.decode()
+    rows = {m.group(2): m.group(1) for m in re.finditer(r'<li class="task([^"]*)"(?:(?!</li>).)*?>(Old|Fresh|Timed)</a>', html, re.S)}
+    assert "idle" in rows["Old"] and "idle" not in rows["Fresh"] and "idle" not in rows["Timed"]
+    assert re.search(r'class="task[^"]*idle"[^>]*title="[^"]*· No activity for 50 days"', html)
 
 
 def test_project_lists_carry_each_projects_open_steps(client, conn):

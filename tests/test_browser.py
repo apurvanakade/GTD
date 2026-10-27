@@ -559,3 +559,13 @@ def test_project_sits_next_to_the_task_title(page, live, conn):
     title, proj = box(".title"), box(".proj")
     assert 0 < proj["left"] - title["right"] < 30 and abs(proj["top"] - title["top"]) < 8, (title, proj)
     assert r.locator(".meta .proj").count() == 0  # not out in the details column
+
+
+def test_project_counts_show_on_hover(page, live):
+    page.goto(live + "/projects")
+    r = page.locator("li.task", has=page.get_by_role("link", name="Kitchen", exact=True))
+    opacity = lambda: r.locator(":scope > .meta").evaluate("e => getComputedStyle(e).opacity")
+    page.mouse.move(0, 0)
+    assert opacity() == "0"
+    r.hover()
+    assert opacity() == "1"

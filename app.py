@@ -459,7 +459,7 @@ def make_next(id):
 @app.route("/projects")
 def projects_view():
     show = request.args.get("done") == "1"
-    return render_template("projects.html", projects=db.projects(conn()), steps=db.open_steps(conn()),
+    return render_template("projects.html", projects=db.projects(conn()), steps=db.open_steps(conn()), IDLE_DAYS=IDLE_DAYS,
                            show_done=show, toggle_url=toggle_url(show),
                            done_projects=db.projects(conn(), "done") if show else [])
 
@@ -479,6 +479,15 @@ def project_create():
     if title:
         db.add_project(conn(), title)
     return back("projects_view")
+
+
+IDLE_DAYS = 14  # a project untouched this long fades on the Projects page
+
+
+@app.template_filter()
+def idle_days(utc):
+    """Whole days since a UTC 'YYYY-MM-DD HH:MM:SS' stamp."""
+    return (now() - datetime.fromisoformat(utc).replace(tzinfo=timezone.utc)).days
 
 
 @app.route("/projects/<int:id>", methods=["GET", "POST"])

@@ -4,14 +4,14 @@
 {% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('project_create'), 'New project – describe the outcome') }}
-<ul class="tasks" data-reorder="{{ url_for('projects_order', status='active') }}">
-  {% for p in projects %}{% set total = p.open_count + p.done_count %}
-  <li class="task{% if not p.next_count %} stalled{% endif %}" data-id="{{ p.id }}">
+<ul class="tasks filled" data-reorder="{{ url_for('projects_order', status='active') }}">
+  {# The row fills up as steps get done, and fades once the project has sat untouched for IDLE_DAYS. #}
+  {% for p in projects %}{% set total = p.open_count + p.done_count %}{% set idle = p.last_active|idle_days %}
+  <li class="task{% if not p.next_count %} stalled{% endif %}{% if idle >= IDLE_DAYS %} idle{% endif %}" data-id="{{ p.id }}" style="--done: {{ (100 * p.done_count / total)|round|int if total else 0 }}%" title="{{ p.done_count }} of {{ total }} steps done{% if idle >= IDLE_DAYS %} · No activity for {{ idle }} days{% endif %}">
     <span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>
     {{ peek_button() }}
     <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
     <span class="meta">{{ p.open_count }} open</span>
-    <span class="progress" title="{{ p.done_count }} of {{ total }} steps done"><i style="width: {{ (100 * p.done_count / total)|round|int if total else 0 }}%"></i></span>
     {{ peek_steps(steps.get(p.id, [])) }}
   </li>
   {% else %}
