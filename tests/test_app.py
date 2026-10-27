@@ -318,6 +318,29 @@ def test_calendar_remembers_the_view(client):
     assert r.headers["Location"].endswith("w=2026-10-22")  # adding stays on the week you're looking at
 
 
+def nav_badges(html):
+    """{tab: (classes, tooltip)} for the nav's count dots."""
+    nav = html.split("<nav", 1)[1].split("</nav>", 1)[0]
+    return {tab: (cls, title) for tab, cls, title in
+            re.findall(r'>(\w+) <b class="badge ([^"]*)" title="([^"]*)" aria-label="\d+"></b></a>', nav)}
+
+
+def test_nav_counts_are_dots(client, conn):
+    html = client.get("/inbox").get_data(as_text=True)
+    assert nav_badges(html) == {}  # nothing to count: no dots, not even Next's 0
+    for i in range(4):
+        db.add_task(conn, f"inbox {i}")
+    pid = db.add_project(conn, "P")  # stalled
+    db.add_task(conn, "due", step="next", project_id=db.add_project(conn, "Q"), due_date="2026-10-22")
+    db.add_task(conn, "late", step="next", ground=1, due_date="2026-10-01")
+    for i in range(6):
+        db.add_task(conn, f"h0 {i}", step="next", ground=1, due_date="2026-10-22")
+    db.add_task(conn, "wait", step="waiting", project_id=pid)
+    assert nav_badges(client.get("/inbox").get_data(as_text=True)) == {
+        "Next": ("s1", "1 due today"), "H0": ("s3 hot", "7 due today or overdue"), "Waiting": ("s1", "1 waiting"),
+        "Inbox": ("s2", "4 in the inbox"), "Projects": ("s1 warn", "1 stalled")}
+
+
 def bands(html):
     """[(band, open, [titles])] in page order."""
     out = []

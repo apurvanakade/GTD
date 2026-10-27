@@ -77,6 +77,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - The crawler follows calendar links only within `CALENDAR_MONTHS`.
 - **Timestamps** (`created_at`, `completed_at`) are SQLite `datetime('now')`, i.e. UTC. Show their date with the `local_date` filter, never `[:10]`, or an evening's work shows as tomorrow.
 - **Templates** extend `base.html`. Keep it lean and uniform: every page has the same layout, built from the same parts, so no page needs its own reading.
+  - Nav counts are dots, not digits (the `badge()` macro in `base.html`): sized by the count (1–2, 3–5, 6+), red when Next or H0 has an overdue task (`next_overdue`, `h0_overdue` in `db.counts()`), amber for stalled projects; the number is the tooltip, and a zero shows nothing.
   - Nav: three groups split by a thin rule. Timer, Calendar (minute-by-minute work); Next, H0, Waiting, Inbox (task lists); Projects, Someday, Reference (lists you file into). Review, Horizons and Done (the weekly-review pages) sit muted on the right in `nav .aux`.
   - The top bar is identical on every page so switching tabs never moves anything: a round `+` (capture), search, ◐. Then the running timer, the capture `<dialog>`, and the page's JS (plus `static/notes.js`, below).
   - "+" and `/` capture: on the Inbox page they focus its own add line, elsewhere they open the dialog. `f` focuses search.

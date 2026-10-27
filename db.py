@@ -306,6 +306,8 @@ def counts(c, today):
         "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}"),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
         "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
+        "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
+        "h0_overdue": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'"),

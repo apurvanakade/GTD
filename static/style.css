@@ -55,11 +55,10 @@ nav a:hover { color: var(--fg); }
 nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
 nav .aux { display: flex; gap: 2px; margin-left: auto; padding-left: 16px; }
 nav .aux a { font-size: .85em; }
-nav b {
-  font-weight: 600; font-size: .7rem; color: var(--muted); background: var(--soft);
-  border-radius: 999px; padding: 1px 6px; vertical-align: 1px;
-}
-b.warn, .warn { color: var(--warn); }
+nav .badge { display: inline-block; border-radius: 50%; background: var(--muted); vertical-align: 2px; margin-left: 2px; }
+nav .badge.s1 { width: 6px; height: 6px; } nav .badge.s2 { width: 8px; height: 8px; } nav .badge.s3 { width: 10px; height: 10px; vertical-align: 1px; }
+nav .badge.hot { background: var(--danger); } nav .badge.warn { background: var(--warn); }
+.warn { color: var(--warn); }
 
 /* Controls: quiet by default. Only .primary is filled. */
 input, textarea, select, button, .button {
