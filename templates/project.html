@@ -29,6 +29,6 @@
   <input name="recur" placeholder="repeats: weekly…" aria-label="Repeats">
   <input name="notes" placeholder="notes…" aria-label="Notes">
 {% endcall %}
-<ul class="tasks" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step == 'later'), grip=True) }}{% endfor %}</ul>
-{% include "_done_toggle.html" %}
+<ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step in ('later', 'waiting')), grip=True) }}{% endfor %}</ul>
+{% set in_project = true %}{% include "_done_toggle.html" %}
 {% endblock %}

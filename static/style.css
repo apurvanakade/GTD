@@ -245,14 +245,19 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .start button, .task .timing button, .task .make-next button, .task .then button {
   padding: 0 6px; font-size: .75rem; line-height: 20px; color: var(--muted);
 }
-.task .start button, .task .then button { opacity: 0; }
-.task:hover .start button, .task .start button:focus, .task:hover .then button, .task .then button:focus { opacity: 1; }
+.task .then button { opacity: 0; }  /* ▶ always shows: the timer starts from anywhere */
+.task:hover .then button, .task .then button:focus { opacity: 1; }
 .task .start button:hover, .task .then button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
 .task .make-next button { color: var(--accent); border-color: var(--line); }
+/* A project's steps: next and waiting get the calendar's kind stripe (later is the default, unmarked);
+   the step word and Make next show on hover. */
+.tasks.by-step > .task:is(.k-next, .k-waiting) { box-shadow: inset 3px 0 0 var(--k); }
+.tasks.by-step > .task :is(.step, .make-next button) { opacity: 0; }
+.tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
 /* Holds Make next's width on rows without it, so a project page's dates line up. */
 .task .make-next.slot { visibility: hidden; }
-@media (hover: none) { .task .start button, .task .then button { opacity: 1; } }
+@media (hover: none) { .task .then button { opacity: 1; } }
 
 /* A thin bar: time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }

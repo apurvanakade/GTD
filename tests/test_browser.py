@@ -569,3 +569,24 @@ def test_project_counts_show_on_hover(page, live):
     assert opacity() == "0"
     r.hover()
     assert opacity() == "1"
+
+
+def test_project_steps_are_striped_and_quiet_until_hover(page, live, conn):
+    db.add_task(conn, "chase plumber", step="waiting", project_id=1)
+    page.goto(live + "/projects/1")
+    page.mouse.move(0, 0)
+    stripe = lambda t: row(page, t).evaluate("e => getComputedStyle(e).boxShadow")
+    assert "37, 99, 235" in stripe("buy tiles") and "217, 119, 6" in stripe("chase plumber")  # next blue, waiting amber
+    assert stripe("lay tiles") == "none"  # later: the default, no stripe
+    opacity = lambda t, sel: row(page, t).locator(sel).evaluate("e => getComputedStyle(e).opacity")
+    assert opacity("lay tiles", ".step") == "0" and opacity("lay tiles", ".make-next button") == "0"
+    row(page, "lay tiles").hover()
+    assert opacity("lay tiles", ".step") == "1" and opacity("lay tiles", ".make-next button") == "1"
+
+
+def test_timer_button_always_shows(page, live):
+    for url in ("/next", "/h0", "/projects/1", "/waiting", "/inbox"):
+        page.goto(live + url)
+        page.mouse.move(0, 0)
+        b = page.locator("li.task form.start button").first
+        assert b.evaluate("e => getComputedStyle(e).opacity") == "1", url

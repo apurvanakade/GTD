@@ -1,6 +1,6 @@
 {% macro row(t, project=True, make_next=False, grip=False, soon=False) %}
 {% set closed = t.state != 'open' %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}{% if soon and t.due_date and not closed %} s-{{ t.due_date|soon }}{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}{% if soon and t.due_date and not closed %} s-{{ t.due_date|soon }}{% endif %}{% if not project and t.step and not closed %} k-{{ t.step }}{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
   {% if grip and t.step == 'next' and not closed %}<span class="grip slot" aria-hidden="true">⠿</span>
   {% elif grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
@@ -12,7 +12,7 @@
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
-    {% if not project and t.step and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' %}<span>later</span>{% endif %}
+    {% if not project and t.step and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' and not closed %}<span>later</span>{% endif %}
     {# The date and repeat slots are always there, empty when unused, so the columns line up down the list. #}
     {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>
     {% else %}<span class="date">{{ t.due_date if t.due_date and not closed }}</span>{% endif %}

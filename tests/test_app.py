@@ -325,6 +325,25 @@ def nav_badges(html):
             re.findall(r'>(\w+) <b class="badge ([^"]*)" title="([^"]*)" aria-label="\d+"></b></a>', nav)}
 
 
+def test_waiting_steps_can_be_made_next(client, conn):
+    pid = db.add_project(conn, "Deck")
+    db.add_task(conn, "sand", step="next", project_id=pid)
+    w = db.add_task(conn, "stain arrives", step="waiting", project_id=pid)
+    html = client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert f'action="/tasks/{w}/make-next"' in html
+    client.post(f"/tasks/{w}/make-next")
+    assert db.project_next(conn, pid)["id"] == w
+
+
+def test_completed_steps_dont_repeat_their_project_or_step(client, conn):
+    pid = db.add_project(conn, "Garden")
+    db.complete_task(conn, db.add_task(conn, "buy seeds", step="later", project_id=pid), TODAY)
+    done = client.get(f"/projects/{pid}").get_data(as_text=True).split("<h2>Completed</h2>", 1)[1]
+    assert "buy seeds" in done and 'class="proj"' not in done and ">later<" not in done
+    done = client.get("/next?done=1").get_data(as_text=True).split("<h2>Completed</h2>", 1)[1]
+    assert 'class="proj"' in done and ">later<" not in done  # elsewhere the project still says where it was
+
+
 def test_nav_counts_are_dots(client, conn):
     html = client.get("/inbox").get_data(as_text=True)
     assert nav_badges(html) == {}  # nothing to count: no dots, not even Next's 0
