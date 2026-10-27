@@ -1,9 +1,8 @@
-{% macro row(t, project=True, make_next=False, grip=False, soon=False, pick=False) %}
+{% macro row(t, project=True, make_next=False, grip=False, soon=False) %}
 {% set closed = t.state != 'open' %}
 <li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}{% if soon and t.due_date and not closed %} s-{{ t.due_date|soon }}{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
   {% if grip and t.step == 'next' and not closed %}<span class="grip slot" aria-hidden="true">⠿</span>
   {% elif grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
-  {% if pick %}<input type="checkbox" class="pick" name="ids" value="{{ t.id }}" form="move" aria-label="Select {{ t.title }}">{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
   {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}

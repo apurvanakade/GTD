@@ -464,15 +464,46 @@ def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
     assert db.get_project(conn, pid)["notes"] == "new from phone"
 
 
-def test_inbox_move_bar_shows_once_an_item_is_ticked(page, live, conn):
+
+def drag_to_panel(page, source, target):
+    """The drop panel only appears once a drag starts, so drag by hand: pick up, then find the target."""
+    source.hover()
+    page.mouse.down()
+    page.mouse.move(100, 100, steps=5)
+    target = page.locator(".drop-panel " + target)
+    target.wait_for(state="visible")
+    target.hover()
+    page.mouse.up()
+
+
+def test_dragging_an_inbox_row_onto_a_project_files_it(page, live, conn):
     page.goto(live + "/inbox")
-    bar = page.locator("form#move")
-    assert not bar.is_visible()
-    row(page, "inbox item").locator("input.pick").check()
-    assert bar.is_visible()
-    bar.locator("select").select_option("__new__")
-    bar.locator("input[name=new_project]").fill("Bulk")
-    with page.expect_navigation():
-        bar.get_by_role("button", name="Move").click()
+    page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert page.url == live + "/inbox"
-    assert db.get_task(conn, 1)["project_title"] == "Bulk"
+    assert db.get_task(conn, 1)["project_id"] == 1
+    assert row(page, "legacy orphan").count() == 1
+    page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+
+
+def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live, conn):
+    page.goto(live + "/inbox")
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
+    name = page.locator(".drop-panel input[name=new_project]")
+    name.wait_for(state="visible")
+    assert page.evaluate("document.activeElement.name") == "new_project"
+    page.keyboard.type("Dragged")
+    page.keyboard.press("Enter")
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    assert db.get_task(conn, 1)["project_title"] == "Dragged"
+    page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+
+
+def test_escape_cancels_naming_a_new_project(page, live, conn):
+    page.goto(live + "/inbox")
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
+    page.locator(".drop-panel input[name=new_project]").wait_for(state="visible")
+    page.keyboard.press("Escape")
+    page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+    assert db.get_task(conn, 1)["inbox"] and row(page, "inbox item").count() == 1

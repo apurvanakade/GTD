@@ -1,16 +1,63 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form, project_select with context %}
+{% from "_task.html" import row, add_form with context %}
 {% block title %}Inbox{% endblock %}
 {% block actions %}{% if counts.inbox %}<a class="button primary" href="{{ url_for('process') }}">Process {{ counts.inbox }} →</a>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture') }}
 {% if tasks %}
-<ul class="tasks">{% for t in tasks %}{{ row(t, pick=True) }}{% endfor %}</ul>
-{# Shown once a row's box is ticked (CSS): files them all into one project, as later steps. #}
-<form method="post" action="{{ url_for('inbox_move') }}" id="move" class="row move">
-  {{ project_select(projects) }}
-  <button class="primary">Move ticked</button>
-</form>
+<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
+{# Slides in while a row is dragged: drop it on a project to file it as a later step. #}
+<aside class="drop-panel" data-move="{{ url_for('inbox_move') }}">
+  <div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
+  <div class="target" data-project="h0">H0 · ground level</div>
+  {% for p in projects %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status != 'active' %} <small>{{ p.status }}</small>{% endif %}</div>{% endfor %}
+</aside>
+<script>
+(() => {
+  const list = document.querySelector('ul.tasks'), panel = document.querySelector('.drop-panel');
+  const name = panel.querySelector('input[name=new_project]'), body = document.body;
+  let dragged = null, naming = null;
+  const close = () => { body.classList.remove('dragging-inbox', 'naming'); naming = null; name.value = ''; };
+  const move = async (li, data) => {
+    const r = await fetch(panel.dataset.move, {method: 'POST', headers: {'X-Requested-With': 'fetch'},
+                                               body: new URLSearchParams({id: li.dataset.id, ...data})});
+    if (r.ok) li.remove();
+  };
+  list.querySelectorAll('li.task').forEach(li => li.draggable = true);
+  list.addEventListener('dragstart', e => {
+    dragged = e.target.closest('li.task');
+    if (!dragged) return;
+    dragged.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    body.classList.add('dragging-inbox');
+  });
+  list.addEventListener('dragend', () => {
+    panel.querySelectorAll('.over').forEach(t => t.classList.remove('over'));
+    if (dragged) dragged.classList.remove('dragging');
+    dragged = null;
+    if (!naming) close();
+  });
+  panel.addEventListener('dragover', e => {
+    const t = e.target.closest('.target');
+    panel.querySelectorAll('.over').forEach(o => o !== t && o.classList.remove('over'));
+    if (t && dragged) { e.preventDefault(); t.classList.add('over'); }
+  });
+  panel.addEventListener('drop', e => {
+    const t = e.target.closest('.target');
+    if (!t || !dragged) return;
+    e.preventDefault();
+    if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
+    naming = dragged;  // the panel stays open for the name; Enter files it, Esc or clicking away cancels
+    body.classList.add('naming');
+    name.focus();
+  });
+  name.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Enter' && name.value.trim()) { e.preventDefault(); move(naming, {new_project: name.value.trim()}); close(); }
+  });
+  name.addEventListener('blur', close);
+})();
+</script>
 {% else %}
 <p class="empty">Empty. Capture anything on your mind above.</p>
 {% endif %}

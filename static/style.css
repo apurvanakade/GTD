@@ -164,10 +164,19 @@ input[name="new_project"] { display: none; }
 select:has(option[value="__new__"]:checked) + input { display: block; }
 .add select:has(option[value="__new__"]:checked) + input, .row select:has(option[value="__new__"]:checked) + input { display: inline-block; }
 
-/* Inbox: ticking rows reveals the bar that moves them into one project. */
-.task .pick { margin: 0; width: auto; }
-form.move { display: none; }
-main:has(.pick:checked) form.move { display: flex; }
+/* Inbox: the projects to drop dragged rows on, slid in from the right only while dragging. */
+.drop-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(280px, 45vw); overflow-y: auto; z-index: 20;
+  padding: 16px 12px; background: var(--card); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgb(0 0 0 / .08);
+  transform: translateX(100%); visibility: hidden; transition: transform .15s, visibility .15s;
+}
+body.dragging-inbox .drop-panel { transform: none; visibility: visible; }
+.drop-panel .target { padding: 8px 10px; margin: 2px 0; border-radius: 8px; border: 1px dashed transparent; }
+.drop-panel .target small { color: var(--muted); }
+.drop-panel .target.new, .drop-panel .target[data-project="h0"] { color: var(--muted); }
+.drop-panel .new input { display: none; margin-top: 6px; }
+body.naming .drop-panel .new input { display: block; }
+.drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
 
 .flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }
 .empty, .hint { color: var(--muted); }

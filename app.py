@@ -124,21 +124,17 @@ def inbox():
 
 @app.post("/inbox/move")
 def inbox_move():
-    """File the ticked inbox items into one project (or H0) at once, as later steps; the project picks its next."""
+    """Inbox's drag panel: file the dropped item into a project (or H0, or a new project) as a later step;
+    the project picks its next. Called by fetch, which removes the row itself."""
     c = conn()
-    tasks = [t for t in (db.get_task(c, int(i)) for i in request.form.getlist("ids") if i.isdigit()) if t and t["inbox"]]
-    if not tasks:
-        flash("Tick the items to move first.")
-        return back("inbox")
+    t = db.get_task(c, request.form.get("id", type=int) or 0)
+    if not t or not t["inbox"]:  # e.g. a stale tab: it has been filed already
+        abort(400)
     fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
     if orphaned(fields.get("project_id"), fields.get("ground")):
-        flash("Pick a project, or H0 · ground level, to move them to.")
-        return back("inbox")
-    for t in tasks:
-        db.update_task(c, t["id"], **fields)
-    where = db.get_project(c, fields["project_id"])["title"] if fields["project_id"] else "H0"
-    flash(f"Moved {len(tasks)} to {where}.")
-    return back("inbox")
+        abort(400)
+    db.update_task(c, t["id"], **fields)
+    return "", 204
 
 
 @app.route("/process")

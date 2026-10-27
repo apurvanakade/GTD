@@ -1428,40 +1428,46 @@ def test_project_page_shows_completed_by_default(client, conn):
     assert "Finished step" not in client.get(f"/projects/{pid}?done=0").get_data(as_text=True)
 
 
-def test_inbox_moves_ticked_items_into_one_project(client, conn):
-    a, b, c = (db.add_task(conn, n) for n in ("a", "b", "c"))
+
+FETCH = {"X-Requested-With": "fetch"}
+
+
+def test_inbox_drag_moves_an_item_into_a_project(client, conn):
+    a, b = db.add_task(conn, "a"), db.add_task(conn, "b")
     pid = db.add_project(conn, "P")
     db.add_task(conn, "p next", project_id=pid, step="next")
-    r = client.post("/inbox/move", data={"ids": [a, b], "project_id": str(pid)}, headers={"Referer": "/inbox"})
-    assert r.headers["Location"] == "/inbox"  # no jump
-    assert [(db.get_task(conn, i)["project_id"], db.get_task(conn, i)["step"]) for i in (a, b)] == [(pid, "later")] * 2
-    assert db.get_task(conn, c)["inbox"]
-    # "＋ New…" creates the project once, for all of them.
-    client.post("/inbox/move", data={"ids": [c], "project_id": "__new__", "new_project": "Fresh"})
+    assert client.post("/inbox/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert (db.get_task(conn, a)["project_id"], db.get_task(conn, a)["step"]) == (pid, "later")
+    assert db.get_task(conn, b)["inbox"]
+    assert b"Moved" not in client.get("/inbox").data  # no flash left over for the next page
+    # Dropped on "＋ New…" with a name: a new project.
+    assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 204
     fresh = [p for p in db.open_projects(conn) if p["title"] == "Fresh"]
-    assert len(fresh) == 1 and db.get_task(conn, c)["project_id"] == fresh[0]["id"]
+    assert len(fresh) == 1 and db.get_task(conn, b)["project_id"] == fresh[0]["id"]
 
 
-def test_inbox_move_edges(client, conn):
+def test_inbox_drag_edges(client, conn):
     a = db.add_task(conn, "a")
     pid = db.add_project(conn, "P")
     filed = db.add_task(conn, "filed", project_id=pid, step="next")
-    # Nothing ticked: nothing happens, and no project is created.
-    r = client.post("/inbox/move", data={"project_id": "__new__", "new_project": "Ghost"}, follow_redirects=True)
-    assert b"Tick" in r.data and not [p for p in db.open_projects(conn) if p["title"] == "Ghost"]
-    # No project: they stay in the inbox.
-    r = client.post("/inbox/move", data={"ids": [a], "project_id": ""}, follow_redirects=True)
-    assert b"Pick a project" in r.data and db.get_task(conn, a)["inbox"]
-    # H0 is a choice too.
-    client.post("/inbox/move", data={"ids": [a], "project_id": "h0"})
-    assert db.get_task(conn, a)["ground"] == 1
-    # Items no longer in the inbox are left alone.
     other = db.add_project(conn, "Other")
-    client.post("/inbox/move", data={"ids": [filed], "project_id": str(other)})
+    # No project: it stays in the inbox.
+    assert client.post("/inbox/move", data={"id": a, "project_id": ""}, headers=FETCH).status_code == 400
+    assert db.get_task(conn, a)["inbox"]
+    # H0 is a choice too.
+    assert client.post("/inbox/move", data={"id": a, "project_id": "h0"}, headers=FETCH).status_code == 204
+    assert db.get_task(conn, a)["ground"] == 1
+    # An item no longer in the inbox is left alone, and no project is created for it.
+    assert client.post("/inbox/move", data={"id": filed, "project_id": str(other)}, headers=FETCH).status_code == 400
+    assert client.post("/inbox/move", data={"id": filed, "new_project": "Ghost"}, headers=FETCH).status_code == 400
     assert (db.get_task(conn, filed)["project_id"], db.get_task(conn, filed)["step"]) == (pid, "next")
+    assert not [p for p in db.open_projects(conn) if p["title"] == "Ghost"]
 
 
-def test_inbox_rows_have_tick_boxes_for_the_move_form(client, conn):
-    a = db.add_task(conn, "a")
+def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):
+    db.add_task(conn, "a")
+    pid = db.add_project(conn, "P")
     html = client.get("/inbox").data.decode()
-    assert f'name="ids" value="{a}" form="move"' in html and 'id="move"' in html
+    for target in (str(pid), "h0", "__new__"):
+        assert f'data-project="{target}"' in html
+    assert 'type="checkbox"' not in html
