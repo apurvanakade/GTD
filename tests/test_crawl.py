@@ -150,7 +150,7 @@ def test_every_link_works(client, conn):
     assert broken == []
     html_pages = [u for u, p in pages.items() if p]
     assert len(html_pages) > 25, html_pages  # the crawl really reached the app
-    for must in ("/inbox", "/process", "/next", "/waiting", "/someday", "/review", "/calendar", "/horizons",
+    for must in ("/inbox", "/next", "/waiting", "/someday", "/review", "/calendar", "/horizons",
                  "/projects/1", "/projects/4", "/tasks/1", "/horizons/3"):
         assert must in pages, must
 
@@ -256,14 +256,3 @@ def test_task_rows_match_the_tick_off_script(client, conn):
     assert r.status_code == 204
     r = client.post("/tasks/7/complete")  # without the script: back to where you were
     assert r.status_code == 302
-
-
-def test_process_someday_choices(client, conn):
-    seed(conn)
-    page = parse(get(client, "/process").get_data(as_text=True))
-    (select,) = [s for f in page.forms for s in f["selects"] if s["name"] == "someday_target"]
-    by_text = {o["text"]: o["value"] for o in select["options"]}
-    assert by_text["a new someday project"] == "new"
-    assert by_text["Kitchen"] == "1" and by_text["Someday proj (someday)"] == "4" and "Done proj" not in by_text
-    client.post("/process/1", data={"action": "someday", "someday_target": by_text["a new someday project"]})
-    assert [p["title"] for p in db.projects(conn, "someday")] == ["inbox item", "Someday proj"]

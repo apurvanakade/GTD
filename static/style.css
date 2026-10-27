@@ -183,7 +183,7 @@ body.naming .drop-panel .new input { display: block; }
 
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
-.process textarea, .project textarea, .edit textarea, .process .md-editor, .project .md-editor, .edit .md-editor { margin-top: 6px; }
+.project textarea, .edit textarea, .project .md-editor, .edit .md-editor { margin-top: 6px; }
 .autosave { margin: 4px 0 0; min-height: 1.2em; font-size: .85rem; }
 .autosave button { padding: 0 2px; font-size: inherit; text-decoration: underline; }
 .project textarea, .project .md-editor { background: transparent; border-color: transparent; }
@@ -251,14 +251,25 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .progress { display: inline-block; width: 72px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; }
 .task.stalled span.progress > i { background: var(--warn); }
 
-.review > li { margin-bottom: 8px; }
+/* Weekly review: one step card at a time, a rail of dots to move between them, past weeks as a streak. */
 .review { list-style: none; padding-left: 0; }
-.review > li.ticked h2 { color: var(--muted); text-decoration: line-through; }
-.review > li.ticked > :not(h2) { display: none; }
-.review h2 { color: var(--fg); display: flex; align-items: center; gap: 8px; }
+.review > li:not(.on) { display: none; }
+.review > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
+.review h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
+.review h2 + .hint { margin: 2px 0 0 calc(1.3em + 10px); font-size: .85rem; }
+.review .big { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.review .big.clear { color: var(--muted); }
 .review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }
 .review .tick button:hover { border-color: var(--accent); }
 .review > li.ticked .tick button { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+.button.slot { visibility: hidden; }
+.rail { display: flex; gap: 6px; align-items: center; }
+.rail .dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.rail .dot.done { background: var(--accent); border-color: var(--accent); }
+.rail .dot.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+.streak { display: flex; gap: 3px; flex-wrap: wrap; }
+.streak .wk { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
+.streak .wk.hit { background: var(--accent); }
 .plain { padding-left: 18px; }
 .date { font-variant-numeric: tabular-nums; }
 .done-toggle { margin-top: 1.5em; font-size: .9rem; }

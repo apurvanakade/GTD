@@ -209,10 +209,6 @@ def get_task(c, id):
     return c.execute(f"{TASK_SELECT} WHERE t.id = ?", (id,)).fetchone()
 
 
-def has_time(c, task_id):
-    return c.execute("SELECT 1 FROM time_entries WHERE task_id = ?", (task_id,)).fetchone() is not None
-
-
 def delete_task(c, id):
     """Hard delete, time included. The UI abandons a task first; only an abandoned one is deleted for good."""
     c.execute("DELETE FROM tasks WHERE id = ?", (id,))

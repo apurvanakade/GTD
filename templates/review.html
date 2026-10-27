@@ -1,54 +1,50 @@
 {% extends "base.html" %}
 {% block title %}Weekly review{% endblock %}
-{% macro tick(step) %}<form method="post" action="{{ url_for('review_tick', step=step) }}" class="tick">
-      <button title="{{ 'Untick' if step in checked else 'Tick off' }}" aria-label="{{ 'Untick' if step in checked else 'Tick off' }}">{{ '✓' if step in checked }}</button></form>{% endmacro %}
-{% block actions %}<span class="hint">{{ checked|length }} / {{ steps|length }}</span>{% endblock %}
+{# One step shows at a time; the rail of dots (ticked, current, to do) switches between them. #}
+{% macro card(key, label, hint, n=none) %}
+  <li id="{{ key }}" class="step{{ ' on' if key == step }}{{ ' ticked' if key in checked }}">
+    <h2><form method="post" action="{{ url_for('review_tick', step=key) }}" class="tick">
+      <button title="{{ 'Untick' if key in checked else 'Tick off' }}" aria-label="{{ 'Untick' if key in checked else 'Tick off' }}">{{ '✓' if key in checked }}</button></form>{{ label }}</h2>
+    <p class="hint">{{ hint }}</p>
+    {% if n is not none %}{% if n %}<span class="big">{{ n }}</span>{% else %}<span class="big clear">✓</span>{% endif %}{% endif %}
+    {{ caller() }}
+  </li>
+{%- endmacro %}
+{% block actions %}{% set i = steps.index(step) %}
+  {%- if i > 0 %}<a class="button" href="{{ url_for('review', step=steps[i - 1]) }}" rel="prev" title="Previous step (left arrow)" aria-label="Previous step">‹</a>{% else %}<span class="button slot">‹</span>{% endif %}
+  <span class="rail">{% for s in steps %}<a href="{{ url_for('review', step=s) }}" class="dot{{ ' done' if s in checked }}{{ ' on' if s == step }}" title="{{ loop.index }}" aria-label="Step {{ loop.index }}"></a>{% endfor %}</span>
+  {%- if i < steps|length - 1 %}<a class="button" href="{{ url_for('review', step=steps[i + 1]) }}" rel="next" title="Next step (right arrow)" aria-label="Next step">›</a>{% else %}<span class="button slot">›</span>{% endif %}{% endblock %}
 {% block body %}
 <ol class="review">
-  <li id="sweep" class="{{ 'ticked' if 'sweep' in checked }}">
-    <h2>{{ tick('sweep') }}Mind sweep</h2>
-    <p>Capture every open loop in your head with the box above, then check your physical inbox, email and notes.</p>
-  </li>
-  <li id="inbox" class="{{ 'ticked' if 'inbox' in checked }}">
-    <h2>{{ tick('inbox') }}Get the inbox to zero</h2>
-    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('process') }}">Process {{ counts.inbox }} item{{ 's' if counts.inbox != 1 }} →</a></p>
-    {% else %}<p>✓ Inbox is empty.</p>{% endif %}
-  </li>
-  <li id="overdue" class="{{ 'ticked' if 'overdue' in checked }}">
-    <h2>{{ tick('overdue') }}Overdue</h2>
-    {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>
-    {% else %}<p>✓ Nothing overdue.</p>{% endif %}
-  </li>
-  <li id="stalled" class="{{ 'ticked' if 'stalled' in checked }}">
-    <h2>{{ tick('stalled') }}Every project has a next action</h2>
-    {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>
-    <p class="hint">Pick its one next action, mark it waiting or someday, or mark it done.</p>
-    {% else %}<p>✓ No stalled projects.</p>{% endif %}
-  </li>
-  <li id="nexts" class="{{ 'ticked' if 'nexts' in checked }}">
-    <h2>{{ tick('nexts') }}Scan next actions</h2>
-    <p><a href="{{ url_for('next_view') }}">Next actions ({{ nexts|length }})</a>: tick off what's done, delete what's dead.</p>
+  {% call card('sweep', 'Mind sweep', 'Capture every open loop in your head with +, then check your physical inbox, email and notes.') %}{% endcall %}
+  {% call card('inbox', 'Inbox to zero', 'File, do or drop every inbox item.', counts.inbox) %}
+    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox') }}">Inbox →</a></p>{% endif %}
+  {% endcall %}
+  {% call card('overdue', 'Overdue', 'Do, reschedule or drop each one.', overdue|length) %}
+    {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>{% endif %}
+  {% endcall %}
+  {% call card('stalled', 'Stalled projects', 'Pick each one\'s next action, mark it waiting or someday, or mark it done.', stalled|length) %}
+    {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>{% endif %}
+  {% endcall %}
+  {% call card('nexts', 'Scan next actions', 'Tick off what\'s done, delete what\'s dead.', nexts|length) %}
     {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}
     {% if scheduled %}<p class="hint">{{ scheduled }} due today or later {{ 'is' if scheduled == 1 else 'are' }} left out.</p>{% endif %}
-  </li>
-  <li id="waiting" class="{{ 'ticked' if 'waiting' in checked }}">
-    <h2>{{ tick('waiting') }}Chase waiting-fors</h2>
-    <p><a href="{{ url_for('waiting') }}">Waiting for ({{ counts.waiting }})</a>: nudge anyone who's overdue.</p>
-  </li>
-  <li id="someday" class="{{ 'ticked' if 'someday' in checked }}">
-    <h2>{{ tick('someday') }}Scan someday / maybe</h2>
-    <p><a href="{{ url_for('someday') }}">Someday projects ({{ counts.someday }})</a>: activate anything whose time has come.</p>
-  </li>
-  <li id="ahead" class="{{ 'ticked' if 'ahead' in checked }}">
-    <h2>{{ tick('ahead') }}Look ahead</h2>
-    <p><a href="{{ url_for('calendar_view') }}">Calendar</a>: what's due in the next few weeks needs prep now?</p>
-  </li>
-  <li id="horizons" class="{{ 'ticked' if 'horizons' in checked }}">
-    <h2>{{ tick('horizons') }}Check horizons</h2>
-    <p><a href="{{ url_for('horizons_view') }}">Horizons</a>: do your projects serve your goals and areas? Anything missing?</p>
-  </li>
+    <p><a class="button" href="{{ url_for('next_view') }}">Next actions →</a></p>
+  {% endcall %}
+  {% call card('waiting', 'Chase waiting-fors', 'Nudge anyone who\'s overdue.', counts.waiting) %}
+    {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
+  {% endcall %}
+  {% call card('someday', 'Scan someday / maybe', 'Activate anything whose time has come.', counts.someday) %}
+    {% if counts.someday %}<p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
+  {% endcall %}
+  {% call card('ahead', 'Look ahead', 'What\'s due in the next few weeks needs prep now?') %}
+    <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
+  {% endcall %}
+  {% call card('horizons', 'Check horizons', 'Do your projects serve your goals and areas? Anything missing?') %}
+    <p><a class="button" href="{{ url_for('horizons_view') }}">Horizons →</a></p>
+  {% endcall %}
 </ol>
 <h2>Past reviews</h2>
-{% if past %}<ul class="plain">{% for d in past %}<li><span class="date">{{ d|long_date }}</span></li>{% endfor %}</ul>
-{% else %}<p class="empty">No weekly reviews yet.</p>{% endif %}
+<p class="streak">{% for monday, done in weeks %}<i class="wk{{ ' hit' if done }}" title="{{ done|long_date if done else 'Week of ' ~ monday.isoformat()|long_date }}"></i>{% endfor %}</p>
+{% if not past %}<p class="empty">No weekly reviews yet.</p>{% endif %}
 {% endblock %}

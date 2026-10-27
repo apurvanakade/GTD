@@ -137,70 +137,6 @@ def inbox_move():
     return "", 204
 
 
-@app.route("/process")
-def process():
-    items = db.inbox_tasks(conn())
-    return render_template("process.html", t=items[0] if items else None, remaining=len(items),
-                           projects=db.open_projects(conn()))
-
-
-@app.post("/process/<int:id>")
-def process_item(id):
-    c = conn()
-    t = db.get_task(c, id) or abort(404)
-    action = request.form.get("action")
-    if action not in ("trash", "done", "someday", "project", "next", "waiting"):
-        abort(400)
-    if not t["inbox"]:  # e.g. a stale tab or a resubmit: it has been processed already
-        flash(f"“{t['title']}” isn't in the inbox any more.")
-        return redirect(url_for("process"))
-    title = form_value("title") or t["title"]
-    notes = (request.form.get("notes") or "").strip()
-    if action == "trash":
-        db.abandon_task(c, id, now())
-    elif action == "done":
-        db.update_task(c, id, title=title, notes=notes)
-        db.complete_task(c, id, today(), now())
-    elif action == "someday":
-        # Ask where it goes: its own new someday project, or a later step of an existing project.
-        target = request.form.get("someday_target") or ""
-        if target == "new":
-            into_new_project(c, id, title, notes, status="someday")
-        elif target.isdigit() and db.get_project(c, int(target)):
-            db.update_task(c, id, title=title, notes=notes, step="later", project_id=int(target), ground=0)
-        else:
-            flash("Someday / maybe: make it a new someday project, or add it to an existing project?")
-            return redirect(url_for("process"))
-    elif action == "project":
-        into_new_project(c, id, title, notes)
-        flash(f"Project created: {title}")
-    elif action in ("next", "waiting"):
-        fields = task_fields_from_form()
-        fields.update(title=title, notes=notes, step=action)
-        pid = fields.get("project_id")
-        if orphaned(pid, fields.get("ground")):
-            flash("Pick a project, or H0 · ground level if it really belongs to none.")
-            return redirect(url_for("process"))
-        if action == "waiting" and fields.get("ground"):
-            flash("H0 tasks are always next actions: a waiting-for needs a project.")
-            return redirect(url_for("process"))
-        if action == "next" and pid and db.project_next(c, pid):
-            fields["step"] = "later"
-            flash(f"“{db.get_project(c, pid)['title']}” already has a next action, so this was added as a later step.")
-        db.update_task(c, id, **fields)
-    return redirect(url_for("process"))
-
-
-def into_new_project(c, id, title, notes, **project):
-    """Process turned an item into a project. The item itself goes, unless it has tracked time: then it stays,
-    as a later step, so the time isn't lost. Either way the project still needs a next action."""
-    pid = db.add_project(c, title, notes=notes, **project)
-    if db.has_time(c, id):
-        db.update_task(c, id, title=title, notes=notes, project_id=pid, step="later")
-    else:
-        db.delete_task(c, id)
-
-
 # --- lists -----------------------------------------------------------------
 
 def toggle_url(show, default=False):
@@ -364,9 +300,20 @@ def review():
     c = conn()
     all_next = db.next_actions(c, today())
     nexts = [t for t in all_next if not (t["due_date"] and t["due_date"] >= today().isoformat())]
+    checked = db.review_checked(c)
+    step = request.args.get("step")
+    if step not in REVIEW_STEPS:  # the first step still to do
+        step = next((s for s in REVIEW_STEPS if s not in checked), REVIEW_STEPS[0])
+    past = db.reviews(c)
+    # The last 26 weeks, Monday first, oldest first, each with the review done in it (or None).
+    monday = today() - timedelta(days=today().weekday())
+    by_week = {}
+    for d in past:
+        by_week.setdefault(date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday()), d)
+    weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
     return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()),
                            nexts=nexts, scheduled=len(all_next) - len(nexts),
-                           steps=REVIEW_STEPS, checked=db.review_checked(c), past=db.reviews(c))
+                           steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 
 
 @app.route("/review/<step>", methods=["POST"])
@@ -380,7 +327,7 @@ def review_tick(step):
         db.complete_review(c, today())
         flash(f"Weekly review completed on {long_date(today().isoformat())}.")
         return redirect(url_for("review"))
-    return redirect(url_for("review", _anchor=step))
+    return redirect(url_for("review") if step in db.review_checked(c) else url_for("review", step=step))
 
 
 @app.route("/search")

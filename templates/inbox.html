@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% from "_task.html" import row, add_form with context %}
 {% block title %}Inbox{% endblock %}
-{% block actions %}{% if counts.inbox %}<a class="button primary" href="{{ url_for('process') }}">Process {{ counts.inbox }} →</a>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture') }}
 {% if tasks %}

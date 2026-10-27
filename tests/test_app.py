@@ -47,59 +47,22 @@ def test_after_done_counts_from_completion():
 
 # --- inbox processing ------------------------------------------------------
 
-def test_capture_and_process_to_next(client, conn):
-    client.post("/capture", data={"title": "call dentist"})
-    t = db.inbox_tasks(conn)[0]
-    pid = db.add_project(conn, "Teeth")
-    client.post(f"/process/{t['id']}", data={"action": "next", "title": "Call dentist",
-                                             "project_id": str(pid), "due_date": ""})
-    row = db.get_task(conn, t["id"])
-    assert (row["step"], row["title"]) == ("next", "Call dentist")
-    assert b"Call dentist" in client.get("/next").data
-    assert b'name="context"' not in client.get("/process").data
-
+def test_no_process_page(client, conn):
+    """The Inbox page is where items get dealt with: no second page doing the same."""
+    db.add_task(conn, "x")
+    assert client.get("/process").status_code == 404
+    assert "/process" not in client.get("/inbox").get_data(as_text=True)
 
 def test_capture_box_only_on_inbox(client, conn):
     tid = db.add_task(conn, "x")
     pid = db.add_project(conn, "P")
     inbox = client.get("/inbox").data.decode()
     assert '<input name="title" placeholder="Capture' in inbox.split("<main>")[1]
-    for url in ("/next", f"/tasks/{tid}", f"/projects/{pid}", "/process"):
+    for url in ("/next", f"/tasks/{tid}", f"/projects/{pid}"):
         page = client.get(url).data
         assert b"<dialog" in page and b"Capture to inbox" not in page, url
     r = client.post("/capture", data={"title": "buy milk"}, headers={"Referer": "/next"}, follow_redirects=True)
     assert b"Added to inbox: buy milk" in r.data
-
-
-def test_process_other_actions(client, conn):
-    ids = [db.add_task(conn, n) for n in ("a", "b", "c", "d", "e")]
-    client.post(f"/process/{ids[0]}", data={"action": "trash"})
-    client.post(f"/process/{ids[1]}", data={"action": "someday"})  # must say where it goes
-    assert db.get_task(conn, ids[1])["inbox"]
-    client.post(f"/process/{ids[1]}", data={"action": "someday", "someday_target": "new"})
-    client.post(f"/process/{ids[2]}", data={"action": "done"})
-    pid = db.add_project(conn, "Deck")
-    client.post(f"/process/{ids[3]}", data={"action": "waiting", "project_id": str(pid)})
-    r = client.post(f"/process/{ids[4]}", data={"action": "project", "title": "Fix porch"})
-    assert db.get_task(conn, ids[0])["state"] == "abandoned"  # trash abandons
-    assert db.get_task(conn, ids[1]) is None
-    assert [p["title"] for p in db.projects(conn, "someday")] == ["b"]
-    assert db.get_task(conn, ids[2])["state"] == "done"
-    assert db.get_task(conn, ids[3])["step"] == "waiting"
-    assert db.get_task(conn, ids[4]) is None
-    assert r.headers["Location"] == "/process"
-    assert [p["title"] for p in db.stalled_projects(conn)] == ["Deck", "Fix porch"]
-
-
-def test_process_someday_into_existing_project(client, conn):
-    pid = db.add_project(conn, "Garden", status="someday")
-    tid = db.add_task(conn, "build a pond")
-    client.post(f"/process/{tid}", data={"action": "someday", "someday_target": str(pid), "title": "Build a pond"})
-    t = db.get_task(conn, tid)
-    assert (t["title"], t["step"], t["project_id"]) == ("Build a pond", "later", pid)
-    assert [p["title"] for p in db.projects(conn, "someday")] == ["Garden"]  # no new project
-
-
 
 
 def test_crosslinks(client, conn):
@@ -193,14 +156,6 @@ def test_done_and_exit_completes_and_goes_back(client, conn):
     assert r.headers["Location"] == f"http://localhost/tasks/{tid2}"
 
 
-def test_process_next_into_project_with_next_becomes_later(client, conn):
-    pid = db.add_project(conn, "P")
-    db.add_task(conn, "a", step="next", project_id=pid)
-    tid = db.add_task(conn, "b")
-    client.post(f"/process/{tid}", data={"action": "next", "project_id": str(pid)})
-    assert db.get_task(conn, tid)["step"] == "later"
-
-
 def test_waiting_and_someday_projects_hide_their_tasks(client, conn):
     pid = db.add_project(conn, "P")
     db.add_task(conn, "a", step="next", project_id=pid)
@@ -227,11 +182,7 @@ def test_tasks_need_a_project_or_h0(client, conn):
     assert db.get_task(conn, tid)["ground"] == 0  # picking a project clears H0
 
     item = db.add_task(conn, "inbox item")
-    for action in ("next", "waiting"):
-        client.post(f"/process/{item}", data={"action": action,
-                                              "project_id": "", "recur": "monthly"})
-        assert db.get_task(conn, item)["inbox"]
-    client.post(f"/process/{item}", data={"action": "next", "project_id": "h0"})
+    client.post(f"/tasks/{item}", data={"title": "inbox item", "project_id": "h0"})
     assert db.get_task(conn, item)["ground"] and db.get_task(conn, item)["step"] is None
     assert [t["id"] for t in db.h0_actions(conn)] == [item]
     html = client.get("/horizons").data.decode()
@@ -272,12 +223,9 @@ def test_h0_tasks_have_no_step(client, conn):
     r = client.post(f"/tasks/{tid}", data={"project_id": "h0", "step": "waiting"}, follow_redirects=True)
     assert db.get_task(conn, tid)["step"] is None and b"always next actions" in r.data
     assert 'name="step"' not in client.get(f"/tasks/{tid}").get_data(as_text=True)
-    item = db.add_task(conn, "item")
-    client.post(f"/process/{item}", data={"action": "waiting", "project_id": "h0"})
-    assert db.get_task(conn, item)["inbox"]  # refused: a waiting-for needs a project
     assert 'value="h0"' not in client.get("/waiting").get_data(as_text=True).split("<main>")[1]
     client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
-    assert [t["title"] for t in db.inbox_tasks(conn)] == ["item", "parcel"]
+    assert [t["title"] for t in db.inbox_tasks(conn)] == ["parcel"]
 
 
 def test_migration_splits_status_into_state_and_step(tmp_path):
@@ -574,17 +522,6 @@ def test_complete_twice_is_harmless(client, conn):
     assert len(db.h0_actions(conn)) == 1  # only one new instance
 
 
-def test_process_edges(client, conn):
-    r = client.get("/process")
-    assert r.status_code == 200 and b"Inbox zero." in r.data
-    tid = db.add_task(conn, "x")
-    assert client.post(f"/process/{tid}", data={"action": "bogus"}).status_code == 400
-    assert client.post(f"/process/{tid}", data={}).status_code == 400
-    assert client.post("/process/999", data={"action": "trash"}).status_code == 404
-    client.post(f"/process/{tid}", data={"action": "someday", "someday_target": "999"})
-    assert db.get_task(conn, tid)["inbox"]  # unknown project: asks again
-
-
 def test_projects_create_and_status(client, conn):
     assert client.post("/projects", data={"title": "  "}).headers["Location"] == "/projects"
     client.post("/projects", data={"title": "Paint fence"})
@@ -728,14 +665,6 @@ def test_revive_brings_an_abandoned_task_back_where_it_was(client, conn):
     client.post(f"/tasks/{h0}/revive")
     client.post(f"/tasks/{loose}/revive")
     assert db.get_task(conn, h0)["ground"] and db.get_task(conn, loose)["inbox"]
-
-
-def test_process_trash_abandons(client, conn):
-    t = db.add_task(conn, "junk")
-    client.post(f"/process/{t}", data={"action": "trash"})
-    assert db.get_task(conn, t)["state"] == "abandoned"
-
-
 
 
 def test_edit_and_delete_time_entries(client, conn):
@@ -1144,14 +1073,15 @@ def test_nav_groups_tabs_by_kind_of_list(client):
 def test_review_is_a_checklist_you_finish(client, conn):
     steps = REVIEW_STEPS
     html = client.get("/review").get_data(as_text=True)
-    assert f"0 / {len(steps)}" in html and "No weekly reviews yet." in html
+    assert html.count('class="dot') == len(steps) and 'class="dot done' not in html
+    assert "No weekly reviews yet." in html
     client.post(f"/review/{steps[0]}")
     assert db.review_checked(conn) == {steps[0]}
-    client.post(f"/review/{steps[0]}")  # ticking again unticks
-    assert db.review_checked(conn) == set()
+    r = client.post(f"/review/{steps[0]}")  # ticking again unticks, and stays on that step
+    assert db.review_checked(conn) == set() and r.headers["Location"] == f"/review?step={steps[0]}"
     for s in steps[:-1]:
         client.post(f"/review/{s}")
-    assert f"{len(steps) - 1} / {len(steps)}" in client.get("/review").get_data(as_text=True)
+    assert client.get("/review").get_data(as_text=True).count('class="dot done') == len(steps) - 1
     assert db.reviews(conn) == []
     r = client.post(f"/review/{steps[-1]}", follow_redirects=True)
     html = r.get_data(as_text=True)
@@ -1159,6 +1089,54 @@ def test_review_is_a_checklist_you_finish(client, conn):
     assert db.reviews(conn) == ["2026-10-22"] and db.review_checked(conn) == set()  # fresh for next week
     assert "Past reviews" in html and "Thu 22 Oct 2026" in html.split("Past reviews", 1)[1]
     assert client.post("/review/bogus").status_code == 404
+
+
+def step_card(html, step):
+    """The one review step shown, and its key."""
+    m = re.search(r'<li id="(\w+)" class="step on[^"]*">(.*?)</li>\s*(?=<li id=|</ol>)', html, re.S)
+    return m and m.group(1), m and m.group(2)
+
+
+def test_review_shows_one_step_at_a_time(client, conn):
+    ids = seed(conn)  # sweep is ticked
+    html = client.get("/review").get_data(as_text=True)
+    assert html.count('class="step on') == 1
+    assert step_card(html, "inbox")[0] == "inbox"  # the first unticked step
+    assert 'href="/review?step=sweep" class="dot done"' in html  # rail: ticked, then current
+    assert 'href="/review?step=inbox" class="dot on"' in html
+    key, card = step_card(client.get("/review?step=overdue").get_data(as_text=True), "overdue")
+    assert key == "overdue" and '<span class="big">1</span>' in card and "buy tiles" in card
+    key, card = step_card(client.get("/review?step=stalled").get_data(as_text=True), "stalled")
+    assert '<span class="big">1</span>' in card
+    key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
+    assert 'href="/inbox"' in card and "/process" not in card  # deal with it on the Inbox page
+    r = client.post("/review/inbox")  # ticking moves on to the next unticked step
+    assert r.headers["Location"] == "/review"
+    assert step_card(client.get("/review").get_data(as_text=True), "overdue")[0] == "overdue"
+    for t in db.inbox_tasks(conn):
+        db.abandon_task(conn, t["id"])
+    key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
+    assert '<span class="big clear">✓</span>' in card  # nothing to do
+    assert client.get("/review?step=bogus").status_code == 200  # falls back to the first unticked
+
+
+def test_review_prev_next_links(client, conn):
+    html = client.get("/review?step=overdue").get_data(as_text=True)
+    assert 'href="/review?step=inbox" rel="prev"' in html and 'href="/review?step=stalled" rel="next"' in html
+    first = client.get("/review?step=sweep").get_data(as_text=True)
+    assert 'rel="prev"' not in first and 'href="/review?step=inbox" rel="next"' in first
+    last = client.get("/review?step=horizons").get_data(as_text=True)
+    assert 'rel="next"' not in last and 'href="/review?step=ahead" rel="prev"' in last
+
+
+def test_review_past_reviews_as_a_streak(client, conn):
+    for days in (7, 21):
+        db.complete_review(conn, TODAY - timedelta(days=days))
+    html = client.get("/review").get_data(as_text=True).split("Past reviews", 1)[1]
+    weeks = re.findall(r'<i class="wk( hit)?"', html)
+    assert len(weeks) == 26
+    assert [bool(h) for h in weeks][-4:] == [True, False, True, False]  # oldest first; this week not done yet
+    assert 'title="Thu 15 Oct 2026"' in html and 'title="Thu 1 Oct 2026"' in html
 
 
 def test_actions_stay_on_the_page_they_were_made_on(client, conn):
@@ -1192,12 +1170,6 @@ def test_actions_stay_on_the_page_they_were_made_on(client, conn):
     r = client.post("/calendar", data={"title": "x", "due_date": "2027-04-15", "project_id": "h0"},
                     headers={"Referer": "http://localhost/calendar?m=2026-10"})
     assert loc(r) == "/calendar?m=2026-10"
-    # Process: making a project moves on to the next item; an empty inbox stays on Process.
-    db.delete_task(conn, c)  # revived into the inbox above
-    i = db.add_task(conn, "porch")
-    assert loc(client.post(f"/process/{i}", data={"action": "project"})) == "/process"
-    r = client.get("/process")
-    assert r.status_code == 200 and b"Inbox zero." in r.data
 
 
 def test_favicon(client):
@@ -1214,36 +1186,6 @@ def test_links_filter_skips_markdown_and_trailing_punctuation():
 
 
 # --- review fixes (2026-10-24) ----------------------------------------------
-
-def test_making_a_project_keeps_the_items_time(client, conn):
-    client.post("/timer/start", data={"title": "plan trip"})  # captured to the inbox and timed
-    client.post("/timer/stop")
-    (t,) = db.inbox_tasks(conn)
-    client.post(f"/process/{t['id']}", data={"action": "project", "title": "Plan trip"})
-    task = db.get_task(conn, t["id"])
-    (p,) = [p for p in db.projects(conn) if p["title"] == "Plan trip"]
-    assert (task["project_id"], task["step"]) == (p["id"], "later")
-    assert db.has_time(conn, t["id"])  # the entry survived
-    assert [x["title"] for x in db.stalled_projects(conn)] == ["Plan trip"]  # still needs a next action
-    u = db.add_task(conn, "timed someday")
-    db.timer_start(conn, u, NOW - timedelta(minutes=5))
-    client.post(f"/process/{u}", data={"action": "someday", "someday_target": "new"})
-    assert db.get_task(conn, u)["project_id"] == db.projects(conn, "someday")[0]["id"]
-
-
-def test_process_ignores_items_no_longer_in_the_inbox(client, conn):
-    pid = db.add_project(conn, "P")
-    step = db.add_task(conn, "filed", project_id=pid, step="next")
-    done = db.add_task(conn, "finished", ground=1)
-    db.complete_task(conn, done, TODAY)
-    for action in ("project", "trash", "done", "someday"):
-        r = client.post(f"/process/{step}", data={"action": action, "someday_target": "new"})
-        assert r.headers["Location"] == "/process"
-    client.post(f"/process/{done}", data={"action": "trash"})
-    assert (db.get_task(conn, step)["state"], db.get_task(conn, step)["step"]) == ("open", "next")
-    assert db.get_task(conn, done)["state"] == "done"
-    assert [p["title"] for p in db.projects(conn, "someday")] == []
-
 
 def test_reviving_a_step_reopens_its_done_project(client, conn):
     pid = db.add_project(conn, "Q")

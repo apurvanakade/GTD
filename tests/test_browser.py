@@ -507,3 +507,13 @@ def test_escape_cancels_naming_a_new_project(page, live, conn):
     page.keyboard.press("Escape")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
     assert db.get_task(conn, 1)["inbox"] and row(page, "inbox item").count() == 1
+
+
+def test_review_arrow_keys_move_between_steps(page, live):
+    page.goto(live + "/review?step=overdue")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_url("**/review?step=stalled")
+    page.keyboard.press("ArrowLeft")
+    page.wait_for_url("**/review?step=overdue")
+    page.locator("a[rel=next]").click()
+    page.wait_for_url("**/review?step=stalled")

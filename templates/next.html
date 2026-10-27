@@ -7,7 +7,7 @@
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
 {% endcall %}
-<ul class="tasks">{% for t in tasks %}{{ row(t, soon=True) }}{% else %}<li class="empty">No next actions. Process the inbox or check stalled projects.</li>{% endfor %}</ul>
+<ul class="tasks">{% for t in tasks %}{{ row(t, soon=True) }}{% else %}<li class="empty">No next actions. Clear the inbox or check stalled projects.</li>{% endfor %}</ul>
 {% if tasks %}<p class="legend">{% for k, label in SOON %}<span class="s-{{ k }}">{{ label }}</span>{% endfor %}</p>{% endif %}
 {% include "_done_toggle.html" %}
 {% endblock %}
