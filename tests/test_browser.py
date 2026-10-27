@@ -462,3 +462,17 @@ def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
     page.wait_for_function("document.querySelector('.md-editor').textContent === 'new from phone'")
     assert page.locator(".autosave").text_content() == "Updated from elsewhere"
     assert db.get_project(conn, pid)["notes"] == "new from phone"
+
+
+def test_inbox_move_bar_shows_once_an_item_is_ticked(page, live, conn):
+    page.goto(live + "/inbox")
+    bar = page.locator("form#move")
+    assert not bar.is_visible()
+    row(page, "inbox item").locator("input.pick").check()
+    assert bar.is_visible()
+    bar.locator("select").select_option("__new__")
+    bar.locator("input[name=new_project]").fill("Bulk")
+    with page.expect_navigation():
+        bar.get_by_role("button", name="Move").click()
+    assert page.url == live + "/inbox"
+    assert db.get_task(conn, 1)["project_title"] == "Bulk"

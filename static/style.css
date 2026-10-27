@@ -164,6 +164,11 @@ input[name="new_project"] { display: none; }
 select:has(option[value="__new__"]:checked) + input { display: block; }
 .add select:has(option[value="__new__"]:checked) + input, .row select:has(option[value="__new__"]:checked) + input { display: inline-block; }
 
+/* Inbox: ticking rows reveals the bar that moves them into one project. */
+.task .pick { margin: 0; width: auto; }
+form.move { display: none; }
+main:has(.pick:checked) form.move { display: flex; }
+
 .flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }
 .empty, .hint { color: var(--muted); }
 

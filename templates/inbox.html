@@ -1,11 +1,16 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form with context %}
+{% from "_task.html" import row, add_form, project_select with context %}
 {% block title %}Inbox{% endblock %}
 {% block actions %}{% if counts.inbox %}<a class="button primary" href="{{ url_for('process') }}">Process {{ counts.inbox }} →</a>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture') }}
 {% if tasks %}
-<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
+<ul class="tasks">{% for t in tasks %}{{ row(t, pick=True) }}{% endfor %}</ul>
+{# Shown once a row's box is ticked (CSS): files them all into one project, as later steps. #}
+<form method="post" action="{{ url_for('inbox_move') }}" id="move" class="row move">
+  {{ project_select(projects) }}
+  <button class="primary">Move ticked</button>
+</form>
 {% else %}
 <p class="empty">Empty. Capture anything on your mind above.</p>
 {% endif %}

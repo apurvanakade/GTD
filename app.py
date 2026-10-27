@@ -119,7 +119,26 @@ def capture():
 
 @app.route("/inbox")
 def inbox():
-    return render_template("inbox.html", tasks=db.inbox_tasks(conn()))
+    return render_template("inbox.html", tasks=db.inbox_tasks(conn()), projects=db.open_projects(conn()))
+
+
+@app.post("/inbox/move")
+def inbox_move():
+    """File the ticked inbox items into one project (or H0) at once, as later steps; the project picks its next."""
+    c = conn()
+    tasks = [t for t in (db.get_task(c, int(i)) for i in request.form.getlist("ids") if i.isdigit()) if t and t["inbox"]]
+    if not tasks:
+        flash("Tick the items to move first.")
+        return back("inbox")
+    fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
+    if orphaned(fields.get("project_id"), fields.get("ground")):
+        flash("Pick a project, or H0 · ground level, to move them to.")
+        return back("inbox")
+    for t in tasks:
+        db.update_task(c, t["id"], **fields)
+    where = db.get_project(c, fields["project_id"])["title"] if fields["project_id"] else "H0"
+    flash(f"Moved {len(tasks)} to {where}.")
+    return back("inbox")
 
 
 @app.route("/process")
