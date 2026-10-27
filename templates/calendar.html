@@ -68,8 +68,7 @@ cal.addEventListener('drop', e => {
   if (td !== dragged.parentElement) {
     td.append(dragged);
     dragged.classList.toggle('overdue', td.dataset.date < '{{ today }}');
-    fetch(dragged.dataset.due, {method: 'POST', headers: {'X-Requested-With': 'fetch'},
-                                body: new URLSearchParams({due_date: td.dataset.date})});
+    post(dragged.dataset.due, new URLSearchParams({due_date: td.dataset.date}));
   }
 });
 cal.addEventListener('dragend', () => {

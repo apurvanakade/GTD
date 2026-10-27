@@ -18,9 +18,7 @@
   let dragged = null, naming = null;
   const close = () => { body.classList.remove('dragging-inbox', 'naming'); naming = null; name.value = ''; };
   const move = async (li, data) => {
-    const r = await fetch(panel.dataset.move, {method: 'POST', headers: {'X-Requested-With': 'fetch'},
-                                               body: new URLSearchParams({id: li.dataset.id, ...data})});
-    if (r.ok) li.remove();
+    if (await post(panel.dataset.move, new URLSearchParams({id: li.dataset.id, ...data}))) li.remove();
   };
   list.querySelectorAll('li.task').forEach(li => li.draggable = true);
   list.addEventListener('dragstart', e => {

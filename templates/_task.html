@@ -1,6 +1,6 @@
 {% macro row(t, project=True, make_next=False, grip=False) %}
 {% set closed = t.state != 'open' %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% elif t.due_date == today %} due{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
   {% if grip and t.step == 'next' and not closed %}<span class="grip slot" aria-hidden="true">⠿</span>
   {% elif grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
@@ -21,7 +21,7 @@
   {% if project and t.project_id and not closed %}<form method="post" action="{{ url_for('complete_then_project', id=t.id) }}" class="then"><button title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button></form>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
-  {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="make-next"><button title="Bring it back">Revive</button></form>{% endif %}
+  {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}
   {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>
   {% elif grip and not closed %}<span class="make-next slot" aria-hidden="true"><button type="button" tabindex="-1" disabled>Make next</button></span>{% endif %}
 </li>
@@ -56,7 +56,7 @@
 {% macro date_input(value='', placeholder='tomorrow, sat, oct 30…') %}
 <span class="date-field">
   <input name="due_date" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="Due date">
-  <button type="button" class="cal" aria-label="Pick a date">📅</button>
+  <button type="button" class="pick" aria-label="Pick a date">📅</button>
   <input type="date" class="picker" tabindex="-1" aria-hidden="true">
 </span>
 {% endmacro %}

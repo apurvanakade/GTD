@@ -1,8 +1,11 @@
 {% extends "base.html" %}
-{% from "_task.html" import row with context %}
+{% from "_task.html" import row, add_form with context %}
 {% block title %}Horizons{% endblock %}
 {% block heading %}<h1>Horizons of focus</h1>{% endblock %}
 {% block body %}
+{% call add_form(url_for('horizon_create'), 'Add a goal or area of focus') %}
+  <select name="level" aria-label="Level"><option value="goal">goal</option><option value="area">area of focus</option></select>
+{% endcall %}
 <p class="hint">Revisit goals quarterly, vision and purpose yearly.</p>
 {% for level, label, hint in levels %}
 <section class="horizon">
@@ -19,13 +22,10 @@
       <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
       {% if h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
     </li>
+    {% else %}
+    <li class="empty">None yet: add one above.</li>
     {% endfor %}
   </ul>
-  <form method="post" action="{{ url_for('horizon_create') }}" class="row">
-    <input type="hidden" name="level" value="{{ level }}">
-    <input name="title" placeholder="New {{ hint|lower }}" required>
-    <button>Add</button>
-  </form>
   {% endif %}
 </section>
 {% endfor %}
@@ -46,6 +46,6 @@
 <section class="horizon">
   <h2>H0 · Ground level</h2>
   <p class="hint">Tasks you chose to keep outside any project. Set H0 in a task's project picker.</p>
-  <ul class="tasks">{% for t in ground %}{{ row(t) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
+  <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
 </section>
 {% endblock %}

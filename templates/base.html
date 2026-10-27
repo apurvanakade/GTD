@@ -86,17 +86,26 @@
   {% block body %}{% endblock %}
 </main>
 <script>
+// A background save (tick-off, drag, filing). If it fails, reload so the page shows what was really saved.
+async function post(url, body) {
+  try {
+    const r = await fetch(url, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
+    if (r.ok) return true;
+  } catch {}
+  location.reload();
+  return false;
+}
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (document.querySelector('dialog[open]')) return;  // Esc closes it natively
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
   if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
   // ← → follow the page's own previous/next links (Review's steps).
   const rel = {ArrowLeft: 'prev', ArrowRight: 'next'}[e.key];
-  const step = rel && !document.querySelector('dialog[open]') && document.querySelector(`header.page a[rel=${rel}]`);
+  const step = rel && document.querySelector(`header.page a[rel=${rel}]`);
   if (step) location = step.href;
-  const go = GO[e.key];
-  if (go && !document.querySelector('dialog[open]')) location = go;
+  if (GO[e.key]) location = GO[e.key];
 });
 const GO = {{ '{' }}{% for key, ep_name, label in go_keys %}{{ key|tojson }}: {{ url_for(ep_name)|tojson }},{% endfor %}{{ '}' }};
 // Next and H0's due bands: remember which you opened or folded, per page. Only a click is saved: a band
@@ -114,7 +123,7 @@ function capture() {
 document.querySelector('.add-inbox').addEventListener('click', capture);
 // 📅 opens the native date picker; its pick lands in the text box beside it.
 document.addEventListener('click', e => {
-  const b = e.target.closest('.date-field .cal');
+  const b = e.target.closest('.date-field .pick');
   if (!b) return;
   const field = b.closest('.date-field'), text = field.querySelector('input[name]'), picker = field.querySelector('.picker');
   picker.value = /^\d{4}-\d\d-\d\d$/.test(text.value) ? text.value : '';
@@ -180,7 +189,7 @@ document.querySelectorAll('ul[data-reorder]').forEach(list => {
     dragged.removeAttribute('draggable');
     dragged = null;
     const ids = rows().map(li => li.dataset.id).join(',');
-    fetch(list.dataset.reorder, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams({ids})});
+    post(list.dataset.reorder, new URLSearchParams({ids}));
   });
 });
 // Search suggests fuzzy title matches as you type; Enter or a click opens the highlighted one.
@@ -227,13 +236,27 @@ document.addEventListener('focusout', e => {
   f.classList.toggle('bad', bad);
   if (!bad) f.requestSubmit();
 });
-// Tick off a task in place instead of reloading the page.
+// Tick off a task in place instead of reloading the page; its band's count drops and the nav's dots are refetched.
 document.addEventListener('submit', async e => {
   const f = e.target;
   if (!f.classList.contains('done')) return;
   e.preventDefault();
-  const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}});
-  if (r.ok) f.closest('li').classList.add('gone');
+  if (!await post(f.action)) return;
+  f.closest('li').classList.add('gone');
+  const n = f.closest('details.band')?.querySelector('summary b');
+  if (n) n.textContent = Math.max(0, n.textContent - 1);
+  const fresh = new DOMParser().parseFromString(await (await fetch(location.href)).text(), 'text/html').querySelector('nav');
+  if (fresh) document.querySelector('nav').replaceWith(fresh);
+});
+// A click anywhere on a row opens it, as its title link would. Its buttons, links, fields, grip and folded-out
+// steps keep their own jobs, and a click that ends a text selection selects.
+document.addEventListener('click', e => {
+  const li = e.target.closest('li.task');
+  if (!li || e.button || e.target.closest('a, button, input, select, textarea, label, form, .grip, .steps')
+      || String(getSelection())) return;
+  const a = li.querySelector(':scope > .title, :scope > .name > .title');
+  if (!a) return;
+  if (e.metaKey || e.ctrlKey) open(a.href); else location = a.href;
 });
 </script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>

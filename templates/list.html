@@ -13,11 +13,11 @@
   <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta">{{ p.open_count }} open</span></li>
   {% endfor %}
 </ul>
-<h2>Tasks</h2>
 {% endif %}
 {% if tasks %}
+{% if projects %}<h2>Tasks</h2>{% endif %}
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
-{% else %}
+{% elif not projects %}
 <p class="empty clear">{{ empty }}</p>
 {% endif %}
 {% endblock %}

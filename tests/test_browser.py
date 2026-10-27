@@ -110,7 +110,7 @@ def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
 def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, conn):
     page.goto(live + "/tasks/2")
     page.fill("input[name=due_date]", "")
-    page.click(".date-field .cal")  # showPicker() needs this real click's user activation
+    page.click(".date-field .pick")  # showPicker() needs this real click's user activation
     page.locator(".date-field .picker").evaluate(
         "el => { el.value = '2026-11-05'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
     assert page.input_value("input[name=due_date]") == "2026-11-05"
@@ -589,7 +589,8 @@ def test_timer_button_always_shows(page, live):
 
 
 def test_all_clear_lists_show_a_big_check(page, live, conn):
-    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks"); conn.commit()
+    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks")
+    conn.execute("UPDATE projects SET status = 'active' WHERE status = 'waiting'"); conn.commit()  # nothing waiting either
     for url in ("/inbox", "/next", "/h0", "/waiting"):
         page.goto(live + url)
         e = page.locator(".empty.clear")
@@ -614,3 +615,80 @@ def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
     page.goto(live + "/projects")
     a, b = (page.locator("ul.cards > li.task").nth(i).bounding_box() for i in (0, 1))
     assert b["y"] - (a["y"] + a["height"]) >= 4  # a gap between pills
+
+
+# --- review fixes (2026-10-27) ---------------------------------------------
+
+def test_a_failed_tick_off_reloads_instead_of_faking_it(page, live, conn):
+    page.goto(live + "/next")
+    page.route("**/complete", lambda r: r.fulfill(status=500, body=""))
+    with page.expect_navigation():
+        row(page, "buy tiles").locator("form.done button").click()
+    assert row(page, "buy tiles").count() == 1 and db.get_task(conn, 2)["state"] == "open"
+    page.errors[:] = [e for e in page.errors if "500" not in e]  # the faked failure itself
+
+
+def test_a_failed_calendar_drag_reloads(page, live, conn):
+    page.goto(live + "/calendar?m=2026-10")
+    page.route("**/due", lambda r: r.fulfill(status=500, body=""))
+    ev = page.locator(".cal .ev", has_text="buy tiles")
+    with page.expect_navigation():
+        ev.drag_to(page.locator(".cal td", has=page.locator('.day[data-date="2026-10-29"]')),
+                   target_position={"x": 60, "y": 15})  # clear of the timer pill
+    assert page.locator('td[data-date="2026-10-01"] .ev', has_text="buy tiles").count() == 1
+    page.errors[:] = [e for e in page.errors if "500" not in e]  # the faked failure itself
+
+
+def test_tick_off_updates_the_band_count_and_nav_dot(page, live):
+    page.goto(live + "/h0")
+    assert page.locator("details[data-band=now] summary b").inner_text() == "1"
+    assert page.locator("nav a", has_text="H0").locator(".badge").count() == 1
+    row(page, "vacuum").locator("form.done button").click()
+    page.wait_for_selector("li.task.gone")
+    page.wait_for_function("document.querySelector('details[data-band=now] summary b').textContent === '0'")
+    page.wait_for_function("!document.querySelector('nav a[href=\"/h0\"] .badge')")
+
+
+def test_capture_keys_do_nothing_while_help_is_open(page, live):
+    page.goto(live + "/next")
+    page.keyboard.press("?")
+    page.keyboard.press("/")
+    page.keyboard.press("f")
+    assert not page.locator(".capture-dialog").evaluate("d => d.open")
+    assert page.evaluate("document.activeElement.name") != "q"
+
+
+def test_clicking_anywhere_on_a_row_opens_it(page, live):
+    page.goto(live + "/next")
+    r = row(page, "buy tiles")
+    box = r.bounding_box()
+    with page.expect_navigation():
+        page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)  # blank space right of the title
+    assert page.url == live + "/tasks/2"
+    page.goto(live + "/projects")
+    r = row(page, "Kitchen")
+    box = r.bounding_box()
+    with page.expect_navigation():
+        page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
+    assert page.url == live + "/projects/1"
+
+
+def test_clicking_a_rows_button_does_not_open_it(page, live):
+    page.goto(live + "/projects")
+    row(page, "Kitchen").locator("button.peek").click()
+    assert page.url == live + "/projects"
+
+
+def test_due_today_date_is_not_amber(page, live):
+    """Amber means stalled; only an overdue date gets a color."""
+    page.goto(live + "/waiting")
+    r = row(page, "quote from Bob")
+    style = "e => [getComputedStyle(e).color, getComputedStyle(e).fontWeight]"
+    assert r.locator(".date").evaluate(style) == r.locator(".meta").evaluate(style)
+
+
+def test_help_dialog_uses_the_theme(page, live):
+    page.goto(live + "/next")
+    page.keyboard.press("?")
+    bg = page.locator(".help-dialog").evaluate("e => getComputedStyle(e).backgroundColor")
+    assert bg == page.evaluate("getComputedStyle(document.body).backgroundColor")

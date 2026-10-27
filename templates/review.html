@@ -6,7 +6,7 @@
     <h2><form method="post" action="{{ url_for('review_tick', step=key) }}" class="tick">
       <button title="{{ 'Untick' if key in checked else 'Tick off' }}" aria-label="{{ 'Untick' if key in checked else 'Tick off' }}">{{ '✓' if key in checked }}</button></form>{{ label }}</h2>
     <p class="hint">{{ hint }}</p>
-    {% if n is not none %}{% if n %}<span class="big">{{ n }}</span>{% else %}<span class="big clear">✓</span>{% endif %}{% endif %}
+    {% if n is not none %}{% if n %}<span class="count">{{ n }}</span>{% else %}<span class="count clear">✓</span>{% endif %}{% endif %}
     {{ caller() }}
   </li>
 {%- endmacro %}

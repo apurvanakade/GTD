@@ -1,21 +1,11 @@
+/* Theme: each color is light-dark(light, dark); color-scheme follows the system unless ◐ set data-theme. */
 :root {
-  --bg: #fafaf9; --fg: #1c1917; --muted: #8a8580; --line: #ecebe9; --card: #ffffff; --soft: #f2f1ef;
-  --accent: #2563eb; --accent-fg: #ffffff; --warn: #b45309; --overdue: #fef2f2; --due: #fffbeb;
-  --danger: #b91c1c;
+  color-scheme: light dark;
+  --bg: light-dark(#fafaf9, #1c1917); --fg: light-dark(#1c1917, #e7e5e4); --muted: light-dark(#8a8580, #a29d98);
+  --line: light-dark(#ecebe9, #35312e); --card: light-dark(#ffffff, #262220); --soft: light-dark(#f2f1ef, #2a2624);
+  --accent: light-dark(#2563eb, #60a5fa); --accent-fg: light-dark(#ffffff, #0c0a09); --warn: light-dark(#b45309, #fbbf24);
+  --danger: light-dark(#b91c1c, #f87171);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1c1917; --fg: #e7e5e4; --muted: #a29d98; --line: #35312e; --card: #262220; --soft: #2a2624;
-    --accent: #60a5fa; --accent-fg: #0c0a09; --warn: #fbbf24; --overdue: #3b1d1d; --due: #3a2f12;
-    --danger: #f87171;
-  }
-}
-:root[data-theme="dark"] {
-    --bg: #1c1917; --fg: #e7e5e4; --muted: #a29d98; --line: #35312e; --card: #262220; --soft: #2a2624;
-    --accent: #60a5fa; --accent-fg: #0c0a09; --warn: #fbbf24; --overdue: #3b1d1d; --due: #3a2f12;
-    --danger: #f87171;
-}
-:root { color-scheme: light dark; }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
 /* Task kinds: the calendar's colors and legend dots, the only colored stripes in the app. */
@@ -105,12 +95,11 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
 .theme-toggle { flex: none; }
-.capture-dialog {
-  width: min(480px, calc(100vw - 32px)); padding: 16px;
-  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px;
-}
-.capture-dialog::backdrop { background: rgb(0 0 0 / .35); }
-.capture-dialog h2 { margin-top: 0; }
+.capture-dialog, .help-dialog { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
+.capture-dialog { width: min(480px, calc(100vw - 32px)); }
+.help-dialog { max-width: 26rem; }
+:is(.capture-dialog, .help-dialog)::backdrop { background: rgb(0 0 0 / .35); }
+:is(.capture-dialog, .help-dialog) h2 { margin-top: 0; }
 .suggest {
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
@@ -180,7 +169,7 @@ body.dragging-inbox .drop-panel { transform: none; visibility: visible; }
 body.naming .drop-panel .new input { display: block; }
 .drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
 
-.flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }
+.flash { background: var(--soft); padding: 8px 12px; border-radius: 8px; }
 .empty, .hint { color: var(--muted); }
 /* An action list with nothing left in it: one big faint ✓ instead of a sentence (kept for screen readers). */
 .empty.clear { font-size: 0; text-align: center; padding: 32px 0; border: 0; }
@@ -220,11 +209,12 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .proj::before { content: "▸ "; }
 .task form { margin: 0; }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
-.task.due .date { color: var(--warn); font-weight: 600; }
 .task.stalled .title { color: var(--warn); }
 .task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
 .task:hover .grip { opacity: 1; }
 .task .grip.slot { visibility: hidden; }
+/* A click anywhere on a row opens it, as its title would (base.html's JS). */
+li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
 .task.gone { opacity: .35; text-decoration: line-through; pointer-events: none; }
 .done button {
@@ -241,14 +231,15 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
-.task .start button, .task .timing button, .task .make-next button, .task .then button {
+.task .start button, .task .timing button, .task .make-next button, .task .row-btn button, .task .then button {
   padding: 0 6px; font-size: .75rem; line-height: 20px; color: var(--muted);
 }
-.task .then button { opacity: 0; }  /* ▶ always shows: the timer starts from anywhere */
+/* ✓→ shows on hover; ▶ (.start) always shows, so the timer starts from anywhere. */
+.task .then button { opacity: 0; }
 .task:hover .then button, .task .then button:focus { opacity: 1; }
 .task .start button:hover, .task .then button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
-.task .make-next button { color: var(--accent); border-color: var(--line); }
+.task :is(.make-next, .row-btn) button { color: var(--accent); border-color: var(--line); }
 /* A project's steps: the step word and Make next show on hover. */
 .tasks.by-step > .task :is(.step, .make-next button) { opacity: 0; }
 .tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
@@ -276,8 +267,8 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .review > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
 .review h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
 .review h2 + .hint { margin: 2px 0 0 calc(1.3em + 10px); font-size: .85rem; }
-.review .big { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
-.review .big.clear { color: var(--muted); }
+.review .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.review .count.clear { color: var(--muted); }
 .review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }
 .review .tick button:hover { border-color: var(--accent); }
 .review > li.ticked .tick button { border-color: var(--accent); background: var(--accent); color: var(--bg); }
@@ -365,12 +356,9 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .date-field { position: relative; display: flex; gap: 4px; flex: 1 1 200px; min-width: 0; align-items: center; }
 .edit label .date-field { margin-top: 4px; }
 .date-field input[name] { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
-.date-field .cal { padding: 6px; line-height: 1; width: auto; flex: none; }
+.date-field .pick { padding: 6px; line-height: 1; width: auto; flex: none; }
 .date-field .picker { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; padding: 0; margin: 0; border: 0; pointer-events: none; }
 
-.help-dialog { border: 1px solid var(--border, #ccc); border-radius: 8px; max-width: 26rem; }
-.help-dialog::backdrop { background: rgb(0 0 0 / .35); }
-.help-dialog h2 { margin-top: 0; }
 .help-dialog dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 0; }
 .help-dialog dt { text-align: right; white-space: nowrap; }
 .help-dialog dd { margin: 0; }

@@ -177,7 +177,7 @@ def test_tasks_need_a_project_or_h0(client, conn):
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": "h0"})
     t = db.get_task(conn, tid)
     assert (t["step"], t["ground"], t["project_id"]) == (None, 1, None)
-    assert b">H0</a>" in client.get("/horizons").data
+    assert t["title"] in client.get("/h0").get_data(as_text=True)
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": str(pid)})
     assert db.get_task(conn, tid)["ground"] == 0  # picking a project clears H0
 
@@ -903,7 +903,7 @@ def test_due_date_box_has_a_calendar_picker(client, conn):
     pid = db.add_project(conn, "P")
     tid = db.add_task(conn, "call", step="next", project_id=pid)
     html = client.get(f"/tasks/{tid}").get_data(as_text=True)
-    assert 'name="due_date"' in html and 'class="cal"' in html and 'type="date" class="picker"' in html
+    assert 'name="due_date"' in html and 'class="pick"' in html and 'type="date" class="picker"' in html
 
 
 def test_h0_tasks_stay_off_next_actions(client, conn):
@@ -1193,9 +1193,9 @@ def test_review_shows_one_step_at_a_time(client, conn):
     assert 'href="/review?step=sweep" class="dot done"' in html  # rail: ticked, then current
     assert 'href="/review?step=inbox" class="dot on"' in html
     key, card = step_card(client.get("/review?step=overdue").get_data(as_text=True), "overdue")
-    assert key == "overdue" and '<span class="big">1</span>' in card and "buy tiles" in card
+    assert key == "overdue" and '<span class="count">1</span>' in card and "buy tiles" in card
     key, card = step_card(client.get("/review?step=stalled").get_data(as_text=True), "stalled")
-    assert '<span class="big">1</span>' in card
+    assert '<span class="count">1</span>' in card
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
     assert 'href="/inbox"' in card and "/process" not in card  # deal with it on the Inbox page
     r = client.post("/review/inbox")  # ticking moves on to the next unticked step
@@ -1204,7 +1204,7 @@ def test_review_shows_one_step_at_a_time(client, conn):
     for t in db.inbox_tasks(conn):
         db.abandon_task(conn, t["id"])
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
-    assert '<span class="big clear">✓</span>' in card  # nothing to do
+    assert '<span class="count clear">✓</span>' in card  # nothing to do
     assert client.get("/review?step=bogus").status_code == 200  # falls back to the first unticked
 
 
@@ -1501,3 +1501,97 @@ def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn
     for target in (str(pid), "h0", "__new__"):
         assert f'data-project="{target}"' in html
     assert 'type="checkbox"' not in html
+
+
+# --- review fixes (2026-10-27) ---------------------------------------------
+
+def test_someday_activate_sends_only_the_status(client, conn):
+    """Activate on Someday mustn't resend the notes the page loaded with, or newer notes get overwritten."""
+    pid = db.add_project(conn, "Boat", status="someday", notes="old")
+    html = client.get("/someday").get_data(as_text=True)
+    form = re.search(r'<form[^>]*action="/projects/%d"[^>]*>(.*?)</form>' % pid, html, re.S).group(1)
+    assert 'name="notes"' not in form and 'name="title"' not in form
+    db.update_project(conn, pid, notes="newer")
+    client.post(f"/projects/{pid}", data={"status": "active"})
+    p = db.get_project(conn, pid)
+    assert (p["status"], p["notes"], p["title"]) == ("active", "newer", "Boat")
+
+
+def test_date_button_does_not_share_the_calendar_class(client, conn):
+    seed(conn)
+    html = client.get("/tasks/2").get_data(as_text=True)
+    assert 'class="pick"' in html and 'class="cal"' not in html
+
+
+def test_horizons_h0_rows_have_no_h0_tag(client, conn):
+    seed(conn)
+    html = client.get("/horizons").get_data(as_text=True)
+    assert "vacuum" in html and "Ground level: no project, on purpose" not in html
+
+
+def test_horizons_has_one_add_line_with_a_level(client, conn):
+    html = client.get("/horizons").get_data(as_text=True)
+    assert len(re.findall(r'<form[^>]*class="add', html)) == 1
+    assert re.search(r'<select name="level"[^>]*>\s*<option value="goal"', html)
+    client.post("/horizons", data={"level": "area", "title": "Health"})
+    assert [h["title"] for h in db.horizons(conn)["area"]] == ["Health"]
+
+
+def test_search_uses_project_pills_and_task_rows(client, conn):
+    pid = db.add_project(conn, "Tile shop")
+    done = db.add_task(conn, "tile order", step="next", project_id=pid)
+    db.complete_task(conn, done, TODAY)
+    html = client.get("/search?q=tile").get_data(as_text=True)
+    assert re.search(r'<h2>Projects</h2>\s*<ul class="tasks cards">', html)
+    done_part = html.split("<h2>Done</h2>")[1]
+    assert 'class="check"' in done_part and 'class="name"' in done_part  # row(): ✓ and the project after the title
+
+
+def test_waiting_with_only_projects_has_no_empty_tasks_section(client, conn):
+    db.add_project(conn, "Visa", status="waiting")
+    html = client.get("/waiting").get_data(as_text=True)
+    assert "Visa" in html and "<h2>Tasks</h2>" not in html and "empty clear" not in html
+
+
+def test_review_count_is_not_a_big_title(client, conn):
+    seed(conn)
+    html = client.get("/review?step=inbox").get_data(as_text=True)
+    assert 'class="count"' in html and 'class="big' not in html
+
+
+def test_revive_and_activate_buttons_are_not_make_next(client, conn):
+    seed(conn)
+    done = client.get("/done").get_data(as_text=True)
+    assert re.search(r'class="row-btn"><button[^>]*>Revive', done)
+    assert 'class="row-btn"' in client.get("/someday").get_data(as_text=True)
+
+
+def test_style_has_no_dead_or_undefined_variables():
+    css = open(os.path.join(os.path.dirname(db.__file__), "static", "style.css")).read()
+    defined = set(re.findall(r"(--[\w-]+):", css))
+    used = set(re.findall(r"var\((--[\w-]+)", css))
+    assert used - defined == {"--done"}  # --done is set inline per Projects row
+    assert defined - used == set()
+
+
+def test_editing_a_project_counts_as_activity(client, conn):
+    pid = db.add_project(conn, "Old")
+    conn.execute("UPDATE projects SET created_at = '2026-09-01 10:00:00' WHERE id = ?", (pid,))
+    conn.commit()
+    client.post(f"/autosave/projects/{pid}", data={"notes": "planning", "base_notes": ""})
+    assert db.projects(conn)[0]["last_active"][:10] != "2026-09-01"
+
+
+def test_migration_adds_project_updated_at(tmp_path):
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.execute("""CREATE TABLE projects (id INTEGER PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active', position INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        completed_at TEXT)""")
+    old.execute("INSERT INTO projects (title) VALUES ('p')")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    assert db.projects(c)[0]["updated_at"] is None
+    c.close()
+    db.connect(path).close()

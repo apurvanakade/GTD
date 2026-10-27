@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS {name} (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done')),
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  completed_at TEXT
+  completed_at TEXT,
+  updated_at TEXT
 )
 """
 TASKS_TABLE = """
@@ -129,6 +130,9 @@ def _migrate(c):
         c.execute("PRAGMA foreign_keys = ON")
     if "projects" in old and "position" not in [r[1] for r in c.execute("PRAGMA table_info(projects)")]:
         c.execute("ALTER TABLE projects ADD COLUMN position INTEGER")  # drag order on Projects and Someday
+        c.commit()
+    if "projects" in old and "updated_at" not in [r[1] for r in c.execute("PRAGMA table_info(projects)")]:
+        c.execute("ALTER TABLE projects ADD COLUMN updated_at TEXT")  # last edit of title, notes or status
         c.commit()
 
 
@@ -364,6 +368,10 @@ def add_project(c, title, **fields):
 
 
 def update_project(c, id, **fields):
+    known = {k: v for k, v in fields.items() if k in PROJECT_FIELDS}
+    if known:  # an edit is activity, but only a real change: an untouched Save leaves the project as it was
+        c.execute(f"UPDATE projects SET updated_at = datetime('now') WHERE id = ? AND "
+                  f"({' OR '.join(f'{k} IS NOT ?' for k in known)})", [id, *known.values()])
     if "status" in fields:
         # A project changing lists goes to the bottom of the new one, rather than to its place in the old one.
         c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END,"
@@ -387,12 +395,12 @@ def get_project(c, id):
 
 def projects(c, status="active"):
     """Projects with the given status in the order dragged; undragged ones go last, by title. last_active (UTC) is
-    the latest of the project's creation and its steps' creation, completion and timing."""
+    the latest of the project's creation and last edit, and its steps' creation, completion and timing."""
     return c.execute(f"""SELECT p.*,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open') AS open_count,
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'done') AS done_count,
-          (SELECT max(at) FROM (SELECT datetime(p.created_at) AS at
+          (SELECT max(at) FROM (SELECT datetime(p.created_at) AS at UNION ALL SELECT datetime(p.updated_at)
               UNION ALL SELECT datetime(t.created_at) FROM tasks t WHERE t.project_id = p.id
               UNION ALL SELECT datetime(t.completed_at) FROM tasks t WHERE t.project_id = p.id
               UNION ALL SELECT datetime(e.start_time) FROM time_entries e JOIN tasks t ON t.id = e.task_id
