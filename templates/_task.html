@@ -35,7 +35,7 @@
   <ul class="tasks soon">{% for t in rows %}{{ row(t, project=project, soon=True) }}{% endfor %}</ul>
 </details>
 {% else %}
-<ul class="tasks"><li class="empty">{{ empty }}</li></ul>
+<ul class="tasks"><li class="empty clear">{{ empty }}</li></ul>
 {% endfor %}
 {% endmacro %}
 

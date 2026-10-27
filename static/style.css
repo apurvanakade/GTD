@@ -186,6 +186,9 @@ body.naming .drop-panel .new input { display: block; }
 
 .flash { background: var(--due); padding: 8px 12px; border-radius: 8px; }
 .empty, .hint { color: var(--muted); }
+/* An action list with nothing left in it: one big faint ✓ instead of a sentence (kept for screen readers). */
+.empty.clear { font-size: 0; text-align: center; padding: 32px 0; border: 0; }
+.empty.clear::before { content: "✓"; font-size: 3rem; line-height: 1; color: var(--line); }
 
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }

@@ -590,3 +590,15 @@ def test_timer_button_always_shows(page, live):
         page.mouse.move(0, 0)
         b = page.locator("li.task form.start button").first
         assert b.evaluate("e => getComputedStyle(e).opacity") == "1", url
+
+
+def test_all_clear_lists_show_a_big_check(page, live, conn):
+    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks"); conn.commit()
+    for url in ("/inbox", "/next", "/h0", "/waiting"):
+        page.goto(live + url)
+        e = page.locator(".empty.clear")
+        assert e.count() == 1, url
+        assert e.evaluate("e => getComputedStyle(e, '::before').content") == '"✓"', url
+        assert e.evaluate("e => getComputedStyle(e).fontSize") == "0px", url  # the sentence stays for screen readers only
+    page.goto(live + "/search?q=zzz")
+    assert page.locator(".empty.clear").count() == 0  # "Nothing matches" isn't good news
