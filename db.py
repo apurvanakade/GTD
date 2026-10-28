@@ -355,16 +355,17 @@ def search(c, q):
 
 
 def suggest(c, q, limit=10):
-    """The best fuzzy title matches among tasks, projects, horizons and reference; open items before done ones."""
-    rows = [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.state = 'open'")]
-    rows += [("task", r) for r in c.execute(f"{TASK_SELECT} WHERE t.state != 'open' ORDER BY t.completed_at DESC LIMIT 200")]
+    """The best fuzzy title matches among tasks (done ones too), projects, horizons and reference.
+    Titles containing every query word come first, so scattered-letter matches can't crowd them out;
+    then open items before done ones."""
+    rows = [("task", r) for r in c.execute(f"{TASK_SELECT}")]
     rows += [("project", r) for r in c.execute("SELECT * FROM projects")]
     rows += [("horizon", r) for r in c.execute("SELECT * FROM horizons")]
     rows += [("reference", r) for r in c.execute("SELECT * FROM reference")]
     hits = [(fuzzy.score(q, r["title"]), kind, r) for kind, r in rows]
     hits = [h for h in hits if h[0] is not None]
     closed = lambda kind, r: (kind == "task" and r["state"] != "open") or (kind == "project" and r["status"] == "done")
-    hits.sort(key=lambda h: (closed(h[1], h[2]), -h[0], h[2]["title"].lower()))
+    hits.sort(key=lambda h: (not fuzzy.exact(q, h[2]["title"]), closed(h[1], h[2]), -h[0], h[2]["title"].lower()))
     return [(kind, r) for _, kind, r in hits[:limit]]
 
 

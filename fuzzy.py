@@ -29,3 +29,9 @@ def score(query, text):
             return None
         total += s
     return total - len(text) / 100
+
+
+def exact(query, text):
+    """True when every word of query appears in text as a plain substring, not just as scattered letters."""
+    text = (text or "").lower()
+    return all(w in text for w in query.lower().split())

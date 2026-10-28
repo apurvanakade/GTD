@@ -1169,6 +1169,20 @@ def test_search_suggest(client, conn):
     assert len(client.get("/search/suggest?q=e").get_json()) <= 10
 
 
+def test_suggest_puts_a_done_substring_match_above_open_scattered_ones(client, conn):
+    """Open titles with t-i-m-e-r scattered in them mustn't crowd out a done task that says "timer"."""
+    for i in range(12):
+        db.add_task(conn, f"make third midterm {i}")
+    t = db.add_task(conn, "move the timer arrow")
+    db.complete_task(conn, t, date(2026, 10, 22))
+    for i in range(250):  # older done tasks than the cap used to reach
+        db.complete_task(conn, db.add_task(conn, f"filler {i}"), date(2026, 10, 22))
+    conn.execute("UPDATE tasks SET completed_at = '2020-01-01 00:00:00' WHERE id = ?", (t,))
+    conn.commit()
+    titles = [s["title"] for s in client.get("/search/suggest?q=timer").get_json()]
+    assert titles[0] == "move the timer arrow"
+
+
 
 
 def test_add_a_next_action_on_the_next_page(client, conn):
