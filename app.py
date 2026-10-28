@@ -637,8 +637,10 @@ def epoch_ms(iso):
 @app.route("/timer")
 def timer_view():
     c = conn()
-    monday = datetime.combine(today() - timedelta(days=today().weekday()), datetime.min.time()).astimezone()
+    midnight = lambda d: datetime.combine(d, datetime.min.time()).astimezone()
+    monday = midnight(today() - timedelta(days=today().weekday()))
     return render_template("timer.html", entries=db.time_entries(c), open_tasks=db.open_tasks(c),
+                           day=db.week_totals(c, midnight(today()), now()),
                            week=db.week_totals(c, monday, now()), local_input=local_input)
 
 

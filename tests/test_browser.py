@@ -170,6 +170,12 @@ def test_timer_entry_saves_when_focus_leaves_the_row(page, live, conn):
     assert page.url.endswith("/timer")
 
 
+def test_hidden_buttons_stay_hidden(page, live):
+    page.goto(live + "/timer")
+    assert page.locator("form.entry button[hidden]").count()
+    assert not page.locator("form.entry button[hidden]").first.is_visible()
+
+
 def test_timer_entry_enter_saves_and_unchanged_blur_does_not(page, live, conn):
     page.goto(live + "/timer")
     entry = page.locator("form.entry", has=page.get_by_role("link", name="call mum", exact=True))

@@ -5,11 +5,16 @@
 {{ add_form(url_for('timer_start'), 'What are you working on? Pick a task, or type something new for the inbox', list='open-tasks', button='▶', label='Start') }}
 <datalist id="open-tasks">{% for t in open_tasks %}<option value="{{ t.title }}">{% endfor %}</datalist>
 
-<h2>This week</h2>
-{% if week %}{% set top = week[0][1] or 1 %}<table class="totals">
-  {% for label, secs in week %}<tr><td>{{ label }}</td><td class="barcell"><span class="progress"><i style="width: {{ (100 * secs / top)|round|int }}%"></i></span></td><td class="date">{{ secs|hm }}</td></tr>{% endfor %}
-  <tr class="total"><td>Total</td><td></td><td class="date">{{ week|sum(attribute=1)|hm }}</td></tr>
-</table>{% else %}<p class="empty">Nothing timed this week.</p>{% endif %}
+<div class="tallies">
+{% for heading, totals, blank in (('Today', day, 'Nothing timed today.'), ('This week', week, 'Nothing timed this week.')) %}
+<section class="tally">
+<h2>{{ heading }} {% if totals %}<b>{{ totals|sum(attribute=1)|hm }}</b>{% endif %}</h2>
+{% if totals %}{% set top = totals[0][1] or 1 %}<ul>
+  {% for label, secs in totals %}<li title="{{ label }} · {{ secs|hm }}"><span class="who">{{ label }}</span><span class="bar"><i style="width: {{ (100 * secs / top)|round|int }}%"></i></span><span class="dur">{{ secs|hm }}</span></li>{% endfor %}
+</ul>{% else %}<p class="empty">{{ blank }}</p>{% endif %}
+</section>
+{% endfor %}
+</div>
 
 <h2>History</h2>
 {% if not entries %}<p class="empty">Start a timer from any task with ▶, or above.</p>{% endif %}

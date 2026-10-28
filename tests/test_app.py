@@ -893,8 +893,22 @@ def test_timer_week_totals_have_bars(client, conn):
         db.timer_stop(conn, NOW - timedelta(hours=hours) + timedelta(minutes=30 * hours))
     conn.commit()
     html = client.get("/timer").data.decode()
-    widths = [int(w) for w in re.findall(r'class="progress"[^>]*><i style="width:\s*(\d+)%', html)]
+    widths = [int(w) for w in re.findall(r'<span class="bar"><i style="width:\s*(\d+)%', html)]
     assert widths and widths[0] == 100 and min(widths) < 100, widths
+
+
+def test_timer_today_tally_beside_week(client, conn):
+    """Today counts only entries started since local midnight; This week counts both."""
+    for title, start in (("dig", NOW - timedelta(hours=1)), ("rake", NOW - timedelta(days=1))):
+        db.timer_start(conn, db.add_task(conn, title, step="next", project_id=db.add_project(conn, title)), start)
+        db.timer_stop(conn, start + timedelta(minutes=30))
+    conn.commit()
+    html = client.get("/timer").data.decode()
+    today_col = re.search(r'<section class="tally">\s*<h2>Today\s*<b>0h 30m</b></h2>(.*?)</section>', html, re.S).group(1)
+    week_col = re.search(r'<section class="tally">\s*<h2>This week\s*<b>1h 00m</b></h2>(.*?)</section>', html, re.S).group(1)
+    assert "dig" in today_col and "rake" not in today_col
+    assert "dig" in week_col and "rake" in week_col
+    assert "<table" not in today_col + week_col  # bars, not a table
 
 
 # --- natural-language dates --------------------------------------------------

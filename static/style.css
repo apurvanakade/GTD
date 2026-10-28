@@ -71,6 +71,7 @@ textarea { resize: vertical; }
 .md-editor code { background: var(--soft); border-radius: 3px; }
 .md-editor a { text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 2px; }
 .mod .md-editor a { cursor: pointer; }
+[hidden] { display: none !important; }  /* `button`'s display would otherwise show a hidden one */
 button, .button {
   cursor: pointer; display: inline-block; background: transparent; border-color: transparent; color: var(--muted);
 }
@@ -104,7 +105,6 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
 }
-.suggest[hidden] { display: none; }
 .suggest a { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px; border-radius: 6px; color: var(--fg); text-decoration: none; }
 .suggest a.on, .suggest a:hover { background: color-mix(in srgb, var(--accent) 14%, var(--card)); }
 .suggest .meta { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -328,12 +328,15 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 }
 
 /* Timer page. */
-.totals { border-collapse: collapse; min-width: 300px; }
-.totals td { padding: 5px 16px 5px 0; border-bottom: 1px solid var(--line); }
-.totals td.date { text-align: right; padding-right: 0; }
-.totals .barcell { width: 140px; }
-.totals .barcell .progress { width: 100%; height: 6px; border-radius: 3px; }
-.totals .total td { font-weight: 600; border-bottom: 0; }
+/* Today and This week side by side, stacking when narrow: a big total, then one bar per project, longest first. */
+.tallies { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 48px; align-items: start; }
+.tally h2 { display: flex; align-items: baseline; justify-content: space-between; }
+.tally h2 b { font-size: 1.6rem; font-weight: 600; text-transform: none; color: var(--fg); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.tally ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 9em) 1fr auto; gap: 8px 12px; align-items: center; }
+.tally li { display: contents; }
+.tally .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .85rem; }
+.tally .bar > i { display: block; height: 8px; min-width: 4px; border-radius: 4px; background: var(--accent); }
+.tally .dur { color: var(--muted); font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; }
 .history { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto auto auto auto; }
 /* Entries share the list's columns (subgrid) so they line up even though their buttons differ. */
 .entry {
