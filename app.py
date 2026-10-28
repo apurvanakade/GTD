@@ -618,10 +618,15 @@ def hm(seconds):
     return f"{m // 60}h {m % 60:02d}m"
 
 
+@app.template_filter("hms")
+def hms(seconds):
+    s = max(0, int(seconds or 0))
+    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}"
+
+
 @app.template_filter("elapsed")
 def elapsed(iso):
-    s = max(0, int((now() - datetime.fromisoformat(iso)).total_seconds()))
-    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}"
+    return hms((now() - datetime.fromisoformat(iso)).total_seconds())
 
 
 @app.template_filter("epoch_ms")

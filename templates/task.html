@@ -2,10 +2,21 @@
 {% from "_task.html" import project_select, date_input with context %}
 {% block title %}{{ t.title }}{% endblock %}
 {% block crumb %}
-{% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}" class="crumb">
-  <a href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
-  {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
-</form>{% endif %}
+{% set running = timer and timer.task_id == t.id %}
+<div class="crumb">
+  {% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}">
+    <a href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
+    {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
+  </form>{% endif %}
+  {# The timer sits by the title, as prominent as on the lists; while running, the total ticks. #}
+  {% if running or t.state == 'open' or seconds %}<form method="post" class="task-timer{{ ' on' if running }}"
+      action="{{ url_for('timer_stop') if running else url_for('task_start', id=t.id) }}">
+    {% if running %}<button title="Stop the timer" aria-label="Stop the timer">■</button>
+    {% elif t.state == 'open' %}<button title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
+    {% if running %}<span class="clock" data-seconds="{{ seconds|int }}">{{ seconds|hms }}</span>
+    {% elif seconds %}<span class="clock">{{ seconds|hm }}</span>{% endif %}
+  </form>{% endif %}
+</div>
 {% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -32,9 +43,6 @@
     {% else %}<button formaction="{{ url_for('complete', id=t.id) }}">Done</button>
     <button formaction="{{ url_for('complete', id=t.id) }}" name="exit" value="1" title="Mark done and go back">Done &amp; exit</button>
     {% if t.project_id and t.state == 'open' %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" title="Done, then pick the project's next action">Done &amp; next</button>{% endif %}{% endif %}
-    {% if timer and timer.task_id == t.id %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
-    {% elif t.state == 'open' %}<button formaction="{{ url_for('task_start', id=t.id) }}" class="icon" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
-    {% if seconds %}<span class="hint">{{ seconds|hm }} spent</span>{% endif %}
     {% if t.state == 'abandoned' %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" onclick="return confirm('Delete this task for good?')">Delete for good</button>
     {% else %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Stays on Done, revivable">Delete</button>{% endif %}
   </div>

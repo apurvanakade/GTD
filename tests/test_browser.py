@@ -127,6 +127,21 @@ def test_running_timer_clock_ticks(page, live):
     assert page.inner_text(".running-timer .clock") != before
 
 
+def test_task_page_timer_is_by_the_title_and_ticks(page, live):
+    page.clock.install(time=NOW)
+    page.goto(live + "/tasks/7")  # "call mum", running
+    timer = page.locator("header.page .task-timer")
+    stop, title = timer.get_by_role("button", name="Stop the timer"), page.locator("input.big")
+    assert stop.is_visible() and stop.bounding_box()["y"] < title.bounding_box()["y"]
+    before = timer.locator(".clock").inner_text()
+    page.clock.run_for(3000)
+    assert timer.locator(".clock").inner_text() != before
+    page.goto(live + "/tasks/2")  # "buy tiles", not running
+    with page.expect_navigation():
+        page.locator("header.page .task-timer").get_by_role("button", name="Start the timer").click()
+    assert page.locator("header.page .task-timer").get_by_role("button", name="Stop the timer").is_visible()
+
+
 def test_running_timer_stays_in_view_and_stops_from_anywhere(page, live, conn):
     page.set_viewport_size({"width": 900, "height": 400})
     page.goto(live + "/done")

@@ -126,6 +126,13 @@ body:has(> .running-timer) { padding-bottom: 88px; }
 header.page { margin: 24px 0 14px; }
 header.page .crumb { margin: 0 0 4px; color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 header.page .crumb button { font-size: .85rem; padding: 2px 8px; }
+/* A task page's timer: right of the project link, as easy to spot as ▶ on the lists. */
+header.page .crumb > form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
+header.page .crumb > .task-timer { margin-left: auto; gap: 8px; }
+header.page .task-timer button { font-size: .8rem; padding: 1px 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; }
+header.page .task-timer button:hover { background: var(--accent); color: var(--accent-fg); }
+header.page .task-timer .clock { font: .85rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--fg); }
+header.page .task-timer.on .clock { color: var(--accent); }
 header.page .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 header.page .head:empty, header.page .head:has(> .actions:empty:only-child) { display: none; }
 header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

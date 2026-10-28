@@ -71,7 +71,8 @@ def test_crosslinks(client, conn):
     gid = db.add_task(conn, "stretch", step="next", ground=1)
     assert f'href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
     gpage = client.get(f"/tasks/{gid}").get_data(as_text=True)
-    assert 'href="/horizons"' in gpage and 'class="crumb"' not in gpage  # an H0 task has no parent to link up to
+    crumb = gpage[gpage.index('class="crumb"'):gpage.index("</header>")]
+    assert 'href="/horizons"' in gpage and "<a " not in crumb  # an H0 task has no parent to link up to, only its timer
     assert 'href="/projects"' in client.get(f"/projects/{pid}").get_data(as_text=True)
     db.update_project(conn, pid, status="someday")
     assert 'href="/someday"' in client.get(f"/projects/{pid}").get_data(as_text=True)
@@ -791,6 +792,28 @@ def test_time_totals_on_task_project_and_timer_pages(client, conn):
     assert db.week_totals(conn, NOW - timedelta(days=1), NOW) == [("Kitchen", 4800), ("H0 · ground level", 600)]
 
 
+
+
+def test_task_page_timer_sits_in_the_header(client, conn):
+    """▶ and the time spent sit above the title, on the project line, not among the Save buttons."""
+    pid = db.add_project(conn, "Kitchen")
+    t = db.add_task(conn, "measure", step="next", project_id=pid)
+    h0 = db.add_task(conn, "stretch", ground=1)
+    db.timer_start(conn, t, NOW - timedelta(minutes=90))
+    db.timer_stop(conn, NOW - timedelta(minutes=30))
+    for tid in (t, h0):  # H0 tasks have no project line, but get the timer all the same
+        page = client.get(f"/tasks/{tid}").get_data(as_text=True)
+        header = page[page.index('<header class="page">'):page.index("</header>")]
+        assert 'class="task-timer"' in header and "Start the timer" in header
+        assert "Start the timer" not in page[page.index("</header>"):]
+    page = client.get(f"/tasks/{t}").get_data(as_text=True)
+    assert "1h 00m" in page[page.index('<header class="page">'):page.index("</header>")]
+    client.post(f"/tasks/{t}/start")
+    header = client.get(f"/tasks/{t}").get_data(as_text=True).split("</header>")[0]
+    assert "Stop the timer" in header and 'data-seconds="3600"' in header
+    db.complete_task(conn, t, TODAY, NOW)
+    header = client.get(f"/tasks/{t}").get_data(as_text=True).split("</header>")[0]
+    assert "1h 00m" in header and "Start the timer" not in header  # done: time shown, no ▶
 
 
 def test_new_project_from_task_form(client, conn):
