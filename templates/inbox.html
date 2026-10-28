@@ -1,21 +1,27 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form with context %}
+{% from "_task.html" import row, add_form, project_targets with context %}
 {% block title %}Inbox{% endblock %}
+{% block actions %}{% if tasks %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the projects open to drop on">Projects</button>{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture') }}
 {% if tasks %}
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
-{# Slides in while a row is dragged: drop it on a project to file it as a later step. #}
-<aside class="drop-panel" data-move="{{ url_for('inbox_move') }}">
-  <div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
-  <div class="target" data-project="h0">H0 · ground level</div>
-  {% for p in projects %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status != 'active' %} <small>{{ p.status }}</small>{% endif %}</div>{% endfor %}
-</aside>
+{# Slides in while a row is dragged, or stays while pinned by the header's Projects button: drop a row on a
+   project to file it as a later step. #}
+<aside class="drop-panel" data-move="{{ url_for('inbox_move') }}">{{ project_targets() }}</aside>
 <script>
 (() => {
   const list = document.querySelector('ul.tasks'), panel = document.querySelector('.drop-panel');
   const name = panel.querySelector('input[name=new_project]'), body = document.body;
+  const pin = document.querySelector('.pin-panel');
   let dragged = null, naming = null;
+  const pinned = on => {  // remembered per browser, like a folded band
+    body.classList.toggle('pinned-panel', on);
+    pin.setAttribute('aria-pressed', on);
+    try { localStorage.setItem('inbox-panel', on ? '1' : '0'); } catch {}
+  };
+  try { pinned(localStorage.getItem('inbox-panel') === '1'); } catch {}
+  pin.addEventListener('click', () => pinned(!body.classList.contains('pinned-panel')));
   const close = () => { body.classList.remove('dragging-inbox', 'naming'); naming = null; name.value = ''; };
   const move = async (li, data) => {
     if (await post(panel.dataset.move, new URLSearchParams({id: li.dataset.id, ...data}))) li.remove();

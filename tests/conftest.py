@@ -35,7 +35,7 @@ def seed(c):
     stalled = db.add_project(c, "Stalled")
     waiting = db.add_project(c, "Waiting proj", status="waiting")
     someday = db.add_project(c, "Someday proj", status="someday")
-    done = db.add_project(c, "Done proj", status="done")
+    done = db.add_project(c, "Done proj")  # marked done once its step is
     db.add_task(c, "inbox item", notes="from email")
     db.add_task(c, "buy tiles", step="next", project_id=active, due_date="2026-10-01")
     db.add_task(c, "lay tiles", step="later", project_id=active)
@@ -48,6 +48,7 @@ def seed(c):
     db.add_task(c, "legacy orphan", step="next")
     finished = db.add_task(c, "old tiles", step="next", project_id=done)
     db.complete_task(c, finished, TODAY)
+    db.update_project(c, done, status="done")
     db.abandon_task(c, db.add_task(c, "dropped idea", step="later", project_id=active))
     db.add_horizon(c, "goal", "Ship the kitchen")
     area = db.add_horizon(c, "area", "Home")

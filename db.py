@@ -161,6 +161,7 @@ def _update(c, table, allowed, id, fields):
 
 def add_task(c, title, **fields):
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}))
+    _reopen_project(c, id)
     _one_next(c, id, was_next=False)
     return id
 
@@ -169,7 +170,15 @@ def update_task(c, id, **fields):
     """Returns the titles of project tasks demoted to later because this one became next."""
     current = get_task(c, id)
     _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current))
+    _reopen_project(c, id)
     return _one_next(c, id, was_next=current is not None and current["step"] == "next")
+
+
+def _reopen_project(c, id):
+    """A done project with an open task isn't done any more: filing into one (pickers list done projects) reopens it."""
+    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL, position = NULL WHERE status = 'done'
+        AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,))
+    c.commit()
 
 
 def _fit_step(fields, current=None):
@@ -231,11 +240,9 @@ def abandon_task(c, id, now=None):
 def revive_task(c, id):
     """An abandoned task comes back where it was: a later step of its project, an H0 task, or an inbox item.
     A done project it belongs to is reopened, since it has an open task again."""
-    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL WHERE status = 'done'
-        AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'abandoned')""", (id,))
     c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN NULL ELSE 'later' END,
         completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
-    c.commit()
+    _reopen_project(c, id)
 
 
 def complete_task(c, id, today, now=None):
@@ -438,10 +445,16 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
                      (*args, limit)).fetchall()
 
 
-def open_projects(c):
-    """Active then someday projects, for pickers."""
-    return c.execute("""SELECT * FROM projects WHERE status != 'done'
-        ORDER BY status, lower(title)""").fetchall()
+PROJECT_GROUPS = (("Active", "active"), ("Waiting", "waiting"), ("Someday", "someday"), ("Done", "done"))
+
+
+def project_groups(c):
+    """Every project, for pickers (the task dropdown, Inbox's drop panel): (label, projects) per status,
+    each in its list's own order. Empty groups are left out."""
+    rows = c.execute("""SELECT * FROM projects
+        ORDER BY position IS NULL, position, lower(title), id""").fetchall()
+    groups = [(label, [p for p in rows if p["status"] == status]) for label, status in PROJECT_GROUPS]
+    return [(label, ps) for label, ps in groups if ps]
 
 
 def stalled_projects(c):

@@ -3,7 +3,7 @@
 {% block title %}Next actions{% endblock %}
 {% block body %}
 {% call add_form(url_for('next_add'), 'Add a next action') %}
-  {{ project_select(projects) }}
+  {{ project_select() }}
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
 {% endcall %}

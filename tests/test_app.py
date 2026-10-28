@@ -1334,7 +1334,7 @@ def test_new_project_is_not_created_without_a_task(client, conn):
     pid = db.add_project(conn, "P")
     t = db.add_task(conn, "t", project_id=pid, step="next")
     client.post(f"/tasks/{t}", data={"title": "t", "due_date": "bogus date", "project_id": "__new__", "new_project": "Real"})
-    assert [p["title"] for p in db.open_projects(conn)] == ["P", "Real"]  # the task page still files it
+    assert [p["title"] for _, ps in db.project_groups(conn) for p in ps] == ["P", "Real"]  # the task page still files it
 
 
 def test_h0_task_can_join_a_project_directly(client, conn):
@@ -1472,7 +1472,7 @@ def test_inbox_drag_moves_an_item_into_a_project(client, conn):
     assert b"Moved" not in client.get("/inbox").data  # no flash left over for the next page
     # Dropped on "＋ New…" with a name: a new project.
     assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 204
-    fresh = [p for p in db.open_projects(conn) if p["title"] == "Fresh"]
+    fresh = [p for _, ps in db.project_groups(conn) for p in ps if p["title"] == "Fresh"]
     assert len(fresh) == 1 and db.get_task(conn, b)["project_id"] == fresh[0]["id"]
 
 
@@ -1491,7 +1491,7 @@ def test_inbox_drag_edges(client, conn):
     assert client.post("/inbox/move", data={"id": filed, "project_id": str(other)}, headers=FETCH).status_code == 400
     assert client.post("/inbox/move", data={"id": filed, "new_project": "Ghost"}, headers=FETCH).status_code == 400
     assert (db.get_task(conn, filed)["project_id"], db.get_task(conn, filed)["step"]) == (pid, "next")
-    assert not [p for p in db.open_projects(conn) if p["title"] == "Ghost"]
+    assert not [p for _, ps in db.project_groups(conn) for p in ps if p["title"] == "Ghost"]
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):
@@ -1595,3 +1595,39 @@ def test_migration_adds_project_updated_at(tmp_path):
     assert db.projects(c)[0]["updated_at"] is None
     c.close()
     db.connect(path).close()
+
+
+def test_project_pickers_are_one_list_grouped_by_status(client, conn):
+    seed(conn)
+    pid = db.add_project(conn, "Another active")
+    db.reorder_projects(conn, "active", [pid])  # dragged first on Projects, so first here too
+    assert [(label, [p["title"] for p in ps]) for label, ps in db.project_groups(conn)] == [
+        ("Active", ["Another active", "Kitchen", "Stalled"]), ("Waiting", ["Waiting proj"]),
+        ("Someday", ["Someday proj"]), ("Done", ["Done proj"])]
+    expected = [(label, [str(p["id"]) for p in ps]) for label, ps in db.project_groups(conn)]
+
+    def groups(html, group, item):
+        return [(label, re.findall(item, body)) for label, body in re.findall(group, html, re.S)]
+
+    db.add_task(conn, "loose")
+    task = client.get("/tasks/1").data.decode()
+    assert groups(task, r'<optgroup label="(\w+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
+    inbox = client.get("/inbox").data.decode()
+    assert groups(inbox, r'<section class="group"><h3>(\w+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
+    assert "(someday)" not in task + inbox  # the group says it
+
+
+def test_filing_into_a_done_project_reopens_it(client, conn):
+    pid = db.add_project(conn, "Old", status="done")
+    a = db.add_task(conn, "a")
+    assert client.post("/inbox/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert (db.get_project(conn, pid)["status"], db.get_project(conn, pid)["completed_at"]) == ("active", None)
+    done = db.add_project(conn, "Finished", status="done")
+    db.add_task(conn, "b", project_id=done, step="next")
+    assert db.get_project(conn, done)["status"] == "active"
+    # A done task joining it doesn't.
+    gone = db.add_project(conn, "Gone", status="done")
+    t = db.add_task(conn, "c")
+    db.complete_task(conn, t, TODAY)
+    db.update_task(conn, t, project_id=gone)
+    assert db.get_project(conn, gone)["status"] == "done"

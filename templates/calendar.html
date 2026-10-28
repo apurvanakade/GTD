@@ -16,7 +16,7 @@
 {% block body %}
 {% call add_form(url_for('calendar_view'), 'Add a dated next action…', id='cal-add') %}
   <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
-  {{ project_select(projects) }}
+  {{ project_select() }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
 {% endcall %}
 <table class="cal{% if week %} week{% endif %}">

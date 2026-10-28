@@ -526,6 +526,24 @@ def test_escape_cancels_naming_a_new_project(page, live, conn):
     assert db.get_task(conn, 1)["inbox"] and row(page, "inbox item").count() == 1
 
 
+def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
+    page.goto(live + "/inbox")
+    panel = page.locator(".drop-panel")
+    panel.wait_for(state="hidden")
+    page.locator(".pin-panel").click()
+    panel.wait_for(state="visible")
+    assert panel.locator("h3").all_text_contents() == ["Active", "Waiting", "Someday", "Done"]
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    assert panel.is_visible()  # still pinned after the drop
+    page.reload()
+    panel.wait_for(state="visible")  # and after a reload
+    page.locator(".pin-panel").click()
+    panel.wait_for(state="hidden")
+    page.reload()
+    assert not panel.is_visible()
+
+
 def test_review_arrow_keys_move_between_steps(page, live):
     page.goto(live + "/review?step=overdue")
     page.keyboard.press("ArrowRight")

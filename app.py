@@ -119,7 +119,7 @@ def capture():
 
 @app.route("/inbox")
 def inbox():
-    return render_template("inbox.html", tasks=db.inbox_tasks(conn()), projects=db.open_projects(conn()))
+    return render_template("inbox.html", tasks=db.inbox_tasks(conn()), project_groups=db.project_groups(conn()))
 
 
 @app.post("/inbox/move")
@@ -155,7 +155,7 @@ def completed(default=False, **filters):
 
 @app.route("/next")
 def next_view():
-    return render_template("next.html", tasks=db.next_list(conn()), projects=db.open_projects(conn()),
+    return render_template("next.html", tasks=db.next_list(conn()), project_groups=db.project_groups(conn()),
                            **completed(ground=0))
 
 
@@ -215,7 +215,7 @@ def h0_add():
 def waiting():
     return render_template("list.html", title="Waiting for", tasks=db.tasks_with_step(conn(), "waiting"),
                            projects=db.projects(conn(), "waiting"), empty="Nothing delegated.",
-                           open_projects=db.open_projects(conn()))
+                           project_groups=db.project_groups(conn()))
 
 
 @app.post("/waiting/add")
@@ -388,7 +388,7 @@ def task_view(id):
             return redirect(nxt or url_for("next_view"))
         flash("Saved.")
         return redirect(url_for("task_view", id=id, back=nxt))  # stay, but keep where "exit" goes
-    return render_template("task.html", t=t, projects=db.open_projects(c),
+    return render_template("task.html", t=t, project_groups=db.project_groups(c),
                            back=request.args.get("back") or request.referrer,
                            seconds=db.task_seconds(c, id, now()))
 
@@ -597,7 +597,7 @@ def calendar_view():
     else:
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
     resp = make_response(render_template(
-        "calendar.html", first=first, week=week, end=end, projects=db.open_projects(conn()), weeks=weeks,
+        "calendar.html", first=first, week=week, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
         by_day=by_day, prev=prev, next=next_,
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", "week" if week else "month", max_age=365 * 86400, samesite="Lax")
