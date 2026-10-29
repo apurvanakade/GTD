@@ -150,6 +150,9 @@ def _migrate(c):
             INSERT INTO projects_new ({cols}) SELECT {cols} FROM projects;
             DROP TABLE projects; ALTER TABLE projects_new RENAME TO projects; COMMIT;""")
         c.execute("PRAGMA foreign_keys = ON")
+    if "tasks" in old:  # inbox items done before completing one filed it under H0 (2026-10-29)
+        c.execute("UPDATE tasks SET ground = 1 WHERE state = 'done' AND project_id IS NULL AND NOT ground")
+        c.commit()
 
 
 def _insert(c, table, allowed, fields):
@@ -280,14 +283,16 @@ def revive_task(c, id):
 
 def complete_task(c, id, today, now=None):
     """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None.
-    A next step's instance comes back as a later step: picking the next action stays a conscious decision."""
+    A next step's instance comes back as a later step: picking the next action stays a conscious decision.
+    A finished inbox item is filed under H0, so done work (and its time) always has a home."""
     t = get_task(c, id)
     if t is None or t["state"] != "open":
         return None
     running = timer_running(c)
     if running and running["task_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
-    c.execute("UPDATE tasks SET state = 'done', completed_at = datetime('now') WHERE id = ?", (id,))
+    c.execute("""UPDATE tasks SET state = 'done', completed_at = datetime('now'), ground = ground OR project_id IS NULL
+        WHERE id = ?""", (id,))
     new_id = None
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None

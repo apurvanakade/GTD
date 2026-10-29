@@ -256,7 +256,7 @@ def test_migration_splits_status_into_state_and_step(tmp_path):
     c = db.connect(path)
     got = {r["title"]: (r["state"], r["step"], r["ground"]) for r in c.execute("SELECT * FROM tasks")}
     assert got == {"loose": ("open", None, 0), "filed": ("open", "later", 0), "h0 wait": ("open", None, 1),
-                   "orphan": ("open", None, 0), "n": ("open", "next", 0), "d": ("done", None, 0),
+                   "orphan": ("open", None, 0), "n": ("open", "next", 0), "d": ("done", None, 1),
                    "ab": ("abandoned", "later", 0)}
     assert "status" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]
     assert [t["title"] for t in db.inbox_tasks(c)] == ["orphan", "loose"]
@@ -2202,3 +2202,30 @@ def test_inbox_item_dropped_on_reference_becomes_one(client, conn):
     filed = db.add_task(conn, "h", ground=1)
     assert client.post("/inbox/move", data={"id": filed, "project_id": "reference"}, headers=FETCH).status_code == 400
     assert len(db.references(conn)) == 2
+
+
+def test_done_inbox_item_becomes_h0(conn):
+    """A finished task without a project is filed under H0, so the timer has no '(no project)' row."""
+    t = db.add_task(conn, "loose end")
+    new = db.add_task(conn, "loose repeat", recur="weekly")
+    db.complete_task(conn, t, date(2026, 10, 22))
+    instance = db.complete_task(conn, new, date(2026, 10, 22))
+    assert db.get_task(conn, t)["ground"] == 1
+    assert db.get_task(conn, new)["ground"] == 1
+    assert db.get_task(conn, instance)["inbox"]  # the next instance still waits in the inbox
+    p = db.add_project(conn, "Kitchen")
+    s = db.add_task(conn, "step", project_id=p)
+    db.complete_task(conn, s, date(2026, 10, 22))
+    assert db.get_task(conn, s)["ground"] == 0
+
+
+def test_migration_files_done_inbox_items_under_h0(tmp_path):
+    path = str(tmp_path / "old.db")
+    c = db.connect(path)
+    c.execute("INSERT INTO tasks (title, state) VALUES ('old done', 'done'), ('old abandoned', 'abandoned'), ('open', 'open')")
+    c.commit()
+    c.close()
+    c = db.connect(path)
+    assert [tuple(r) for r in c.execute("SELECT title, ground FROM tasks ORDER BY id")] == [
+        ("old done", 1), ("old abandoned", 0), ("open", 0)]
+    c.close()
