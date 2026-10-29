@@ -89,9 +89,8 @@ TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "gro
 PROJECT_FIELDS = {"title", "notes", "status", "area_id"}  # area_id: an H2 area (a horizons row), required for open projects
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
-TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
-    p.area_id, a.title AS area_title
-  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN horizons a ON a.id = p.area_id"""
+TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox
+  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"""
 # Next Actions leave out H0 tasks (they have their own tab), recurring tasks until their due day, and tasks of waiting/someday projects.
 ACTIVE = "t.project_id IN (SELECT id FROM projects WHERE status = 'active')"
 NEXT = f"t.state = 'open' AND t.step = 'next' AND {ACTIVE}"
@@ -521,17 +520,9 @@ def get_project(c, id):
 
 
 def projects(c, status="active", area_id=None):
-    """Projects with the given status (and area) in the order dragged; undragged ones go last, by title. last_active
-    (UTC) is the latest of the project's creation and last edit, and its steps' creation, completion and timing."""
+    """Projects with the given status (and area) in the order dragged; undragged ones go last, by title."""
     return c.execute(f"""SELECT p.*,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open') AS open_count,
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'done') AS done_count,
-          (SELECT max(at) FROM (SELECT datetime(p.created_at) AS at UNION ALL SELECT datetime(p.updated_at)
-              UNION ALL SELECT datetime(t.created_at) FROM tasks t WHERE t.project_id = p.id
-              UNION ALL SELECT datetime(t.completed_at) FROM tasks t WHERE t.project_id = p.id
-              UNION ALL SELECT datetime(e.start_time) FROM time_entries e JOIN tasks t ON t.id = e.task_id
-                        WHERE t.project_id = p.id)) AS last_active
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count
         FROM projects p WHERE p.status = ? AND (? IS NULL OR p.area_id = ?)
         ORDER BY p.position IS NULL, p.position, lower(p.title), p.id""", (status, area_id, area_id)).fetchall()
 

@@ -33,7 +33,11 @@ h1 small { color: var(--muted); font-weight: normal; font-size: 1rem; }
 h2 { font-size: .8rem; margin: 28px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 
 /* Nav: three groups of daily tabs, then the muted weekly-review pages on the right. */
-nav { display: flex; align-items: center; overflow-x: auto; padding: 14px 0 10px; position: sticky; top: 0; z-index: 5; background: var(--bg); }
+nav {
+  display: flex; align-items: center; overflow-x: auto; padding: 14px 0 10px; position: sticky; top: 0; z-index: 5; background: var(--bg);
+  transition: transform .2s;
+}
+body.nav-hidden nav { transform: translateY(-100%); }
 nav .group { display: flex; gap: 2px; }
 nav .group + .group { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--line); }
 nav a { padding: 4px 8px; color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
@@ -125,14 +129,12 @@ body:has(> .running-timer) { padding-bottom: 88px; }
 /* Every page: header (back link, heading, actions), add line, list. */
 header.page { margin: 24px 0 14px; }
 header.page .crumb { margin: 0 0 4px; color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-header.page .crumb button { font-size: .85rem; padding: 2px 8px; }
-/* A task page's timer: right of the project link, as easy to spot as ▶ on the lists. */
-header.page .crumb > form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0; }
-header.page .crumb > .task-timer { margin-left: auto; gap: 8px; }
-header.page .task-timer button { font-size: .8rem; padding: 1px 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; }
-header.page .task-timer button:hover { background: var(--accent); color: var(--accent-fg); }
-header.page .task-timer .clock { font: .85rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--fg); }
-header.page .task-timer.on .clock { color: var(--accent); }
+/* A task page's timer, on its title line: as easy to spot as ▶ on the lists. */
+.task-timer { display: inline-flex; gap: 8px; align-items: center; margin: 0 6px; }
+.task-timer button { font-size: .8rem; padding: 1px 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; }
+.task-timer button:hover { background: var(--accent); color: var(--accent-fg); }
+.task-timer .clock { font: .85rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--fg); }
+.task-timer.on .clock { color: var(--accent); }
 header.page .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 header.page .head:empty, header.page .head:has(> .actions:empty:only-child) { display: none; }
 header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -183,12 +185,28 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .drop-panel .new.naming input { display: block; }
 .drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
 
-.flash { background: var(--soft); padding: 8px 12px; border-radius: 8px; }
+/* Messages: a toast at the top that fades away. */
+.flashes {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100% - 32px);
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none; animation: fade-out .4s 5s forwards;
+}
+.add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: .8rem; }
+.capture-dialog .marks { margin: 6px 0 0; font-size: .8rem; }
+.flash { margin: 0; background: var(--card); border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
+@keyframes fade-out { to { opacity: 0; visibility: hidden; } }
+
 .empty, .hint { color: var(--muted); }
 /* An action list with nothing left in it: one big faint ✓ instead of a sentence (kept for screen readers). */
 .empty.clear { font-size: 0; text-align: center; padding: 32px 0; border: 0; }
 .empty.clear::before { content: "✓"; font-size: 3rem; line-height: 1; color: var(--line); }
 
+/* A record page's first line: the big title, then its few controls as quiet selects and icons. */
+.title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.title-line .big { flex: 1 1 240px; width: auto; min-width: 0; }
+.title-line select { background: transparent; border-color: transparent; color: var(--muted); padding: 4px 6px; font-size: .875rem; }
+.title-line select:hover { border-color: var(--line); color: var(--fg); }
+.title-line > .warn { cursor: help; }
+.title-line form { margin: 0; display: contents; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
 .project textarea, .edit textarea, .project .md-editor, .edit .md-editor { margin-top: 6px; }
@@ -197,7 +215,12 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .project textarea, .project .md-editor { background: transparent; border-color: transparent; }
 .project textarea:focus, .project .md-editor:focus { border-color: var(--line); }
 .project textarea { field-sizing: content; min-height: 2.6em; }
-.edit label { display: block; margin: 10px 0; color: var(--muted); font-size: .9rem; }
+/* A task's fields: a compact grid under its notes, each saved when changed. */
+.edit .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 20px; margin-top: 6px; }  /* project, step; then due, repeats, remind */
+.edit .fields > label:has(.with-link) { grid-column: span 2; }  /* the project, wider than the step */
+.edit .with-link { display: flex; gap: 6px; align-items: center; }
+.edit .with-link select { flex: 1 1 auto; min-width: 0; }
+.edit label { display: block; margin: 8px 0; color: var(--muted); font-size: .9rem; }
 .edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }
 .edit label input[name="new_project"] { display: none; }
 .edit label select:has(option[value^="__new__"]:checked) + input { display: block; }
@@ -222,9 +245,12 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
 .task .remind { font-size: .75rem; filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task .proj::before { content: "▸ "; }
-.task .area { color: var(--muted); font-size: .75rem; white-space: nowrap; opacity: .8; }
-.task .area::before { content: "· "; }
 .area-head { margin-bottom: 6px; }
+/* Projects and Someday: tight plain rows (no pill boxes), one group per area. */
+.area-groups .area-head { margin: 14px 0 2px; }
+.area-groups .tasks.cards { gap: 0; }
+.area-groups .tasks.cards > .task { min-height: 0; padding: 2px 6px; gap: 2px 8px; border: 0; border-radius: 6px; background: none; }
+.area-groups .tasks.cards > .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
 .area-head a { color: inherit; text-decoration: none; }
 .area-head a:hover { text-decoration: underline; }
 .task form { margin: 0; }
@@ -250,13 +276,11 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
-.task .start button, .task .timing button, .task .make-next button, .task .row-btn button, .task .then button {
+.task .start button, .task .timing button, .task .make-next button, .task .row-btn button {
   padding: 0 6px; font-size: .75rem; line-height: 20px; color: var(--muted);
 }
-/* ✓→ shows on hover; ▶ (.start) always shows, so the timer starts from anywhere. */
-.task .then button { opacity: 0; }
-.task:hover .then button, .task .then button:focus { opacity: 1; }
-.task .start button:hover, .task .then button:hover { color: var(--accent); }
+/* ▶ (.start) always shows, so the timer starts from anywhere. */
+.task .start button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
 .task :is(.make-next, .row-btn) button { color: var(--accent); border-color: var(--line); }
 /* A project's steps: the step word and Make next show on hover. */
@@ -264,7 +288,6 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
 /* Holds Make next's width on rows without it, so a project page's dates line up. */
 .task .make-next.slot { visibility: hidden; }
-@media (hover: none) { .task .then button { opacity: 1; } }
 
 /* A thin bar: time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
@@ -273,13 +296,6 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .tasks.cards { display: flex; flex-direction: column; gap: 6px; }
 .tasks.cards > .task { border: 1px solid var(--line); border-radius: 20px; padding: 7px 14px; background: var(--card); }  /* 7px: the border makes up the row height */
 .tasks.cards > .task:hover { border-color: color-mix(in srgb, var(--muted) 50%, var(--line)); }
-/* Projects: each row fills from the left as its steps get done (--done); the count shows on hover; idle ones fade. */
-.tasks.filled > .task { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 9%, transparent) var(--done), transparent var(--done)) var(--card); }
-.tasks.filled > .task.stalled { background: linear-gradient(to right, color-mix(in srgb, var(--warn) 10%, transparent) var(--done), transparent var(--done)) var(--card); }
-.tasks.filled > .task > .meta { opacity: 0; }
-.tasks.filled > .task:hover > .meta { opacity: 1; }
-.tasks.filled > .task.idle > :is(.title, .peek) { opacity: .5; }
-
 /* Decks (Review, Horizons): one card at a time, a rail of dots to move between them. Review's past weeks: a streak. */
 .deck { list-style: none; padding-left: 0; }
 .deck > li:not(.on) { display: none; }
@@ -341,6 +357,14 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 /* Today and This week side by side, stacking when narrow: a big total, then one bar per project, longest first. */
 .tallies { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 48px; align-items: start; }
 .tally h2 { display: flex; align-items: baseline; justify-content: space-between; }
+/* A folded tally (a project page): the total, and a link-like "Show split" that unfolds the bars. */
+details.tally > summary { list-style: none; cursor: pointer; }
+details.tally > summary::-webkit-details-marker { display: none; }
+details.tally h2 { justify-content: flex-start; gap: 12px; }
+.split-toggle { font-size: .9rem; font-weight: normal; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.split-toggle::after { content: "Show split"; }
+details.tally[open] .split-toggle::after { content: "Hide split"; }
+summary:hover .split-toggle { color: var(--fg); }
 .tally h2 b { font-size: 1.6rem; font-weight: 600; text-transform: none; color: var(--fg); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .tally ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 9em) 1fr auto; gap: 8px 12px; align-items: center; }
 .tally li { display: contents; }
@@ -391,5 +415,4 @@ a.who:hover { color: var(--fg); }
 .help-dialog dt { text-align: right; white-space: nowrap; }
 .help-dialog dd { margin: 0; }
 .help-dialog kbd { font: inherit; font-size: .85em; padding: 0 .4em; border: 1px solid currentColor; border-radius: 4px; opacity: .8; }
-.add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: .8rem; }
-.capture-dialog .marks { margin: 6px 0 0; font-size: .8rem; }
+

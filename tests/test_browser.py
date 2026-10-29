@@ -79,10 +79,8 @@ def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
 
 
 def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
-    page.goto(live + "/next")
-    tile = row(page, "buy tiles")
-    tile.hover()
-    tile.locator("form.then button").click()
+    page.goto(live + "/tasks/2")
+    page.get_by_role("button", name="Done and open project").click()
     page.wait_for_url("**/projects/*")
     assert page.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
     assert db.get_task(conn, 2)["state"] == "done"
@@ -115,8 +113,11 @@ def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, co
     field.locator(".picker").evaluate(
         "el => { el.value = '2026-11-05'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
     assert page.input_value("input[name=due_date]") == "2026-11-05"
-    with page.expect_navigation():
-        page.get_by_role("button", name="Save", exact=True).click()
+    sync_api.expect(page.locator(".when[data-parse=due]")).to_have_text("→ Thu Nov 5")
+    for _ in range(50):
+        if db.get_task(conn, 2)["due_date"] == "2026-11-05":
+            break
+        page.wait_for_timeout(50)
     assert db.get_task(conn, 2)["due_date"] == "2026-11-05"
 
 
@@ -131,16 +132,17 @@ def test_running_timer_clock_ticks(page, live):
 def test_task_page_timer_is_by_the_title_and_ticks(page, live):
     page.clock.install(time=NOW)
     page.goto(live + "/tasks/7")  # "call mum", running
-    timer = page.locator("header.page .task-timer")
-    stop, title = timer.get_by_role("button", name="Stop the timer"), page.locator("input.big")
-    assert stop.is_visible() and stop.bounding_box()["y"] < title.bounding_box()["y"]
+    timer = page.locator(".title-line .task-timer")
+    stop, title = timer.get_by_role("button", name="Stop the timer"), page.locator("input.big").bounding_box()
+    box = stop.bounding_box()
+    assert stop.is_visible() and title["y"] <= box["y"] + box["height"] / 2 <= title["y"] + title["height"]  # same line
     before = timer.locator(".clock").inner_text()
     page.clock.run_for(3000)
     assert timer.locator(".clock").inner_text() != before
     page.goto(live + "/tasks/2")  # "buy tiles", not running
     with page.expect_navigation():
-        page.locator("header.page .task-timer").get_by_role("button", name="Start the timer").click()
-    assert page.locator("header.page .task-timer").get_by_role("button", name="Stop the timer").is_visible()
+        page.locator(".title-line .task-timer").get_by_role("button", name="Start the timer").click()
+    assert page.locator(".title-line .task-timer").get_by_role("button", name="Stop the timer").is_visible()
 
 
 def test_running_timer_stays_in_view_and_stops_from_anywhere(page, live, conn):
@@ -257,7 +259,7 @@ def test_dragging_a_project_into_another_area_changes_its_area(page, live, conn)
     work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
     db.add_task(conn, "pack", project_id=db.add_project(conn, "Office move", area_id=work), step="next")
     page.goto(live + "/projects")
-    group = lambda title: page.locator("h2.area-head", has_text=title).locator("xpath=following-sibling::ul[1]")
+    group = lambda title: page.locator("section.area-group", has=page.locator("h2.area-head", has_text=title)).locator("ul")
     with page.expect_response(lambda r: r.url.endswith("/order/active")) as saved:
         row(page, "Kitchen").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
@@ -265,7 +267,7 @@ def test_dragging_a_project_into_another_area_changes_its_area(page, live, conn)
     assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move"]
     # A project without an area gets one by the same drag; nothing can be dropped into "No area".
     with page.expect_response(lambda r: r.url.endswith("/order/active")):
-        page.locator("li.task", has_text="Stalled").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 30})
+        page.locator("li.task", has_text="Stalled").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 20})
     assert db.get_project(conn, ids["Stalled"])["area_id"] == work
     assert page.locator(".warn", has_text="No area").count() == 0  # its emptied group is gone
     page.reload()
@@ -288,13 +290,13 @@ def test_slash_on_inbox_focuses_its_add_box(page, live):
     assert not page.locator(".capture-dialog").evaluate("d => d.open")
 
 
-def test_task_rows_are_one_height(page, live):
+def test_task_rows_are_one_height(page, live, conn):
     """A Make next or Activate button mustn't make its row taller than the others."""
-    heights = []
-    for url in ("/projects/1", "/someday"):
+    db.add_project(conn, "Plain dream", status="someday", area_id=next(a["id"] for a in db.areas(conn) if a["title"] == "Home"))
+    for url, n in (("/projects/1", 3), ("/someday", 2)):  # the someday cards are compact, so compared among themselves
         page.goto(live + url)
-        heights += page.locator("ul.tasks > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
-    assert len(heights) >= 3 and max(heights) - min(heights) < 1, heights
+        heights = page.locator("ul.tasks > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
+        assert len(heights) >= n and max(heights) - min(heights) < 1, (url, heights)
 
 
 def test_project_row_arrow_folds_out_its_steps(page, live):
@@ -361,10 +363,11 @@ def test_new_option_reveals_the_name_box(page, live):
     page.goto(live + "/tasks/2")
     box = page.locator("input[name=new_project]")
     assert box.is_hidden()
-    page.select_option("select[name=project_id]", "__new__:4")  # Home's "＋ New project…"
+    page.select_option("select[name=project_id]", "__new__:4")  # Home's "＋ New project…": no save yet, it needs a name
     assert box.is_visible()
     page.fill("input[name=new_project]", "Garage")
-    page.get_by_role("button", name="Save", exact=True).click()
+    with page.expect_navigation():
+        page.locator("input[name=new_project]").blur()
     assert page.locator("select[name=project_id] option:checked").inner_text() == "Garage"
     assert page.locator("select[name=project_id] option:checked").evaluate("o => o.parentElement.label") == "Home"
 
@@ -441,8 +444,8 @@ def test_notes_render_markdown_and_save_what_you_typed(page, live, conn):
     page.keyboard.type("- *new* line")
     assert ed.locator("i").count() == 1
     page.keyboard.press("n")  # typing in the editor never fires a go-key
-    page.get_by_role("button", name="Save", exact=True).click()
-    page.wait_for_load_state()
+    with page.expect_response(lambda r: "/autosave/" in r.url):
+        page.locator("input.big").focus()  # leaving the notes saves them
     assert db.get_reference(conn, pid)["notes"].replace("\r\n", "\n") == \
         "# Head\nsee **bold** and https://example.com\n- *new* linen"
 
@@ -575,7 +578,8 @@ def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live,
     page.keyboard.type("Dragged")
     page.keyboard.press("Enter")
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
-    assert (db.get_task(conn, 1)["project_title"], db.get_task(conn, 1)["area_title"]) == ("Dragged", "Home")
+    p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
+    assert (p["title"], db.get_horizon(conn, p["area_id"])["title"]) == ("Dragged", "Home")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
 
 
@@ -651,7 +655,7 @@ def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, l
     assert (db.get_task(conn, 3)["project_id"], db.get_task(conn, 3)["step"]) == (2, "later")
     # The next action can't be reordered, but it can go: the page redraws, the project now stalled.
     drag_to_panel(page, row(page, "buy tiles").locator(".grip"), '[data-project="2"]')
-    page.locator("h2 .warn").wait_for()
+    page.locator(".title-line > .warn").wait_for()
     assert row(page, "buy tiles").count() == 0 and db.get_task(conn, 2)["project_id"] == 2
 
 
@@ -690,16 +694,6 @@ def test_project_sits_next_to_the_task_title(page, live, conn):
     assert r.locator(".meta .proj").count() == 0  # not out in the details column
 
 
-def test_project_counts_show_on_hover(page, live):
-    page.goto(live + "/projects")
-    r = page.locator("li.task", has=page.get_by_role("link", name="Kitchen", exact=True))
-    opacity = lambda: r.locator(":scope > .meta").evaluate("e => getComputedStyle(e).opacity")
-    page.mouse.move(0, 0)
-    assert opacity() == "0"
-    r.hover()
-    assert opacity() == "1"
-
-
 def test_project_steps_are_quiet_until_hover(page, live, conn):
     page.goto(live + "/projects/1")
     page.mouse.move(0, 0)
@@ -735,15 +729,27 @@ def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
     page.goto(live + "/next")
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
     assert style(page.locator("li.task").first, "borderBottomWidth") == "0px"
-    for url in ("/projects", "/someday", "/waiting", "/horizons?level=projects"):
+    for url in ("/waiting", "/horizons?level=projects"):
         page.goto(live + url)
         rows = page.locator("ul.cards > li.task")
         assert rows.count() >= 1, url
         assert float(style(rows.first, "borderTopLeftRadius")[:-2]) >= 16, url
         assert style(rows.first, "borderTopWidth") == "1px", url
-    page.goto(live + "/projects")
-    a, b = (page.locator("ul.cards > li.task").nth(i).bounding_box() for i in (0, 1))
-    assert b["y"] - (a["y"] + a["height"]) >= 4  # a gap between pills
+
+
+def test_projects_and_someday_are_tight_lists(page, live, conn):
+    """Projects and Someday: plain rows, like task rows but tighter, no pill boxes."""
+    home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
+    db.add_project(conn, "Shed", area_id=home)
+    db.add_project(conn, "Boat", status="someday", area_id=home)
+    style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
+    for url in ("/projects", "/someday"):
+        page.goto(live + url)
+        group = page.locator("section.area-group", has=page.locator("h2.area-head", has_text="Home"))
+        rows = group.locator("ul > li.task")
+        assert style(rows.first, "borderTopWidth") == "0px", url
+        a, b = rows.nth(0).bounding_box(), rows.nth(1).bounding_box()
+        assert a["height"] <= 30 and b["y"] - (a["y"] + a["height"]) <= 1, (url, a, b)
 
 
 # --- review fixes (2026-10-27) ---------------------------------------------
@@ -856,7 +862,7 @@ def test_due_and_repeat_boxes_preview_how_they_read(page, live):
     due, rule = page.locator(".when[data-parse=due]"), page.locator(".when[data-parse=recur]")
     page.fill("input[name=due_date]", "tomorrow")
     sync_api.expect(due).to_have_text("→ Fri Oct 23")
-    page.fill("input[name=recur]", "every 2 weeks")
+    page.fill("input[name=recur]", "every 2 weeks")  # leaving the due box saved it, in the background: no reload
     sync_api.expect(rule).to_have_text("→ every 2 weeks · next Fri Nov 6")
     page.fill("input[name=due_date]", "oct 30")  # the repeat's next date follows the due box
     sync_api.expect(rule).to_have_text("→ every 2 weeks · next Fri Nov 13")
@@ -864,6 +870,8 @@ def test_due_and_repeat_boxes_preview_how_they_read(page, live):
     sync_api.expect(rule).to_have_text("not understood")
     page.fill("input[name=due_date]", "")
     sync_api.expect(due).to_have_text("")
+    page.locator("input.big").focus()  # (saves the empty due date; the bad rule is flashed, not saved)
+    page.locator(".flashes", has_text="fortnightly").wait_for()
 
 
 def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, live, conn):
@@ -875,6 +883,93 @@ def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, l
         "el => { el.value = '2026-11-05T17:30'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
     assert page.input_value("input[name=remind_at]") == "2026-11-05 17:30"
     sync_api.expect(page.locator(".when[data-parse=remind]")).to_have_text("→ Thu Nov 5, 17:30")  # the preview follows
-    with page.expect_navigation():
-        page.get_by_role("button", name="Save", exact=True).click()
+    for _ in range(50):  # and the pick saves itself in the background
+        if db.get_task(conn, 7)["remind_at"] and datetime.fromisoformat(db.get_task(conn, 7)["remind_at"]).astimezone().strftime("%H:%M") == "17:30":
+            break
+        page.wait_for_timeout(50)
     assert datetime.fromisoformat(db.get_task(conn, 7)["remind_at"]).astimezone().strftime("%Y-%m-%d %H:%M") == "2026-11-05 17:30"
+
+
+# --- decluttering (2026-10-29) ---------------------------------------------
+
+def test_nav_hides_on_scrolling_down_and_returns_on_scrolling_up(page, live):
+    page.set_viewport_size({"width": 1200, "height": 500})
+    page.goto(live + "/next")
+    page.evaluate("document.querySelector('main').style.minHeight = '3000px'")  # room to scroll
+    hidden = lambda: page.evaluate("document.body.classList.contains('nav-hidden')")
+    page.mouse.move(600, 300)
+    page.mouse.wheel(0, 600)
+    page.wait_for_function("document.body.classList.contains('nav-hidden')")
+    page.mouse.wheel(0, -100)
+    page.wait_for_function("!document.body.classList.contains('nav-hidden')")
+    page.mouse.wheel(0, 300)
+    page.wait_for_function("document.body.classList.contains('nav-hidden')")
+    page.mouse.move(600, 10)  # pointing at the top edge brings it back
+    assert not hidden()
+
+
+def test_nav_hides_and_returns_with_touch_scrolling(browser, live):
+    """iPad: no mouse, only scrolling. Scrolling up must bring the nav back."""
+    ctx = browser.new_context(viewport={"width": 834, "height": 1194}, has_touch=True, is_mobile=True)  # iPad Pro 11
+    pg = ctx.new_page()
+    pg.goto(live + "/next")
+    pg.evaluate("document.querySelector('main').style.minHeight = '5000px'")
+    pg.evaluate("scrollTo(0, 800)")
+    pg.wait_for_function("document.body.classList.contains('nav-hidden')")
+    pg.wait_for_timeout(300)  # the slide
+    nav = pg.locator("nav").bounding_box()
+    assert nav["y"] + nav["height"] <= 1  # slid out of view
+    pg.evaluate("scrollTo(0, 500)")
+    pg.wait_for_function("!document.body.classList.contains('nav-hidden')")
+    ctx.close()
+
+
+@pytest.mark.parametrize("url", ["/projects/1", "/tasks/2"])
+def test_a_record_page_opens_centered_past_the_nav(page, live, url):
+    page.set_viewport_size({"width": 1200, "height": 700})
+    page.goto(live + url)
+    page.wait_for_function("document.body.classList.contains('nav-hidden')")
+    top = page.locator("input.big").bounding_box()["y"]
+    bottom = page.evaluate("Math.max(...[...document.querySelector('main').children].filter(e => e.tagName !== 'SCRIPT'"
+                           " && getComputedStyle(e).position !== 'fixed').map(e => e.getBoundingClientRect().bottom))")
+    assert page.locator("div.bar").bounding_box()["y"] + page.locator("div.bar").bounding_box()["height"] <= 0  # the search bar too
+    if bottom - top < 700 - 48:  # it fits: centered, as much room above as below
+        assert abs(top - (700 - bottom)) <= 6, (top, bottom)
+    else:  # taller: from near the top
+        assert 0 <= top <= 30, top
+    page.mouse.wheel(0, -50)  # scrolling up shows the nav again
+    page.wait_for_function("!document.body.classList.contains('nav-hidden')")
+
+
+def test_project_status_select_saves_on_pick(page, live, conn):
+    page.goto(live + "/projects/1")
+    assert page.get_by_role("button", name="Abandon").count() == 0 and page.get_by_role("button", name="Someday").count() == 0
+    with page.expect_navigation():
+        page.get_by_label("Status").select_option("someday")
+    assert db.get_project(conn, 1)["status"] == "someday" and page.url == live + "/projects/1"
+    with page.expect_navigation():
+        page.get_by_label("Status").select_option("abandoned")
+    assert db.get_project(conn, 1)["status"] == "abandoned"
+    with page.expect_navigation():
+        page.get_by_label("Status").select_option("active")
+    assert db.get_project(conn, 1)["status"] == "active"
+
+
+def test_task_step_select_saves_on_pick(page, live, conn):
+    page.goto(live + "/tasks/3")  # "lay tiles", a later step
+    with page.expect_navigation():
+        page.locator("select[name=step]").select_option("waiting")
+    assert db.get_task(conn, 3)["step"] == "waiting" and page.url == live + "/tasks/3"
+    assert page.get_by_role("button", name="Save").count() == 0 or not page.get_by_role("button", name="Save").is_visible()
+
+
+def test_project_time_split_folds_out(page, live):
+    """A project page shows its total time; the per-step bars only after "Show split"."""
+    page.goto(live + "/projects/1")
+    tally = page.locator("details.tally")
+    assert tally.locator("h2 b").is_visible() and not tally.locator("ul").is_visible()
+    assert tally.locator(".split-toggle").evaluate("e => getComputedStyle(e, '::after').content") == '"Show split"'
+    tally.locator("summary").click()
+    assert tally.locator("ul").is_visible()
+    assert tally.locator(".split-toggle").evaluate("e => getComputedStyle(e, '::after').content") == '"Hide split"'
+    assert page.get_by_text("Show completed").is_visible()  # completed steps start hidden

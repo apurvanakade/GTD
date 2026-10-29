@@ -9,7 +9,6 @@
   {# The project follows the title, in the same text flow; the meta column keeps only step, date and repeat. #}
   <span class="name"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
     {%- if project and t.project_title %} <a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
-      {%- if t.area_title %} <a class="area" href="{{ url_for('horizon_view', id=t.area_id) }}">{{ t.area_title }}</a>{% endif %}
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
@@ -22,7 +21,6 @@
     {% if t.remind_at and not t.reminded_at and not closed %}<span class="remind" title="Reminder {{ t.remind_at|local_minute }}">🔔</span>
     {%- else %}<span class="remind"></span>{% endif %}
   </span>
-  {% if project and t.project_id and not closed %}<form method="post" action="{{ url_for('complete_then_project', id=t.id) }}" class="then"><button title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button></form>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
   {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}
@@ -114,25 +112,37 @@
 </select>
 {% endmacro %}
 
-{# A project as a card (Projects, Someday, an area's page): it fills up as steps get done and fades once untouched for
-   IDLE_DAYS; ▸ folds out its open steps. A someday one offers Activate instead. #}
+{# A project as a card (Projects, Someday, an area's page): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
+   A someday one offers Activate. #}
 {% macro project_card(p, steps) %}
-{% set total = p.open_count + p.done_count %}{% set idle = p.last_active|idle_days %}{% set live = p.status == 'active' %}
-<li class="task{% if live and not p.next_count %} stalled{% endif %}{% if live and idle >= IDLE_DAYS %} idle{% endif %}" data-id="{{ p.id }}"
-  {%- if live %} style="--done: {{ (100 * p.done_count / total)|round|int if total else 0 }}%" title="{{ p.done_count }} of {{ total }} steps done{% if idle >= IDLE_DAYS %} · No activity for {{ idle }} days{% endif %}"{% endif %}>
+{% set stalled = p.status == 'active' and not p.next_count %}
+<li class="task{{ ' stalled' if stalled }}" data-id="{{ p.id }}"{% if stalled %} title="No next action"{% endif %}>
   {% if p.status in ('active', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {{ peek_button() }}
-  <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if live and not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
-  <span class="meta">{{ p.open_count }} open</span>
+  <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if stalled %}⚠ {% endif %}{{ p.title }}</a>
   {% if p.status == 'someday' %}<form method="post" action="{{ url_for('project_view', id=p.id) }}" class="row-btn"><button name="status" value="active">Activate</button></form>{% endif %}
   {{ peek_steps(steps.get(p.id, [])) }}
 </li>
 {% endmacro %}
 
-{# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
+{# Projects and Someday: one compact group per area (db.by_area()), "⚠ No area" last. Dragging a project into another
+   group moves it to that area (the reorder JS in base.html); nothing can be dropped into "No area". #}
+{% macro area_groups(groups, steps, status, empty) %}
+{% if groups %}<div class="area-groups">
+  {% for area, ps in groups %}<section class="area-group">
+    <h2 class="area-head">{% if area %}<a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% else %}<span class="warn">⚠ No area</span>{% endif %}</h2>
+    <ul class="tasks cards" data-reorder="{{ url_for('projects_order', status=status) }}"{% if area %} data-area="{{ area.id }}"{% endif %}>
+      {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
+    </ul>
+  </section>{% endfor %}
+</div>
+{% else %}<ul class="tasks cards"><li class="empty">{{ empty }}</li></ul>{% endif %}
+{% endmacro %}
+
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
 {% macro title_marks() %}<p class="hint marks">&gt;fri due · *weekly repeat · !3pm remind</p>{% endmacro %}
 
+{# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
 {% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', marks=False) %}
 <form method="post" action="{{ action }}" class="add{{ ' ' ~ cls if cls }}"{% if id %} id="{{ id }}"{% endif %}>
   <span class="plus" aria-hidden="true">+</span>
@@ -144,14 +154,17 @@
 
 
 {# Time as bars, as on the Timer page: a big total, then one accent bar per item, longest first.
-   `totals` are (label, seconds) pairs, or (label, seconds, task id) to make the label open that task. #}
-{% macro tally(heading, totals, blank='', cls='') %}
-<section class="tally{{ ' ' ~ cls if cls }}">
-<h2>{{ heading }} {% if totals %}<b>{{ totals|sum(attribute=1)|hm }}</b>{% endif %}</h2>
+   `totals` are (label, seconds) pairs, or (label, seconds, task id) to make the label open that task.
+   fold=True (a project page): only the total shows; "Show split" unfolds the bars. #}
+{% macro tally(heading, totals, blank='', cls='', fold=False) %}
+{% set tag = 'details' if fold else 'section' %}
+<{{ tag }} class="tally{{ ' ' ~ cls if cls }}">
+{% if fold %}<summary>{% endif %}<h2>{{ heading }} {% if totals %}<b>{{ totals|sum(attribute=1)|hm }}</b>{% endif %}
+  {%- if fold %} <span class="split-toggle"></span>{% endif %}</h2>{% if fold %}</summary>{% endif %}
 {% if totals %}{% set top = totals[0][1] or 1 %}<ul>
   {% for item in totals %}{% set label, secs = item[0], item[1] %}<li title="{{ label }} · {{ secs|hm }}">
     {%- if item|length > 2 %}<a class="who" href="{{ url_for('task_view', id=item[2]) }}">{{ label }}</a>{% else %}<span class="who">{{ label }}</span>{% endif -%}
     <span class="bar"><i style="width: {{ (100 * secs / top)|round|int }}%"></i></span><span class="dur">{{ secs|hm }}</span></li>{% endfor %}
 </ul>{% else %}<p class="empty">{{ blank }}</p>{% endif %}
-</section>
+</{{ tag }}>
 {% endmacro %}

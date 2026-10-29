@@ -5,12 +5,12 @@
 {% block heading %}<h1>Horizons of focus</h1>{% endblock %}
 {# One horizon shows at a time, H5 down to H0, like the weekly review's steps. #}
 {% set hints = {
-  'purpose': 'Why you do what you do, and the principles you won\'t compromise. Revisit yearly.',
-  'vision': 'What wild success looks like in 3–5 years, at work, at home, in health. Revisit yearly.',
-  'goal': 'What you want done in 1–2 years. Revisit quarterly: does each have a project serving it?',
-  'area': 'The responsibilities you keep up; every project belongs to one. Does each have the projects it needs?',
-  'projects': 'Your active projects. A stalled one (⚠) needs a next action.',
-  'ground': 'Tasks you chose to keep outside any project. Set H0 in a task\'s project picker.',
+  'purpose': 'Why you do it. Yearly.',
+  'vision': 'Success in 3–5 years. Yearly.',
+  'goal': '1–2 years out. Quarterly.',
+  'area': 'What you keep up.',
+  'projects': 'Active projects.',
+  'ground': 'Tasks outside any project.',
 } %}
 {% block actions %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endblock %}
 {% block body %}
@@ -27,7 +27,7 @@
     <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
       <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', step)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
       <p class="autosave hint" aria-live="polite"></p>
-      <div class="row"><button>Save</button></div>
+      <button hidden>Save</button>
     </form>
     {% elif step in ('goal', 'area') %}
     <span class="count">{{ items[step]|length }}</span>
@@ -55,7 +55,6 @@
       {% for p in projects %}
       <li class="task{% if not p.next_count %} stalled{% endif %}">
         <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
-        <span class="meta">{{ p.open_count }} open</span>
       </li>
       {% else %}
       <li class="empty">No active projects.</li>

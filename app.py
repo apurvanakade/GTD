@@ -7,9 +7,8 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urlsplit
 
-from flask import Flask, abort, flash, g, make_response, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, g, get_flashed_messages, make_response, redirect, render_template, request, url_for
 
 import dates
 import db
@@ -57,7 +56,7 @@ def local_now():
 @app.context_processor
 def template_globals():
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
-            "timer": db.timer_running(conn()), "areas": db.areas(conn()), "IDLE_DAYS": IDLE_DAYS}
+            "timer": db.timer_running(conn()), "areas": db.areas(conn())}
 
 
 NEW = "__new__"  # project_select's "＋ New project…" option, one per area: __new__:<area id> (_task.html)
@@ -235,20 +234,20 @@ def task_move():
 
 # --- lists -----------------------------------------------------------------
 
-def toggle_url(show, default=False):
-    """This page's URL with ?done flipped, keeping other query args. A page that shows completed by default flips ?done=0."""
+def toggle_url(show):
+    """This page's URL with ?done flipped, keeping other query args."""
     args = {k: v for k, v in request.args.items() if k != "done" and k not in request.view_args}
-    flip = {} if (not show) == default else {"done": int(not show)}
+    flip = {} if show else {"done": 1}
     return url_for(request.endpoint, **request.view_args, **flip, **args)
 
 
-def completed(default=False, abandoned=False, **filters):
-    """Template variables for the "Show completed" toggle (?done=1, or ?done=0 to hide where shown by default): the done tasks,
-    newest completion first, and with abandoned=True the abandoned ones too, listed below them."""
-    show = request.args.get("done", "1" if default else "0") == "1"
+def completed(abandoned=False, **filters):
+    """Template variables for the "Show completed" toggle (?done=1): the done tasks, newest completion first, and with
+    abandoned=True the abandoned ones too, listed below them."""
+    show = request.args.get("done") == "1"
     return {"show_done": show, "done_tasks": db.done_tasks(conn(), **filters) if show else [],
             "abandoned_tasks": db.done_tasks(conn(), state="abandoned", **filters) if show and abandoned else [],
-            "toggle_url": toggle_url(show, default)}
+            "toggle_url": toggle_url(show)}
 
 
 @app.route("/next")
@@ -403,8 +402,7 @@ def long_date(iso):
 @app.route("/review")
 def review():
     c = conn()
-    all_next = db.next_actions(c, today())
-    nexts = [t for t in all_next if not (t["due_date"] and t["due_date"] >= today().isoformat())]
+    nexts = [t for t in db.next_actions(c, today()) if not (t["due_date"] and t["due_date"] >= today().isoformat())]
     checked = db.review_checked(c)
     step = request.args.get("step")
     if step not in REVIEW_STEPS:  # the first step still to do
@@ -418,7 +416,7 @@ def review():
     weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
     return render_template("review.html", stalled=db.stalled_projects(c), no_area=db.no_area(c),
                            overdue=db.overdue(c, today()),
-                           nexts=nexts, scheduled=len(all_next) - len(nexts),
+                           nexts=nexts,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 
 
@@ -481,14 +479,10 @@ def task_view(id):
         elif ground and fields.get("step") in ("waiting", "later"):
             flash("H0 tasks are always next actions.")
         flash_demoted(db.update_task(c, id, **fields))
-        nxt = request.form.get("next") or None
-        if request.form.get("exit"):
-            return redirect(nxt or url_for("next_view"))
-        flash("Saved.")
-        return redirect(url_for("task_view", id=id, back=nxt))  # stay, but keep where "exit" goes
-    return render_template("task.html", t=t, project_groups=db.project_groups(c),
-                           back=request.args.get("back") or request.referrer,
-                           seconds=db.task_seconds(c, id, now()))
+        if request.headers.get("X-Requested-With") == "fetch":  # a field saved in the background: just its messages
+            return {"flashes": get_flashed_messages()}
+        return redirect(url_for("task_view", id=id))
+    return render_template("task.html", t=t, project_groups=db.project_groups(c), seconds=db.task_seconds(c, id, now()))
 
 
 def flash_demoted(titles):
@@ -503,8 +497,6 @@ def complete(id):
     db.complete_task(c, id, today(), now())
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
-    if request.form.get("exit"):
-        return redirect(request.form.get("next") or url_for("next_view"))
     return back()
 
 
@@ -527,10 +519,7 @@ def delete(id):
     elif t:
         db.abandon_task(c, id, now())
         return back()  # an abandoned task's page still shows it, with Revive
-    nxt = request.form.get("next")
-    if nxt and urlsplit(nxt).path == url_for("task_view", id=id):  # e.g. after a save; the page is gone now
-        nxt = None
-    return redirect(nxt or url_for("next_view"))
+    return redirect(url_for("done"))  # where abandoned tasks are listed; its own page is gone
 
 
 @app.post("/tasks/<int:id>/revive")
@@ -587,13 +576,7 @@ def project_create():
     return back("projects_view")
 
 
-IDLE_DAYS = 14  # a project untouched this long fades on the Projects page
-
-
-@app.template_filter()
-def idle_days(utc):
-    """Whole days since a UTC 'YYYY-MM-DD HH:MM:SS' stamp."""
-    return (now() - datetime.fromisoformat(utc).replace(tzinfo=timezone.utc)).days
+PROJECT_STATUSES = ("active", "waiting", "someday", "done")  # what the status select sets; "abandoned" abandons
 
 
 @app.route("/projects/<int:id>", methods=["GET", "POST"])
@@ -607,29 +590,25 @@ def project_view(id):
         fields["title"] = fields.get("title") or p["title"]
         if area_from(request.form.get("area_id")):  # left blank (a project with none yet): unchanged
             fields["area_id"] = area_from(request.form["area_id"])
-        # An abandoned project comes back only through Revive, which brings its steps back too.
-        status = None if p["status"] == "abandoned" else request.form.get("status")
+        status = request.form.get("status")
+        if status == "abandoned" and p["status"] != "abandoned":  # with its open steps; it's on Done, revivable
+            db.update_project(c, id, **fields)
+            db.abandon_project(c, id, now())
+            flash(f"Abandoned “{fields['title']}”: it's on Done.")
+            return back()
+        if p["status"] == "abandoned" and status in PROJECT_STATUSES:  # revived with its steps, then given the status
+            db.revive_project(c, id)
         if status == "done" and db.project_tasks(c, id):
             flash("Finish, move or delete the project's open tasks first.")
-        elif status in ("active", "waiting", "someday", "done"):
+        elif status in PROJECT_STATUSES:
             fields["status"] = status
         db.update_project(c, id, **fields)
-        if fields.get("status") == "someday":
+        if fields.get("status") == "someday" != p["status"]:
             flash(f"Moved “{fields['title']}” to someday / maybe.")
         return back()
     return render_template("project.html", p=p, area=p["area_id"] and db.get_horizon(c, p["area_id"]), tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
                            project_groups=db.project_groups(c),
-                           times=db.step_totals(c, id, now()), **completed(default=True, abandoned=True, project_id=id))
-
-
-@app.post("/projects/<int:id>/abandon")
-def project_abandon(id):
-    """Give up on a project, with its open steps: it moves to Done, revivable. Stays on the page."""
-    c = conn()
-    p = db.get_project(c, id) or abort(404)
-    db.abandon_project(c, id, now())
-    flash(f"Abandoned “{p['title']}”: it's on Done.")
-    return back()
+                           times=db.step_totals(c, id, now()), **completed(abandoned=True, project_id=id))
 
 
 @app.post("/projects/<int:id>/revive")

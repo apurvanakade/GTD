@@ -78,13 +78,14 @@
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
+{# Messages float over the page and fade, so a record page opened on its title (below) still shows them. #}
+{% with flashes = get_flashed_messages() %}{% if flashes %}<div class="flashes" role="status">{% for m in flashes %}<p class="flash">{{ m }}</p>{% endfor %}</div>{% endif %}{% endwith %}
 <main>
-  {# Every page: an optional back link, the heading with its few actions, then the page (add line, list). #}
+  {# Every page: an optional link up, the heading with its few actions, then the page (add line, list). #}
   <header class="page">
     {% block crumb %}{% endblock %}
     <div class="head">{% block heading %}<h1>{{ self.title() }}</h1>{% endblock %}<span class="actions">{% block actions %}{% endblock %}</span></div>
   </header>
-  {% for m in get_flashed_messages() %}<p class="flash">{{ m }}</p>{% endfor %}
   {% block body %}{% endblock %}
 </main>
 <script>
@@ -97,6 +98,37 @@ async function post(url, body) {
   location.reload();
   return false;
 }
+// The nav slides away while you scroll down and comes back when you scroll up, reach the top, or point at the top
+// edge. Touch scrolling (iPad) drives it too; the clamp ignores Safari's rubber band.
+(() => {
+  let last = scrollY;
+  const show = on => document.body.classList.toggle('nav-hidden', !on);
+  addEventListener('scroll', () => {
+    const y = Math.max(0, Math.min(scrollY, document.documentElement.scrollHeight - innerHeight));
+    if (Math.abs(y - last) < 4) return;
+    show(y < last || y <= document.querySelector('nav').offsetHeight);
+    last = y;
+  }, {passive: true});
+  addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
+  document.addEventListener('focusin', e => { if (e.target.closest('nav')) show(true); });
+})();
+// A record page (project, task, horizon, reference) opens scrolled past the nav, its body (title to the end of the
+// page) centered in the window, or from the top when taller. Room above the title (main's padding) makes that possible
+// however short the page; a reload or Back keeps the browser's own scroll.
+(() => {
+  const big = document.querySelector('main .big'), main = document.querySelector('main');
+  if (!big) return;
+  main.style.paddingTop = '1px';  // measured with some padding, which stops the header's margins collapsing through main
+  const top = el => el.getBoundingClientRect().top + scrollY, start = top(big);
+  const end = Math.max(...[...main.children].filter(el => el.tagName !== 'SCRIPT' && getComputedStyle(el).position !== 'fixed')
+    .map(el => el.getBoundingClientRect().bottom + scrollY));
+  const gap = Math.max(24, (innerHeight - (end - start)) / 2);
+  const pad = Math.max(1, top(main) + 2 + gap - start);  // the scroll must pass the nav and search bar; the nav slides away
+  main.style.paddingTop = pad + 'px';
+  main.style.minHeight = `calc(100vh + ${gap}px)`;  // room to scroll that far
+  const how = performance.getEntriesByType('navigation')[0]?.type;
+  if (how !== 'reload' && how !== 'back_forward') scrollTo({top: start + pad - gap, behavior: 'instant'});
+})();
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
   if (document.querySelector('dialog[open]')) return;  // Esc closes it natively
@@ -123,8 +155,38 @@ function capture() {
   inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
 }
 document.querySelector('.add-inbox').addEventListener('click', capture);
-// A select marked data-submit (the project page's area) saves its form as soon as a choice is picked.
-document.addEventListener('change', e => { if (e.target.matches('select[data-submit]')) e.target.form.requestSubmit(); });
+// A select marked data-submit (the project page's status and area) saves its form as soon as a choice is picked.
+// A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
+// it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
+// Title and notes are autosave.js's; "＋ New project…" waits for its name; a box whose 📅 picker is open waits for it.
+document.addEventListener('change', async e => {
+  const el = e.target, f = el.form;
+  if (!f) return;
+  if (el.matches('select[data-submit]')) return f.requestSubmit();
+  if (!('saveOnChange' in f.dataset) || !el.name || ['title', 'notes'].includes(el.name)) return;
+  if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
+  if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();
+  const body = new URLSearchParams();
+  for (const name of ['due_date', 'recur', 'remind_at']) body.set(name, f.elements[name].value);
+  try {
+    const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
+    if (r.ok) return toast((await r.json()).flashes);
+  } catch {}
+  location.reload();
+});
+document.addEventListener('keydown', e => {  // Enter in such a box saves it the same way, without a reload
+  const el = e.target;
+  if (e.key === 'Enter' && el.form && 'saveOnChange' in el.form.dataset && el.matches('input:not(.big)')) { e.preventDefault(); el.blur(); }
+});
+// Messages from a background save, shown like the server's.
+function toast(messages) {
+  document.querySelector('body > .flashes')?.remove();
+  if (!messages?.length) return;
+  const box = Object.assign(document.createElement('div'), {className: 'flashes'});
+  box.setAttribute('role', 'status');
+  for (const m of messages) box.append(Object.assign(document.createElement('p'), {className: 'flash', textContent: m}));
+  document.querySelector('main').before(box);
+}
 // 📅 opens the native date picker; its pick lands in the text box beside it.
 document.addEventListener('click', e => {
   const b = e.target.closest('.date-field .pick');
@@ -135,11 +197,16 @@ document.addEventListener('click', e => {
   picker.value = (picker.type === 'date' ? /^\d{4}-\d\d-\d\d$/ : /^\d{4}-\d\d-\d\dT\d\d:\d\d$/).test(v) ? v : '';
   picker.showPicker();
 });
+// Pressing 📅 leaves the box: its own change waits for the pick (`picking`), which then saves it.
+document.addEventListener('pointerdown', e => e.target.closest('.date-field .pick')?.parentElement.classList.add('picking'));
+document.addEventListener('focusin', e => { if (e.target.matches('.date-field input[name]')) e.target.parentElement.classList.remove('picking'); });
 document.addEventListener('change', e => {
   if (!e.target.matches('.date-field .picker')) return;
-  const text = e.target.closest('.date-field').querySelector('input[name]');
+  const field = e.target.closest('.date-field'), text = field.querySelector('input[name]');
+  field.classList.remove('picking');
   text.value = e.target.value.replace('T', ' ');  // "2026-10-30 17:00", as the Remind box shows it
   text.dispatchEvent(new Event('input', {bubbles: true}));  // so the box's preview follows
+  text.dispatchEvent(new Event('change', {bubbles: true}));  // and a task page saves it
 });
 // The task page's Due, Repeats and Remind boxes: the hint beside each shows how it reads, live (/parse/<kind>). A
 // repeat's next date follows the Due box too. An untouched Remind box keeps "sent" (or nothing) instead.
@@ -191,7 +258,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
 // Drag ⠿ to reorder a project's steps, or the projects on Projects and Someday; the new order is saved in the background.
-// There a project dragged into another area's list (same page, `data-area`) moves to that area; "No area" takes none.
+// There a project dragged into another area's group (same page, `data-area`) moves to that area; "No area" takes none.
 (() => {
   let dragged = null, from = null;
   // Only a list's own rows count, not the steps a project row folds out.
@@ -230,10 +297,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     if (list !== from) {
       body.set('moved', dragged.dataset.id);
       body.set('area_id', list.dataset.area);
-      if (!rows(from).length) {  // the area it left is empty now: drop its heading too
-        if (from.previousElementSibling?.matches('h2.area-head')) from.previousElementSibling.remove();
-        from.remove();
-      }
+      if (!rows(from).length) (from.closest('.area-group') || from).remove();  // the area it left is empty now: drop its group
     }
     dragged = from = null;
     post(list.dataset.reorder, body);

@@ -1,34 +1,26 @@
 {% extends "base.html" %}
 {% from "_task.html" import row, date_input, add_form, area_select, tally, pin_button, move_panel with context %}
 {% block title %}{{ p.title }}{% endblock %}
-{% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for'), 'abandoned': ('done', 'Done')}.get(p.status, ('projects_view', 'Projects')) %}
-<p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if area %} · <a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% endif %}{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
-{% endblock %}
 {% block heading %}{% endblock %}
-{% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
+{# The title line: status and area save as soon as they're picked; title and notes save themselves (autosave.js). #}
 <form method="post" class="project" data-autosave="{{ url_for('autosave', kind='projects', id=p.id) }}">
-  <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
+  <button hidden>Save</button>{# the default, so Enter in the title saves #}
+  <div class="title-line">
+    <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
+    {% set warns = (['No next action: pick one with Make next'] if p.status == 'active' and not has_next else [])
+      + (['No area: pick one'] if not p.area_id and p.status not in ('done', 'abandoned') else []) %}
+    {% if warns %}<span class="warn" title="{{ warns|join(' · ') }}">⚠</span>{% endif %}
+    <select name="status" data-submit aria-label="Status" title="Status: saves when picked">
+      {% for s in ['active', 'waiting', 'someday', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    {{ area_select(p.area_id, keep=area, submit=True) }}
+    {% if tasks %}{{ pin_button() }}{% endif %}
+    {% if not tasks and not times %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
+  </div>
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
-  <div class="row">
-    {{ area_select(p.area_id, keep=area, submit=True) }}
-    <button class="primary">Save</button>
-    {% if p.status == 'abandoned' %}<button formaction="{{ url_for('project_revive', id=p.id) }}" title="Back to someday / maybe, with its steps">Revive</button>
-    {% else %}
-    {% if p.status != 'active' %}<button name="status" value="active">Activate</button>{% endif %}
-    {% if p.status != 'waiting' %}<button name="status" value="waiting">Waiting</button>{% endif %}
-    {% if p.status != 'someday' %}<button name="status" value="someday">Someday</button>{% endif %}
-    {% if p.status != 'done' %}<button name="status" value="done">Complete</button>{% endif %}
-    <button formaction="{{ url_for('project_abandon', id=p.id) }}" title="Give up on it and its open steps: it moves to Done, revivable">Abandon</button>
-    {% endif %}
-    {% if not tasks and not times %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger end" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
-  </div>
 </form>
-{% if not p.area_id and p.status not in ('done', 'abandoned') %}<p class="hint warn">⚠ No area: pick the area this project belongs to.</p>{% endif %}
-{% if p.status == 'abandoned' %}<p class="hint">Abandoned project: Revive brings it back to someday / maybe, with its steps.</p>
-{% elif p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
-<h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}</h2>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step', marks=True) %}
   <select name="step" aria-label="Step">
     {% for s in ['next', 'later', 'waiting'] %}<option{% if s == 'later' %} selected{% endif %}>{{ s }}</option>{% endfor %}
@@ -39,6 +31,6 @@
 {% endcall %}
 <ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step in ('later', 'waiting')), grip=True) }}{% endfor %}</ul>
 {% set in_project = true %}{% include "_done_toggle.html" %}
-{% if times %}{{ tally('Time', times, cls='wide') }}{% endif %}
+{% if times %}{{ tally('Time', times, cls='wide', fold=True) }}{% endif %}
 {% if tasks %}{{ move_panel('project', current=p.id) }}{% endif %}
 {% endblock %}

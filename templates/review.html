@@ -14,32 +14,31 @@
 {% block actions %}{{ stepper('review', 'step', steps, step, checked) }}{% endblock %}
 {% block body %}
 <ol class="deck review">
-  {% call card('sweep', 'Mind sweep', 'Capture every open loop in your head with +, then check your physical inbox, email and notes.') %}{% endcall %}
-  {% call card('inbox', 'Inbox to zero', 'File, do or drop every inbox item.', counts.inbox) %}
+  {% call card('sweep', 'Mind sweep', 'Capture every open loop.') %}{% endcall %}
+  {% call card('inbox', 'Inbox to zero', 'File, do or drop each.', counts.inbox) %}
     {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox') }}">Inbox →</a></p>{% endif %}
   {% endcall %}
-  {% call card('overdue', 'Overdue', 'Do, reschedule or drop each one.', overdue|length) %}
+  {% call card('overdue', 'Overdue', 'Do, reschedule or drop.', overdue|length) %}
     {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
-  {% call card('stalled', 'Stalled projects', 'Pick each one\'s next action, mark it waiting or someday, or mark it done. Give each one an area.', stalled|length + no_area|length) %}
+  {% call card('stalled', 'Stalled projects', 'Next action and area for each.', stalled|length + no_area|length) %}
     {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>{% endif %}
     {% if no_area %}<ul class="plain">{% for p in no_area %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a> <span class="hint">no area</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
-  {% call card('nexts', 'Scan next actions', 'Tick off what\'s done, delete what\'s dead.', nexts|length) %}
+  {% call card('nexts', 'Scan next actions', 'Tick off done, drop dead.', nexts|length) %}
     {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}
-    {% if scheduled %}<p class="hint">{{ scheduled }} due today or later {{ 'is' if scheduled == 1 else 'are' }} left out.</p>{% endif %}
     <p><a class="button" href="{{ url_for('next_view') }}">Next actions →</a></p>
   {% endcall %}
-  {% call card('waiting', 'Chase waiting-fors', 'Nudge anyone who\'s overdue.', counts.waiting) %}
+  {% call card('waiting', 'Chase waiting-fors', 'Nudge the overdue.', counts.waiting) %}
     {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
   {% endcall %}
-  {% call card('someday', 'Scan someday / maybe', 'Activate anything whose time has come.', counts.someday) %}
+  {% call card('someday', 'Scan someday / maybe', 'Activate what\'s ready.', counts.someday) %}
     {% if counts.someday %}<p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
   {% endcall %}
-  {% call card('ahead', 'Look ahead', 'What\'s due in the next few weeks needs prep now?') %}
+  {% call card('ahead', 'Look ahead', 'What needs prep now?') %}
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
   {% endcall %}
-  {% call card('horizons', 'Check horizons', 'Do your projects serve your goals and areas? Anything missing?') %}
+  {% call card('horizons', 'Check horizons', 'Anything missing?') %}
     <p><a class="button" href="{{ url_for('horizons_view') }}">Horizons →</a></p>
   {% endcall %}
 </ol>

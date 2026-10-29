@@ -1,57 +1,54 @@
 {% extends "base.html" %}
 {% from "_task.html" import project_select, date_input with context %}
 {% block title %}{{ t.title }}{% endblock %}
-{% block crumb %}
-{% set running = timer and timer.task_id == t.id %}
-<div class="crumb">
-  {% if t.project_id %}<form method="post" action="{{ url_for('project_view', id=t.project_id) }}">
-    <a href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
-    {% if t.project_status != 'someday' %}<button name="status" value="someday" title="Park the whole project and its tasks">Move project to someday</button>{% endif %}
-  </form>{% endif %}
-  {# The timer sits by the title, as prominent as on the lists; while running, the total ticks. #}
-  {% if running or t.state == 'open' or seconds %}<form method="post" class="task-timer{{ ' on' if running }}"
-      action="{{ url_for('timer_stop') if running else url_for('task_start', id=t.id) }}">
-    {% if running %}<button title="Stop the timer" aria-label="Stop the timer">■</button>
-    {% elif t.state == 'open' %}<button title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
-    {% if running %}<span class="clock" data-seconds="{{ seconds|int }}">{{ seconds|hms }}</span>
-    {% elif seconds %}<span class="clock">{{ seconds|hm }}</span>{% endif %}
-  </form>{% endif %}
-</div>
-{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-<form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}">
-  <input type="hidden" name="next" value="{{ back or '' }}">
-  <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
+{# Title and notes save themselves (autosave.js); every other field saves when it's changed (the JS in base.html). #}
+<form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
+  <button hidden>Save</button>{# the default, so Enter in a field saves #}
+  {% set running = timer and timer.task_id == t.id %}
+  <div class="title-line">
+    <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
+    {# The timer, with the time spent; while running, the total ticks. #}
+    {% if running or t.state == 'open' or seconds %}<span class="task-timer{{ ' on' if running }}">
+      {% if running %}<button formaction="{{ url_for('timer_stop') }}" title="Stop the timer" aria-label="Stop the timer">■</button>
+      {% elif t.state == 'open' %}<button formaction="{{ url_for('task_start', id=t.id) }}" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
+      {% if running %}<span class="clock" data-seconds="{{ seconds|int }}">{{ seconds|hms }}</span>
+      {% elif seconds %}<span class="clock">{{ seconds|hm }}</span>{% endif %}
+    </span>{% endif %}
+    {% if t.state == 'abandoned' %}
+    <button formaction="{{ url_for('revive', id=t.id) }}" class="icon" title="Bring it back" aria-label="Revive">↺</button>
+    <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this task for good?')">✕</button>
+    {% else %}
+    {% if t.state == 'open' %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Done" aria-label="Done">✓</button>
+    {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
+    <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
+    {% endif %}
+  </div>
   <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
-  {# Only a project's open tasks have a step: an inbox item is waiting to be filed, an H0 task is just to be done. #}
-  {% if t.step and t.state == 'open' %}<label>Step
-    <select name="step">
-      {% for s in ['next', 'waiting', 'later'] %}<option{% if s == t.step %} selected{% endif %}>{{ s }}</option>{% endfor %}
-    </select>
-  </label>{% endif %}
-  <label>Project
-    {{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
-  </label>
-  {#- Each .when hint shows how its box reads, as you type (the JS in base.html, /parse/<kind>). #}
-  <label>Due {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
-  <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…">
-    <span class="hint when" data-parse="recur"></span></label>
-  <label>Remind {{ date_input(t.remind_at|local_minute, 'tomorrow 9am, fri 14:00, in 2 hours…', name='remind_at', label='Remind',
-    type='datetime-local') }}
-    {#- "sent" until the box is changed. #}
-    <span class="hint when" data-parse="remind" data-sent="{{ 'sent' if t.reminded_at }}"{% if t.reminded_at %} title="Sent {{ t.reminded_at|local_minute }}"{% endif %}>
-      {{- 'sent' if t.reminded_at }}</span></label>
-  <div class="row">
-    <button class="primary">Save</button>
-    <button name="exit" value="1">Save &amp; exit</button>
-    {% if t.state == 'abandoned' %}<button formaction="{{ url_for('revive', id=t.id) }}" title="Bring it back">Revive</button>
-    {% else %}<button formaction="{{ url_for('complete', id=t.id) }}">Done</button>
-    <button formaction="{{ url_for('complete', id=t.id) }}" name="exit" value="1" title="Mark done and go back">Done &amp; exit</button>
-    {% if t.project_id and t.state == 'open' %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" title="Done, then pick the project's next action">Done &amp; next</button>{% endif %}{% endif %}
-    {% if t.state == 'abandoned' %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" onclick="return confirm('Delete this task for good?')">Delete for good</button>
-    {% else %}<button formaction="{{ url_for('delete', id=t.id) }}" class="danger end" title="Stays on Done, revivable">Delete</button>{% endif %}
+  <div class="fields">
+    <label>Project
+      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
+      {%- if t.project_id %}<a href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
+    </label>
+    {# Only a project's open tasks have a step: an inbox item is waiting to be filed, an H0 task is just to be done. #}
+    {% if t.step and t.state == 'open' %}<label>Step
+      <select name="step">
+        {% for s in ['next', 'waiting', 'later'] %}<option{% if s == t.step %} selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </label>{% endif %}
+  </div>
+  <div class="fields">
+    {#- Each .when hint shows how its box reads, as you type (the JS in base.html, /parse/<kind>). #}
+    <label>Due {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
+    <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks after done…">
+      <span class="hint when" data-parse="recur"></span></label>
+    <label>Remind {{ date_input(t.remind_at|local_minute, 'tomorrow 9am, fri 14:00…', name='remind_at', label='Remind',
+      type='datetime-local') }}
+      {#- "sent" until the box is changed. #}
+      <span class="hint when" data-parse="remind" data-sent="{{ 'sent' if t.reminded_at }}"{% if t.reminded_at %} title="Sent {{ t.reminded_at|local_minute }}"{% endif %}>
+        {{- 'sent' if t.reminded_at }}</span></label>
   </div>
 </form>
 {% endblock %}

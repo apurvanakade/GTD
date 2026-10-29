@@ -5,23 +5,23 @@
 {% block heading %}{% endblock %}
 {% block body %}
 <form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
-  <input name="title" value="{{ h.title }}" class="big" aria-label="Title" required>
-  <textarea name="notes" rows="{{ 6 if h.level == 'area' else 14 }}" placeholder="{% if h.level == 'goal' %}Outcome, target date, which areas and projects it serves…{% elif h.level == 'area' %}This area is fine when… Standards, recurring responsibilities…{% endif %}">{{ h.notes }}</textarea>
-  <p class="autosave hint" aria-live="polite"></p>
-  <div class="row">
-    <button class="primary">Save</button>
-    {% if h.level == 'area' %}<button formaction="{{ url_for('area_archive', id=h.id) }}"{% if not h.archived_at %} title="It's over: off the lists and pickers, onto Done"{% endif %}>{{ 'Unarchive' if h.archived_at else 'Archive' }}</button>{% endif %}
+  <button hidden>Save</button>{# the default, so Enter in the title saves #}
+  <div class="title-line">
+    <input name="title" value="{{ h.title }}" class="big" aria-label="Title" required>
+    {% if h.level == 'area' %}<button formaction="{{ url_for('area_archive', id=h.id) }}" title="{{ 'Back on the lists and pickers' if h.archived_at else 'It\'s over: off the lists and pickers, onto Done' }}">{{ 'Unarchive' if h.archived_at else 'Archive' }}</button>{% endif %}
     {% if h.level == 'goal' or (h.level == 'area' and empty) %}
-    <button formaction="{{ url_for('horizon_delete', id=h.id) }}" class="danger end" title="Delete" aria-label="Delete" onclick="return confirm('Delete this {{ h.level }}?')">✕</button>
+    <button formaction="{{ url_for('horizon_delete', id=h.id) }}" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this {{ h.level }}?')">✕</button>
     {% endif %}
   </div>
+  <textarea name="notes" rows="{{ 6 if h.level == 'area' else 14 }}" placeholder="{% if h.level == 'goal' %}Outcome, target date, which areas and projects it serves…{% elif h.level == 'area' %}This area is fine when… Standards, recurring responsibilities…{% endif %}">{{ h.notes }}</textarea>
+  <p class="autosave hint" aria-live="polite"></p>
 </form>
 {% if h.level == 'area' %}
 {# An area's hub: a new project starts here, and its projects are listed by status. #}
 {% call add_form(url_for('project_create'), 'New project in ' ~ h.title) %}<input type="hidden" name="area_id" value="{{ h.id }}">{% endcall %}
 {% for label, ps in lists if ps %}
 <h2 class="area-head">{{ label }}</h2>
-<ul class="tasks cards{{ ' filled' if ps[0].status == 'active' }}"{% if ps[0].status in ('active', 'someday') %} data-reorder="{{ url_for('projects_order', status=ps[0].status) }}"{% endif %}>
+<ul class="tasks cards"{% if ps[0].status in ('active', 'someday') %} data-reorder="{{ url_for('projects_order', status=ps[0].status) }}"{% endif %}>
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
 {% else %}
