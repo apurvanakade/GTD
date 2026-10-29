@@ -248,7 +248,7 @@ def test_migration_splits_status_into_state_and_step(tmp_path):
                    "orphan": ("open", None, 0), "n": ("open", "next", 0), "d": ("done", None, 0),
                    "ab": ("abandoned", "later", 0)}
     assert "status" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]
-    assert [t["title"] for t in db.inbox_tasks(c)] == ["loose", "orphan"]
+    assert [t["title"] for t in db.inbox_tasks(c)] == ["orphan", "loose"]
     assert [t["title"] for t in db.project_tasks(c, 1)] == ["n", "filed"]
     assert [tuple(r) for r in c.execute("SELECT task_id FROM time_entries")] == [(5,)]
     c.close()
@@ -1071,17 +1071,17 @@ def test_connect_uses_wal_and_waits_for_locks(tmp_path):
 def test_reorder_project_tasks(client, conn):
     ids = seed(conn)
     titles = lambda: [t["title"] for t in db.project_tasks(conn, ids["active"])]
-    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]  # never dragged: oldest first
-    r = client.post(f"/projects/{ids['active']}/order", data={"ids": "2,4,3"}, headers={"X-Requested-With": "fetch"})
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]  # never dragged: newest first
+    r = client.post(f"/projects/{ids['active']}/order", data={"ids": "2,3,4"}, headers={"X-Requested-With": "fetch"})
     assert r.status_code == 204
-    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
+    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
     assert db.get_task(conn, 2)["step"] == "next"  # order only, statuses untouched
     db.add_task(conn, "grout", step="later", project_id=ids["active"])
-    assert titles()[-1] == "grout"  # new steps go to the end
+    assert titles()[1] == "grout"  # new steps go to the top, under the next action
     # Ids from another project are ignored.
     before = db.get_task(conn, 8)["position"]
-    client.post(f"/projects/{ids['active']}/order", data={"ids": "8,4,3,2"})
-    assert titles() == ["buy tiles", "quote from Bob", "lay tiles", "grout"] and db.get_task(conn, 8)["position"] == before
+    client.post(f"/projects/{ids['active']}/order", data={"ids": "8,5,4,3,2"})
+    assert titles() == ["buy tiles", "grout", "quote from Bob", "lay tiles"] and db.get_task(conn, 8)["position"] == before
 
 
 
@@ -1437,7 +1437,7 @@ def test_new_project_is_not_created_without_a_task(client, conn):
     pid = db.add_project(conn, "P")
     t = db.add_task(conn, "t", project_id=pid, step="next")
     client.post(f"/tasks/{t}", data={"title": "t", "due_date": "bogus date", "project_id": "__new__", "new_project": "Real"})
-    assert [p["title"] for _, ps in db.project_groups(conn) for p in ps] == ["P", "Real"]  # the task page still files it
+    assert [p["title"] for _, ps in db.project_groups(conn) for p in ps] == ["Real", "P"]  # the task page still files it
 
 
 def test_h0_task_can_join_a_project_directly(client, conn):
@@ -1473,7 +1473,7 @@ def test_project_page_rows_line_up(client, conn):
     html = client.get(f"/projects/{pid}").get_data(as_text=True)
     rows = re.findall(r'<li class="task.*?</li>', html, re.S)
     assert len(rows) == 3
-    for row, step in zip(rows, ("next", "waiting", "later")):
+    for row, step in zip(rows, ("next", "later", "waiting")):
         assert f'<span class="step">{step}</span>' in row
         assert row.count('class="date"') == 1
         assert row.count('class="make-next') == 1
@@ -1481,25 +1481,26 @@ def test_project_page_rows_line_up(client, conn):
 
 @pytest.mark.parametrize("status, page", [("someday", "/someday"), ("active", "/projects")])
 def test_projects_reorder(client, conn, status, page):
-    """Project rows keep the order they're dragged to; undragged ones go last, by title. Other lists are ignored."""
+    """Project rows keep the order they're dragged to; new ones go first. Other lists are ignored."""
     a, b, c = (db.add_project(conn, t, status=status) for t in ("a", "b", "c"))
     other = db.add_project(conn, "other", status="waiting")
-    assert [p["title"] for p in db.projects(conn, status)] == ["a", "b", "c"]
-    assert client.post(f"/projects/order/{status}", data={"ids": f"{c},{other},{a}"},
+    assert [p["title"] for p in db.projects(conn, status)] == ["c", "b", "a"]
+    before = db.get_project(conn, other)["position"]
+    assert client.post(f"/projects/order/{status}", data={"ids": f"{c},{other},{a},{b}"},
                        headers={"X-Requested-With": "fetch"}).status_code == 204
     assert [p["title"] for p in db.projects(conn, status)] == ["c", "a", "b"]
-    assert db.get_project(conn, other)["position"] is None
+    assert db.get_project(conn, other)["position"] == before
     html = client.get(page).get_data(as_text=True)
     assert f'data-reorder="/projects/order/{status}"' in html and html.count('class="grip"') == 3
 
 
-def test_moved_project_goes_to_the_bottom_of_its_new_list(client, conn):
+def test_moved_project_goes_to_the_top_of_its_new_list(client, conn):
     a, b = db.add_project(conn, "a"), db.add_project(conn, "b")
     s = db.add_project(conn, "s", status="someday")
     db.reorder_projects(conn, "active", [b, a])
     db.reorder_projects(conn, "someday", [s])
     db.update_project(conn, s, status="active")
-    assert [p["title"] for p in db.projects(conn)] == ["b", "a", "s"]
+    assert [p["title"] for p in db.projects(conn)] == ["s", "b", "a"]
 
 
 def test_migration_adds_project_position(tmp_path):
@@ -1700,9 +1701,9 @@ def test_migration_adds_project_updated_at(tmp_path):
 
 
 def test_project_pickers_are_one_list_grouped_by_status(client, conn):
-    seed(conn)
+    ids = seed(conn)
     pid = db.add_project(conn, "Another active")
-    db.reorder_projects(conn, "active", [pid])  # dragged first on Projects, so first here too
+    db.reorder_projects(conn, "active", [pid, ids["active"], ids["stalled"]])  # dragged first on Projects, so first here too
     assert [(label, [p["title"] for p in ps]) for label, ps in db.project_groups(conn)] == [
         ("Active", ["Another active", "Kitchen", "Stalled"]), ("Waiting", ["Waiting proj"]),
         ("Someday", ["Someday proj"]), ("Done", ["Done proj"])]
@@ -2030,3 +2031,30 @@ def test_migration_adds_reminder_columns(tmp_path):
     assert tuple(c.execute("SELECT remind_at, reminded_at FROM tasks").fetchone()) == (None, None)
     c.close()
     db.connect(path).close()
+
+
+def test_new_items_go_to_the_top(client, conn):
+    """Whatever arrives in a list (added, filed, moved there) shows first."""
+    ids = seed(conn)
+    client.post("/capture", data={"title": "fresh inbox"})
+    assert db.inbox_tasks(conn)[0]["title"] == "fresh inbox"
+    client.post("/waiting/add", data={"title": "fresh wait", "project_id": ids["active"]})
+    assert db.tasks_with_step(conn, "waiting")[0]["title"] == "fresh wait"
+    client.post("/next/add", data={"title": "fresh next", "project_id": ids["stalled"]})
+    undated = [t["title"] for t in db.next_list(conn) if not t["due_date"]]
+    assert undated[0] == "fresh next"
+    client.post("/h0/add", data={"title": "fresh h0"})
+    assert [t["title"] for t in db.h0_actions(conn) if not t["due_date"]][0] == "fresh h0"
+    steps = lambda: [t["title"] for t in db.project_tasks(conn, ids["active"])]
+    db.reorder_project(conn, ids["active"], [t["id"] for t in db.project_tasks(conn, ids["active"])])
+    db.add_task(conn, "fresh step", step="later", project_id=ids["active"])
+    assert steps()[1] == "fresh step"  # right under the pinned next action
+    loose = db.add_task(conn, "loose")
+    db.update_task(conn, loose, project_id=ids["active"])  # filed from the inbox
+    assert steps()[1] == "loose"
+    a = db.add_project(conn, "a")
+    db.reorder_projects(conn, "active", [p["id"] for p in db.projects(conn)])
+    z = db.add_project(conn, "zzz")
+    assert db.projects(conn)[0]["id"] == z
+    db.update_project(conn, a, status="someday")
+    assert db.projects(conn, "someday")[0]["id"] == a

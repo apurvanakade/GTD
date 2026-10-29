@@ -166,7 +166,14 @@ def _update(c, table, allowed, id, fields):
 
 # --- tasks -----------------------------------------------------------------
 
+def _top(c, table, where, arg):
+    """A position above every row of a list, so what arrives in it shows first."""
+    return c.execute(f"SELECT coalesce(min(position), 0) - 1 FROM {table} WHERE {where}", (arg,)).fetchone()[0]
+
+
 def add_task(c, title, **fields):
+    if fields.get("project_id") and "position" not in fields:  # a new step goes to the top, under the next action
+        fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}))
     _reopen_project(c, id)
     _one_next(c, id, was_next=False)
@@ -176,6 +183,8 @@ def add_task(c, title, **fields):
 def update_task(c, id, **fields):
     """Returns the titles of project tasks demoted to later because this one became next."""
     current = get_task(c, id)
+    if current and fields.get("project_id") and fields["project_id"] != current["project_id"] and "position" not in fields:
+        fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])  # filed: top of its project
     _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current))
     if current and "remind_at" in fields and fields["remind_at"] != current["remind_at"]:
         c.execute("UPDATE tasks SET reminded_at = NULL WHERE id = ?", (id,))  # a new time is sent again
@@ -186,8 +195,9 @@ def update_task(c, id, **fields):
 
 def _reopen_project(c, id):
     """A done project with an open task isn't done any more: filing into one (pickers list done projects) reopens it."""
-    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL, position = NULL WHERE status = 'done'
-        AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,))
+    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL,
+          position = (SELECT coalesce(min(position), 0) - 1 FROM projects WHERE status = 'active')
+        WHERE status = 'done' AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,))
     c.commit()
 
 
@@ -287,30 +297,30 @@ def mark_reminded(c, id, now):
 
 def tasks_with_step(c, step):
     """Open project tasks at this step."""
-    return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY t.created_at, t.id", (step,)).fetchall()
+    return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY t.created_at DESC, t.id DESC", (step,)).fetchall()
 
 
 def next_actions(c, today):
     """Next actions that count today: next_list() minus repeats not yet due."""
     return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_NEXT}
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""", (today.isoformat(),)).fetchall()
+        ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""", (today.isoformat(),)).fetchall()
 
 
 def h0_actions(c):
     """Every H0 next action, repeats not yet due included, soonest due first; undated ones last."""
     return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.ground
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
+        ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
 
 
 def inbox_tasks(c):
-    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY t.created_at, t.id").fetchall()
+    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY t.created_at DESC, t.id DESC").fetchall()
 
 
 def next_list(c):
     """The Next tab: every next action outside H0 and waiting/someday projects, repeats not yet due included,
     soonest due first; undated ones last."""
     return c.execute(f"""{TASK_SELECT} WHERE {NEXT}
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at, t.id""").fetchall()
+        ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
 
 
 def overdue(c, today):
@@ -319,10 +329,10 @@ def overdue(c, today):
 
 
 def project_tasks(c, project_id):
-    """Open steps: the next action first, then the order dragged on the project page; steps never dragged go last,
-    oldest first."""
+    """Open steps: the next action first, then the order dragged on the project page, new steps on top;
+    steps without a position (none since new ones get one) go last, newest first."""
     return c.execute(f"""{TASK_SELECT} WHERE t.project_id = ? AND t.state = 'open'
-        ORDER BY t.step = 'next' DESC, t.position IS NULL, t.position, t.created_at, t.id""", (project_id,)).fetchall()
+        ORDER BY t.step = 'next' DESC, t.position IS NULL, t.position, t.created_at DESC, t.id DESC""", (project_id,)).fetchall()
 
 
 def reorder_project(c, project_id, ids):
@@ -393,7 +403,11 @@ def suggest(c, q, limit=10):
 # --- projects --------------------------------------------------------------
 
 def add_project(c, title, **fields):
-    return _insert(c, "projects", PROJECT_FIELDS, {"title": title, **fields})
+    top = _top(c, "projects", "status = ?", fields.get("status", "active"))  # a new project goes to the top
+    id = _insert(c, "projects", PROJECT_FIELDS, {"title": title, **fields})
+    c.execute("UPDATE projects SET position = ? WHERE id = ?", (top, id))
+    c.commit()
+    return id
 
 
 def update_project(c, id, **fields):
@@ -402,10 +416,11 @@ def update_project(c, id, **fields):
         c.execute(f"UPDATE projects SET updated_at = datetime('now') WHERE id = ? AND "
                   f"({' OR '.join(f'{k} IS NOT ?' for k in known)})", [id, *known.values()])
     if "status" in fields:
-        # A project changing lists goes to the bottom of the new one, rather than to its place in the old one.
+        # A project changing lists goes to the top of the new one, rather than to its place in the old one.
         c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END,"
-                  " position = CASE WHEN status = ? THEN position END WHERE id = ?",
-                  (fields["status"], fields["status"], id))
+                  " position = CASE WHEN status = ? THEN position"
+                  " ELSE (SELECT coalesce(min(position), 0) - 1 FROM projects WHERE status = ?) END WHERE id = ?",
+                  (fields["status"], fields["status"], fields["status"], id))
     _update(c, "projects", PROJECT_FIELDS, id, fields)
 
 
@@ -448,7 +463,7 @@ def open_steps(c, status="active"):
     """{project id: its open steps in project-page order}, for every project with the given status."""
     steps = {}
     for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.state = 'open'
-            ORDER BY t.position IS NULL, t.position, t.created_at, t.id""", (status,)):
+            ORDER BY t.position IS NULL, t.position, t.created_at DESC, t.id DESC""", (status,)):
         steps.setdefault(t["project_id"], []).append(t)
     return steps
 
@@ -488,7 +503,7 @@ def stalled_projects(c):
 
 def dated_tasks(c, start, end):
     return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.due_date BETWEEN ? AND ?
-        ORDER BY t.due_date, t.created_at""", (start.isoformat(), end.isoformat())).fetchall()
+        ORDER BY t.due_date, t.created_at DESC, t.id DESC""", (start.isoformat(), end.isoformat())).fetchall()
 
 
 # --- horizons (H5 purpose .. H2 areas) -------------------------------------

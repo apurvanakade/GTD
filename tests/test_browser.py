@@ -223,18 +223,18 @@ def test_theme_toggle_overrides_system_and_persists(page, live):
 def test_drag_reorders_project_steps(page, live, conn):
     page.goto(live + "/projects/1")
     titles = lambda: page.locator("ul.tasks li.task a.title").all_inner_texts()
-    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
     with page.expect_response(lambda r: r.url.endswith("/order")) as saved:
-        row(page, "quote from Bob").locator(".grip").drag_to(row(page, "lay tiles"), target_position={"x": 5, "y": 2})
+        row(page, "lay tiles").locator(".grip").drag_to(row(page, "quote from Bob"), target_position={"x": 5, "y": 2})
     assert saved.value.status == 204
-    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
-    assert [t["title"] for t in db.project_tasks(conn, 1)] == ["buy tiles", "quote from Bob", "lay tiles"]
+    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
+    assert [t["title"] for t in db.project_tasks(conn, 1)] == ["buy tiles", "lay tiles", "quote from Bob"]
     page.reload()
-    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
+    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
     # Nothing goes above the next action ("buy tiles").
     with page.expect_response(lambda r: r.url.endswith("/order")):
-        row(page, "lay tiles").locator(".grip").drag_to(row(page, "buy tiles"), target_position={"x": 5, "y": 2})
-    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
+        row(page, "quote from Bob").locator(".grip").drag_to(row(page, "buy tiles"), target_position={"x": 5, "y": 2})
+    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
 
 
 def test_drag_reorders_someday_projects(page, live, conn):
