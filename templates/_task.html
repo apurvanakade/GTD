@@ -17,6 +17,9 @@
     {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>
     {% else %}<span class="date">{{ t.due_date if t.due_date and not closed }}</span>{% endif %}
     <span class="recur"{% if t.recur %} title="{{ t.recur }}"{% endif %}>{{ '↻' if t.recur }}</span>
+    {# A reminder still to come; always shown, unlike the date, since reminders are few and time-sensitive. #}
+    {% if t.remind_at and not t.reminded_at and not closed %}<span class="remind" title="Reminder {{ t.remind_at|local_minute }}">🔔</span>
+    {%- else %}<span class="remind"></span>{% endif %}
   </span>
   {% if project and t.project_id and not closed %}<form method="post" action="{{ url_for('complete_then_project', id=t.id) }}" class="then"><button title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button></form>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
@@ -52,12 +55,13 @@
 </ul>
 {% endmacro %}
 
-{# Type a date in words, or click 📅 for the browser's picker. base.html's JS copies the pick into the text box. #}
-{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…') %}
+{# Type a date in words, or click 📅 for the browser's picker. base.html's JS copies the pick into the text box.
+   type='datetime-local' picks a time too (the Remind box). #}
+{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…', name='due_date', label='Due date', type='date') %}
 <span class="date-field">
-  <input name="due_date" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="Due date">
-  <button type="button" class="pick" aria-label="Pick a date">📅</button>
-  <input type="date" class="picker" tabindex="-1" aria-hidden="true">
+  <input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="{{ label }}">
+  <button type="button" class="pick" aria-label="Pick a {{ 'date and time' if type == 'datetime-local' else 'date' }}">📅</button>
+  <input type="{{ type }}" class="picker" tabindex="-1" aria-hidden="true">
 </span>
 {% endmacro %}
 
@@ -83,12 +87,15 @@
 {% endmacro %}
 
 {# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
-{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add') %}
+{# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
+{% macro title_marks() %}<p class="hint marks">&gt;fri due · *weekly repeat · !3pm remind</p>{% endmacro %}
+
+{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', marks=False) %}
 <form method="post" action="{{ action }}" class="add{{ ' ' ~ cls if cls }}"{% if id %} id="{{ id }}"{% endif %}>
   <span class="plus" aria-hidden="true">+</span>
   <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
   <button class="primary" title="{{ label }} (Enter)" aria-label="{{ label }}">{{ button }}</button>
-  {% if caller is defined %}<div class="add-more">{{ caller() }}</div>{% endif %}
+  {% if caller is defined or marks %}<div class="add-more">{{ caller() if caller is defined }}{{ title_marks() if marks }}</div>{% endif %}
 </form>
 {% endmacro %}
 

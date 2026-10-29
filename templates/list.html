@@ -2,7 +2,7 @@
 {% from "_task.html" import row, date_input, project_select, add_form with context %}
 {% block title %}{{ title }}{% endblock %}
 {% block body %}
-{% call add_form(url_for('waiting_add'), 'Waiting for… (who, what)') %}
+{% call add_form(url_for('waiting_add'), 'Waiting for… (who, what)', marks=True) %}
   {{ project_select(h0=False) }}
   {{ date_input(placeholder='follow up on…') }}
 {% endcall %}

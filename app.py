@@ -1,7 +1,9 @@
+import json
 import os
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -47,6 +49,11 @@ def now():
     return app.config.get("NOW") or datetime.now(timezone.utc)
 
 
+def local_now():
+    """Naive local time, as dates.parse_when() takes it."""
+    return datetime.combine(today(), now().astimezone().time())
+
+
 @app.context_processor
 def template_globals():
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
@@ -61,8 +68,9 @@ def form_value(name):
     return (request.form.get(name) or "").strip() or None
 
 
-def task_fields_from_form():
-    """Editable task fields present in the submitted form."""
+def task_fields_from_form(current=None):
+    """Editable task fields present in the submitted form. On an add line (no `current` task) the title may end
+    with >due, *repeat and !remind (split_title())."""
     fields = {}
     for name in ("title", "notes", "due_date", "recur"):
         if name in request.form:
@@ -80,26 +88,71 @@ def task_fields_from_form():
         fields["ground"] = 0
     if request.form.get("step") in ("next", "waiting", "later"):  # a project's step; H0 and inbox tasks drop it
         fields["step"] = request.form["step"]
-    if fields.get("due_date"):
-        due = dates.parse(fields["due_date"], today())
-        if due:
-            fields["due_date"] = due.isoformat()
-        else:
-            flash(f"Didn't understand date “{fields['due_date']}” – try “tomorrow”, “saturday” or “oct 30”.")
-            fields.pop("due_date")
-    if fields.get("recur") and not recur.parse(fields["recur"]):
-        flash(f"Didn't understand repeat rule “{fields['recur']}” – try “weekly” or “every 6 months”.")
-        fields.pop("recur")
-    if fields.get("recur") and not fields.get("due_date"):
-        fields["due_date"] = today().isoformat()
+    for name, parse in (("due_date", parse_due), ("recur", parse_recur)):
+        if fields.get(name):
+            fields[name] = parse(fields[name])
+            if not fields[name]:
+                fields.pop(name)
     if "remind_at" in request.form:
         raw = form_value("remind_at")
-        when = raw and dates.parse_when(raw, datetime.combine(today(), now().astimezone().time()))
-        if raw and not when:
-            flash(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
-        else:
-            fields["remind_at"] = when and db.iso(when.astimezone())  # the form's time is local
+        if not raw:
+            fields["remind_at"] = None
+        elif not (current and raw == local_minute(current["remind_at"])):  # what the page showed, maybe long past: left alone
+            remind_at = parse_reminder(raw)
+            if remind_at:
+                fields["remind_at"] = remind_at
+    if current is None and fields.get("title"):
+        fields["title"], typed = split_title(fields["title"])
+        fields.update(typed)  # typed into the title: wins over the line's own boxes
+    if fields.get("recur") and not fields.get("due_date"):
+        fields["due_date"] = today().isoformat()
     return fields
+
+
+def parse_due(raw):
+    """A due date typed in words as ISO, or None, flashed."""
+    due = dates.parse(raw, today())
+    if not due:
+        flash(f"Didn't understand date “{raw}” – try “tomorrow”, “saturday” or “oct 30”.")
+    return due and due.isoformat()
+
+
+def parse_recur(raw):
+    """A repeat rule, or None, flashed."""
+    if not recur.parse(raw):
+        flash(f"Didn't understand repeat rule “{raw}” – try “weekly” or “every 6 months”.")
+        return None
+    return raw
+
+
+def parse_reminder(raw):
+    """A reminder typed in words (local time) as a UTC ISO time, or None, flashed, when unreadable or already past."""
+    when = dates.parse_when(raw, local_now())
+    if not when:
+        flash(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
+    elif when <= local_now():
+        flash(f"Reminder “{raw}” has already passed – not set.")
+    else:
+        return db.iso(when.astimezone())
+
+
+# An add line's title can end with these, in any order: "pay rent >nov 1 *monthly !oct 30 9am". Each needs a space
+# before it and none after, so "Yes! do it", "a > b" and a bare "!3pm" stay plain titles.
+TITLE_MARKS = {">": ("due_date", parse_due), "*": ("recur", parse_recur), "!": ("remind_at", parse_reminder)}
+TITLE_MARK = re.compile(r"\s([>*!])(\S[^>*!]*?)\s*$")
+
+
+def split_title(title):
+    """(title, fields) with the trailing marks peeled off the end. The first unusable one (and all before it) stays
+    in the title, so nothing typed is lost."""
+    fields = {}
+    while m := TITLE_MARK.search(title):
+        name, parse = TITLE_MARKS[m.group(1)]
+        value = name not in fields and parse(m.group(2))
+        if not value:
+            break
+        fields[name], title = value, title[:m.start()].rstrip()
+    return title, fields
 
 
 def orphaned(project_id, ground):
@@ -119,11 +172,19 @@ def home():
 
 @app.post("/capture")
 def capture():
-    title = form_value("title")
-    if title:
-        db.add_task(conn(), title)
+    fields = task_fields_from_form()
+    if fields.get("title"):
+        title = fields.pop("title")
+        db.add_task(conn(), title, **fields)
         if not (request.referrer or "").endswith(url_for("inbox")):  # the inbox list already shows it
-            flash(f"Added to inbox: {title}")
+            parts = [f"Added to inbox: {title}"]
+            if "due_date" in fields:
+                parts.append(f"due {fields['due_date']}")
+            if "recur" in fields:
+                parts.append(f"↻ {fields['recur']}")
+            if "remind_at" in fields:
+                parts.append(f"reminder {local_minute(fields['remind_at'], WHEN)}")
+            flash(" · ".join(parts))
     return back()
 
 
@@ -385,7 +446,7 @@ def task_view(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     if request.method == "POST":
-        fields = task_fields_from_form()
+        fields = task_fields_from_form(t)
         if not fields.get("title"):
             fields.pop("title", None)
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
@@ -623,10 +684,13 @@ def local_input(iso):
     return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%dT%H:%M")
 
 
+WHEN = "%a %b %-d, %H:%M"  # a reminder time in words, as the preview and capture's flash show it
+
+
 @app.template_filter("local_minute")
-def local_minute(iso):
+def local_minute(iso, fmt="%Y-%m-%d %H:%M"):
     """A stored UTC time as the local "YYYY-MM-DD HH:MM" the reminder box shows and dates.parse_when() reads back."""
-    return iso and datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
+    return iso and datetime.fromisoformat(iso).astimezone().strftime(fmt)
 
 
 @app.template_filter("hm")
@@ -727,22 +791,65 @@ def entry_delete(id):
 # A background thread posts each due reminder to ntfy, which pushes it to the phone. Only with NTFY_URL set;
 # gunicorn runs one worker, so there is one thread.
 
-def ntfy(t):
-    headers = {"Tags": "bell"}
+LATE = timedelta(minutes=2)  # a reminder sent later than this (the app was down) says when it was due
+SNOOZE = timedelta(minutes=15)
+
+
+def ntfy(t, at):
+    """Publish as JSON (any title, no header encoding): the title, then the task's project and due date, the first
+    line of its notes, and a late note. With GTD_URL: a tap opens the task; Done and Snooze buttons call the app."""
+    lines = [(t["project_title"] or ("H0" if t["ground"] else "Inbox")) + (f" · due {t['due_date']}" if t["due_date"] else "")]
+    lines += [line.strip() for line in (t["notes"] or "").splitlines() if line.strip()][:1]
+    due = datetime.fromisoformat(t["remind_at"])
+    if at - due > LATE:
+        due, local_at = due.astimezone(), at.astimezone()
+        lines.append("Late: was due " + due.strftime("%H:%M" if due.date() == local_at.date() else "%Y-%m-%d %H:%M"))
+    base, topic = NTFY_URL.rsplit("/", 1)
+    msg = {"topic": topic, "title": t["title"], "message": "\n".join(lines), "tags": ["bell"]}
     if GTD_URL:
-        headers["Click"] = f"{GTD_URL}/tasks/{t['id']}"
-    urllib.request.urlopen(urllib.request.Request(NTFY_URL, data=t["title"].encode(), headers=headers), timeout=10)
+        task = f"{GTD_URL}/tasks/{t['id']}"
+        msg["click"] = task
+        msg["actions"] = [  # an ntfy "http" action: the phone makes the request without opening anything
+            {"action": "http", "label": "Done", "url": f"{task}/complete", "method": "POST",
+             "headers": {"X-Requested-With": "fetch"}, "clear": True},
+            {"action": "http", "label": "Snooze 15m", "url": f"{task}/snooze", "method": "POST", "clear": True}]
+    urllib.request.urlopen(urllib.request.Request(base + "/", data=json.dumps(msg).encode(),
+                                                  headers={"Content-Type": "application/json"}), timeout=10)
 
 
 def send_reminders(c, at, send):
-    """Send every due reminder; one that fails stays unsent and is tried again next time."""
+    """Send every due reminder. One ntfy rejects (4xx but 429) is given up, marked sent; any other failure stays
+    unsent and is tried again next time."""
     for t in db.due_reminders(c, at):
         try:
-            send(t)
+            send(t, at)
+        except urllib.error.HTTPError as err:
+            if 400 <= err.code < 500 and err.code != 429:
+                app.logger.error("reminder %s rejected, given up: %s", t["id"], err)
+                db.mark_reminded(c, t["id"], at)
+            else:
+                app.logger.warning("reminder %s not sent: %s", t["id"], err)
         except OSError as err:
             app.logger.warning("reminder %s not sent: %s", t["id"], err)
         else:
             db.mark_reminded(c, t["id"], at)
+
+
+@app.post("/tasks/<int:id>/snooze")
+def snooze(id):
+    """The notification's Snooze button: remind again in SNOOZE. A finished task stays as it is."""
+    c = conn()
+    t = db.get_task(c, id) or abort(404)
+    if t["state"] == "open":
+        db.update_task(c, id, remind_at=db.iso(now() + SNOOZE))
+    return "", 204
+
+
+@app.route("/remind/parse")
+def remind_parse():
+    """The task page's live preview of how the Remind box reads."""
+    when = dates.parse_when(request.args.get("q") or "", local_now())
+    return {"when": when and when.strftime(WHEN), "past": bool(when and when <= local_now())}
 
 
 def reminder_loop():

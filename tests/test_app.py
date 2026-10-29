@@ -1794,38 +1794,228 @@ def test_due_reminders_are_sent_once_and_retried_on_failure(client, conn):
     db.complete_task(conn, db.add_task(conn, "done", ground=1, remind_at=db.iso(NOW - timedelta(hours=1))), TODAY)
     db.abandon_task(conn, db.add_task(conn, "dropped", remind_at=db.iso(NOW - timedelta(hours=1))))
 
-    def fail(t):
+    def fail(t, at):
         raise OSError("ntfy down")
     send_reminders(conn, NOW, fail)
     assert db.get_task(conn, due)["reminded_at"] is None
     sent = []
-    send_reminders(conn, NOW, sent.append)
+    send_reminders(conn, NOW, lambda t, at: sent.append(t))
     assert [t["title"] for t in sent] == ["due"]
-    send_reminders(conn, NOW, sent.append)
+    send_reminders(conn, NOW, lambda t, at: sent.append(t))
     assert len(sent) == 1
 
 
-def test_ntfy_posts_the_title_with_a_link_to_the_task(monkeypatch):
+def capture_ntfy(monkeypatch, gtd_url="https://home.example.ts.net"):
+    """Point ntfy() at a fake urlopen; returns the list each request's URL and JSON body land in."""
+    import json
     import app as app_module
-    got = {}
+    got = []
 
     def urlopen(req, timeout):
-        got.update(url=req.full_url, data=req.data, click=req.get_header("Click"), timeout=timeout)
+        got.append({"url": req.full_url, "json": json.loads(req.data), "timeout": timeout})
     monkeypatch.setattr(app_module.urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(app_module, "NTFY_URL", "http://127.0.0.1:5007/gtd")
-    monkeypatch.setattr(app_module, "GTD_URL", "https://home.example.ts.net")
-    app_module.ntfy({"id": 7, "title": "call mum ☎"})
-    assert got == {"url": "http://127.0.0.1:5007/gtd", "data": "call mum ☎".encode(),
-                   "click": "https://home.example.ts.net/tasks/7", "timeout": 10}
+    monkeypatch.setattr(app_module, "GTD_URL", gtd_url)
+    return got
 
 
-def test_a_repeat_keeps_its_reminder_time_relative_to_the_due_date(conn):
-    remind = db.iso(datetime(2026, 10, 28, 18, 0).astimezone())  # the evening before, local
+def test_ntfy_publishes_title_context_link_and_buttons(client, conn, monkeypatch):
+    from app import ntfy
+    got = capture_ntfy(monkeypatch)
+    pid = db.add_project(conn, "Kitchen")
+    tid = db.add_task(conn, "call plumber ☎", project_id=pid, step="next", due_date="2026-10-30",
+                      notes="\n  ask about the leak  \nsecond line", remind_at=db.iso(NOW))
+    with app.test_request_context():
+        ntfy(db.due_reminders(conn, NOW)[0], NOW)
+    base = "https://home.example.ts.net"
+    assert got == [{"url": "http://127.0.0.1:5007/", "timeout": 10, "json": {
+        "topic": "gtd", "title": "call plumber ☎", "message": "Kitchen · due 2026-10-30\nask about the leak",
+        "tags": ["bell"], "click": f"{base}/tasks/{tid}",
+        "actions": [
+            {"action": "http", "label": "Done", "url": f"{base}/tasks/{tid}/complete", "method": "POST",
+             "headers": {"X-Requested-With": "fetch"}, "clear": True},
+            {"action": "http", "label": "Snooze 15m", "url": f"{base}/tasks/{tid}/snooze", "method": "POST",
+             "clear": True}]}}]
+
+
+def test_ntfy_names_h0_and_inbox_and_has_no_buttons_without_an_address(client, conn, monkeypatch):
+    from app import ntfy
+    got = capture_ntfy(monkeypatch, gtd_url="")
+    db.add_task(conn, "water plants", ground=1, remind_at=db.iso(NOW))
+    db.add_task(conn, "stray thought", remind_at=db.iso(NOW))
+    with app.test_request_context():
+        for t in db.due_reminders(conn, NOW):
+            ntfy(t, NOW)
+    assert [g["json"]["message"] for g in got] == ["H0", "Inbox"]
+    assert all("click" not in g["json"] and "actions" not in g["json"] for g in got)
+
+
+def test_a_late_reminder_says_when_it_was_due(client, conn, monkeypatch):
+    from app import ntfy
+    got = capture_ntfy(monkeypatch)
+    at = datetime(2026, 10, 22, 14, 0).astimezone()
+    db.add_task(conn, "on time", ground=1, remind_at=db.iso(at - timedelta(minutes=1)))
+    db.add_task(conn, "late", ground=1, remind_at=db.iso(at - timedelta(minutes=30)))
+    db.add_task(conn, "days late", ground=1, remind_at=db.iso(at - timedelta(days=2)))
+    with app.test_request_context():
+        for t in db.due_reminders(conn, at):
+            ntfy(t, at)
+    assert {g["json"]["title"]: g["json"]["message"] for g in got} == {
+        "on time": "H0", "late": "H0\nLate: was due 13:30", "days late": "H0\nLate: was due 2026-10-20 14:00"}
+
+
+def test_snooze_pushes_the_reminder_15_minutes_from_now_and_rearms_it(client, conn):
+    tid = db.add_task(conn, "call", ground=1, remind_at=db.iso(NOW - timedelta(minutes=5)))
+    db.mark_reminded(conn, tid, NOW)
+    assert client.post(f"/tasks/{tid}/snooze").status_code == 204
+    t = db.get_task(conn, tid)
+    assert t["remind_at"] == db.iso(NOW + timedelta(minutes=15)) and t["reminded_at"] is None
+    assert client.post("/tasks/999/snooze").status_code == 404
+
+
+def test_snoozing_a_finished_task_does_nothing(client, conn):
+    tid = db.add_task(conn, "call", ground=1, remind_at=db.iso(NOW))
+    db.complete_task(conn, tid, TODAY)
+    assert client.post(f"/tasks/{tid}/snooze").status_code == 204
+    assert db.get_task(conn, tid)["remind_at"] == db.iso(NOW)
+
+
+def test_the_notifications_done_button_completes_the_task(client, conn):
+    tid = db.add_task(conn, "call", ground=1, remind_at=db.iso(NOW))
+    assert client.post(f"/tasks/{tid}/complete", headers={"X-Requested-With": "fetch"}).status_code == 204
+    assert db.get_task(conn, tid)["state"] == "done"
+
+
+def test_a_rejected_reminder_is_given_up_but_a_server_error_is_retried(client, conn):
+    import urllib.error
+    from app import send_reminders
+    tid = db.add_task(conn, "call", ground=1, remind_at=db.iso(NOW))
+
+    def http(code):
+        def send(t, at):
+            raise urllib.error.HTTPError("http://ntfy", code, "no", {}, None)
+        return send
+    send_reminders(conn, NOW, http(503))
+    send_reminders(conn, NOW, http(429))  # rate limited: try again
+    assert db.get_task(conn, tid)["reminded_at"] is None
+    send_reminders(conn, NOW, http(400))  # it would never be accepted
+    assert db.get_task(conn, tid)["reminded_at"] == db.iso(NOW)
+
+
+def test_a_reminder_in_the_past_is_refused_unless_unchanged(client, conn):
+    past = db.iso(NOW - timedelta(hours=1))
+    tid = db.add_task(conn, "call", ground=1, remind_at=past)
+    db.mark_reminded(conn, tid, NOW)
+    shown = datetime.fromisoformat(past).astimezone().strftime("%Y-%m-%d %H:%M")
+    r = client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": shown}, follow_redirects=True)
+    assert "has already passed" not in r.get_data(as_text=True)
+    assert db.get_task(conn, tid)["reminded_at"]  # untouched: not re-sent
+    r = client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": "yesterday 9am"}, follow_redirects=True)
+    assert "has already passed" in r.get_data(as_text=True)
+    assert db.get_task(conn, tid)["remind_at"] == past
+
+
+def test_reminder_preview_reads_the_text_back(client):
+    when = local(db.iso(NOW + timedelta(hours=2)))
+    assert client.get("/remind/parse?q=in 2 hours").get_json() == {"when": when.strftime("%a %b %-d, %H:%M"),
+                                                                   "past": False}
+    assert client.get("/remind/parse?q=yesterday").get_json() == {"when": "Wed Oct 21, 09:00", "past": True}
+    assert client.get("/remind/parse?q=gibberish").get_json() == {"when": None, "past": False}
+
+
+def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):
+    seed(conn)
+    html = client.get("/h0").get_data(as_text=True)
+    bell = re.search(r'<li class="task[^>]*data-id="7".*?</li>', html, re.S).group(0)  # "call mum"
+    assert '<span class="remind" title="Reminder 2026-10-23' in bell and "🔔" in bell
+    sent = re.search(r'<li class="task[^>]*data-id="4".*?</li>', client.get("/waiting").get_data(as_text=True),
+                     re.S).group(0)  # "quote from Bob": already sent
+    assert '<span class="remind"></span>' in sent
+
+
+@pytest.mark.parametrize("url, data", [
+    ("/capture", {}), ("/next/add", {"project_id": "h0"}), ("/h0/add", {}), ("/waiting/add", {}),
+    ("/calendar", {"due_date": "2026-10-30"}),
+])
+def test_a_trailing_bang_time_on_an_add_line_sets_a_reminder(client, conn, url, data):
+    client.post(url, data={"title": "call back !tomorrow 3pm", **data})
+    t = conn.execute("SELECT * FROM tasks WHERE title = 'call back'").fetchone()
+    assert local(t["remind_at"]) == datetime(2026, 10, 23, 15, 0)
+
+
+def test_a_project_add_line_takes_a_bang_time(client, conn):
+    pid = db.add_project(conn, "Kitchen")
+    client.post(f"/projects/{pid}/tasks", data={"title": "call plumber  !in 30 min"})
+    t = db.project_tasks(conn, pid)[0]
+    assert t["title"] == "call plumber" and t["remind_at"] == db.iso(NOW + timedelta(minutes=30))
+
+
+@pytest.mark.parametrize("title, flashed", [
+    ("Yes! do it", None), ("wow !", None), ("!3pm", None),  # not a trailing " !time" after a title
+    ("call back !blah", "Didn&#39;t understand reminder"), ("call back !yesterday", "has already passed"),
+])
+def test_a_bang_that_isnt_a_reminder_stays_in_the_title(client, conn, title, flashed):
+    html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
+    t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
+    assert t["title"] == title and t["remind_at"] is None
+    assert flashed in html if flashed else "understand reminder" not in html and "has already passed" not in html
+
+
+@pytest.mark.parametrize("url, data", [
+    ("/capture", {}), ("/next/add", {"project_id": "h0"}), ("/h0/add", {}), ("/waiting/add", {}),
+    ("/calendar", {}),
+])
+def test_add_lines_take_due_repeat_and_reminder_in_any_order(client, conn, url, data):
+    client.post(url, data={"title": "pay rent *monthly !oct 30 9am >nov 1", **data})
+    t = conn.execute("SELECT * FROM tasks WHERE title = 'pay rent'").fetchone()
+    assert (t["due_date"], t["recur"], local(t["remind_at"])) == ("2026-11-01", "monthly", datetime(2026, 10, 30, 9, 0))
+
+
+def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
+    client.post("/capture", data={"title": "water plants *every 3 days"})
+    t = conn.execute("SELECT * FROM tasks WHERE title = 'water plants'").fetchone()
+    assert (t["due_date"], t["recur"]) == ("2026-10-22", "every 3 days")
+
+
+@pytest.mark.parametrize("title, flashed", [
+    ("pay rent >blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
+    ("a > b", None), ("5 * 3", None),
+])
+def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, flashed):
+    html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
+    t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
+    assert (t["title"], t["due_date"], t["recur"]) == (title, None, None)
+    assert flashed is None or flashed in html
+
+
+def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
+    hint = "&gt;fri due · *weekly repeat · !3pm remind"
+    for url in ("/inbox", "/next", "/h0", "/waiting", "/calendar"):
+        html = client.get(url).get_data(as_text=True)
+        assert html.count(hint) == 2, url  # its add line, and the capture dialog
+    assert client.get("/projects").get_data(as_text=True).count(hint) == 1  # the dialog only
+    assert "<kbd>!3pm</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
+
+
+def test_capture_confirms_the_reminder(client, conn):
+    html = client.post("/capture", data={"title": "call back !tomorrow 3pm"}, follow_redirects=True).get_data(as_text=True)
+    assert "Added to inbox: call back · reminder Fri Oct 23, 15:00" in html
+    html = client.post("/capture", data={"title": "pay rent >nov 1 *monthly"}, follow_redirects=True).get_data(as_text=True)
+    assert "Added to inbox: pay rent · due 2026-11-01 · ↻ monthly" in html
+
+
+def test_the_task_page_title_keeps_its_bang(client, conn):
+    tid = db.add_task(conn, "call", ground=1)
+    client.post(f"/tasks/{tid}", data={"title": "call !3pm"})
+    t = db.get_task(conn, tid)
+    assert t["title"] == "call !3pm" and t["remind_at"] is None
+
+
+def test_a_repeats_next_instance_has_no_reminder(conn):
+    remind = db.iso(datetime(2026, 10, 28, 18, 0).astimezone())
     tid = db.add_task(conn, "bins", ground=1, recur="weekly", due_date="2026-10-29", remind_at=remind)
     new = db.get_task(conn, db.complete_task(conn, tid, TODAY))
-    assert new["due_date"] == "2026-11-05"
-    assert local(new["remind_at"]) == datetime(2026, 11, 4, 18, 0)  # same wall-clock time, across DST
-    assert new["reminded_at"] is None
+    assert new["due_date"] == "2026-11-05" and new["remind_at"] is None
 
 
 def test_migration_adds_reminder_columns(tmp_path):

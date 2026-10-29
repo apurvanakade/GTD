@@ -2,7 +2,7 @@
 {% from "_task.html" import banded, date_input, add_form with context %}
 {% block title %}H0 · Ground level{% endblock %}
 {% block body %}
-{% call add_form(url_for('h0_add'), 'Add an H0 task') %}
+{% call add_form(url_for('h0_add'), 'Add an H0 task', marks=True) %}
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats: weekly, every 2 weeks…" aria-label="Repeats">
 {% endcall %}

@@ -3,7 +3,7 @@
 {% block title %}Inbox{% endblock %}
 {% block actions %}{% if tasks %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the projects open to drop on">Projects</button>{% endif %}{% endblock %}
 {% block body %}
-{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture') }}
+{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', marks=True) }}
 {% if tasks %}
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
 {# Slides in while a row is dragged, or stays while pinned by the header's Projects button: drop a row on a

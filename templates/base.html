@@ -1,4 +1,4 @@
-<!doctype html>
+{% from "_task.html" import title_marks %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -65,6 +65,7 @@
     <dt><kbd>?</kbd></dt><dd>This list</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next review step</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close a dialog or the search suggestions</dd>
+    <dt><kbd>&gt;fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd></dt><dd>At the end of a new task's title: due date, repeat, reminder</dd>
     {% for key, ep_name, label in go_keys %}<dt><kbd>{{ key }}</kbd></dt><dd>Go to {{ label }}</dd>{% endfor %}
   </dl>
   <p class="row"><button type="button" onclick="this.closest('dialog').close()">Close</button></p>
@@ -73,6 +74,7 @@
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <h2>Add to inbox</h2>
     <input name="title" placeholder="What's on your mind?" autocomplete="off" required>
+    {{ title_marks() }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
@@ -126,12 +128,32 @@ document.addEventListener('click', e => {
   const b = e.target.closest('.date-field .pick');
   if (!b) return;
   const field = b.closest('.date-field'), text = field.querySelector('input[name]'), picker = field.querySelector('.picker');
-  picker.value = /^\d{4}-\d\d-\d\d$/.test(text.value) ? text.value : '';
+  // The picker starts on the box's date (and time, for the Remind box) when it holds one, else today.
+  const v = text.value.replace(' ', 'T');
+  picker.value = (picker.type === 'date' ? /^\d{4}-\d\d-\d\d$/ : /^\d{4}-\d\d-\d\dT\d\d:\d\d$/).test(v) ? v : '';
   picker.showPicker();
 });
 document.addEventListener('change', e => {
-  if (e.target.matches('.date-field .picker')) e.target.closest('.date-field').querySelector('input[name]').value = e.target.value;
+  if (!e.target.matches('.date-field .picker')) return;
+  const text = e.target.closest('.date-field').querySelector('input[name]');
+  text.value = e.target.value.replace('T', ' ');  // "2026-10-30 17:00", as the Remind box shows it
+  text.dispatchEvent(new Event('input', {bubbles: true}));  // so the Remind preview follows
 });
+// The task page's Remind box: as you type, the hint shows how it reads; untouched, it keeps "sent" (or nothing).
+const remind = document.querySelector('input[name=remind_at]');
+if (remind) {
+  const hint = remind.closest('label').querySelector('.when'), shown = remind.value;
+  let asked = 0, wait;
+  remind.addEventListener('input', () => {
+    clearTimeout(wait);
+    const q = remind.value.trim(), n = ++asked;
+    if (!q || remind.value === shown) { hint.textContent = remind.value ? hint.dataset.sent : ''; return; }
+    wait = setTimeout(async () => {
+      const r = await (await fetch('/remind/parse?q=' + encodeURIComponent(q))).json();
+      if (n === asked) hint.textContent = !r.when ? 'not understood' : '→ ' + r.when + (r.past ? ' · already passed' : '');
+    }, 150);
+  });
+}
 // A project row's ▸ folds its steps out below it; "Expand all" does every row.
 const peek = (b, open) => {
   b.setAttribute('aria-expanded', open);

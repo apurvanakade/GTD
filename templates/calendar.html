@@ -14,7 +14,7 @@
 </span>
 {% endblock %}
 {% block body %}
-{% call add_form(url_for('calendar_view'), 'Add a dated next action…', id='cal-add') %}
+{% call add_form(url_for('calendar_view'), 'Add a dated next action…', id='cal-add', marks=True) %}
   <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
   {{ project_select() }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">

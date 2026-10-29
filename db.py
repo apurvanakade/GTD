@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 
 import fuzzy
 import recur
@@ -269,25 +269,15 @@ def complete_task(c, id, today, now=None):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
         next_due = recur.next_due(t["recur"], due, today)
         new_id = add_task(c, t["title"], notes=t["notes"], step=t["step"], project_id=t["project_id"],
-                          ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat(),
-                          remind_at=_shift_reminder(t["remind_at"], due, next_due))
+                          ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
     c.commit()
     return new_id
 
 
-def _shift_reminder(remind_at, due, next_due):
-    """The next instance's reminder: as far from its due date as the old one was, in local wall-clock time
-    (so 6pm the evening before stays 6pm across a DST change). None without a reminder or an old due date."""
-    if not remind_at or not due:
-        return None
-    local = datetime.fromisoformat(remind_at).astimezone().replace(tzinfo=None)
-    return iso((datetime.combine(next_due, time()) + (local - datetime.combine(due, time()))).astimezone())
-
-
 def due_reminders(c, now):
     """Open tasks whose reminder time has come and that haven't been sent yet."""
-    return c.execute("""SELECT id, title FROM tasks WHERE state = 'open' AND reminded_at IS NULL AND remind_at <= ?
-        ORDER BY remind_at, id""", (iso(now),)).fetchall()
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.reminded_at IS NULL AND t.remind_at <= ?
+        ORDER BY t.remind_at, t.id""", (iso(now),)).fetchall()
 
 
 def mark_reminded(c, id, now):

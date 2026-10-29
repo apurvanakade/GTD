@@ -217,7 +217,8 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .proj { color: var(--muted); font-size: .8rem; white-space: nowrap; }
 .task .date { font-variant-numeric: tabular-nums; min-width: 6.4em; text-align: right; }
 .task .step { min-width: 4.2em; }
-.task .recur { width: 1em; text-align: center; }
+.task .recur, .task .remind { width: 1em; text-align: center; }
+.task .remind { font-size: .75rem; filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task .proj::before { content: "▸ "; }
 .task form { margin: 0; }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
@@ -384,3 +385,5 @@ a.who:hover { color: var(--fg); }
 .help-dialog dt { text-align: right; white-space: nowrap; }
 .help-dialog dd { margin: 0; }
 .help-dialog kbd { font: inherit; font-size: .85em; padding: 0 .4em; border: 1px solid currentColor; border-radius: 4px; opacity: .8; }
+.add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: .8rem; }
+.capture-dialog .marks { margin: 6px 0 0; font-size: .8rem; }

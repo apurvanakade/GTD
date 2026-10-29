@@ -4,7 +4,7 @@ Run these when a change touches templates/, static/ or the JS in base.html. The 
 hook do that automatically. Everything else in the suite checks only the HTML contract with the JS.
 """
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from werkzeug.serving import make_server
@@ -110,8 +110,9 @@ def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
 def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, conn):
     page.goto(live + "/tasks/2")
     page.fill("input[name=due_date]", "")
-    page.click(".date-field .pick")  # showPicker() needs this real click's user activation
-    page.locator(".date-field .picker").evaluate(
+    field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
+    field.locator(".pick").click()  # showPicker() needs this real click's user activation
+    field.locator(".picker").evaluate(
         "el => { el.value = '2026-11-05'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
     assert page.input_value("input[name=due_date]") == "2026-11-05"
     with page.expect_navigation():
@@ -746,3 +747,30 @@ def test_horizons_arrow_keys_move_between_levels(page, live):
     page.wait_for_url("**/horizons?level=area")
     page.locator(".rail .dot").first.click()
     page.wait_for_url("**/horizons?level=purpose")
+
+
+def test_remind_box_previews_how_it_reads(page, live):
+    page.goto(live + "/tasks/7")  # "call mum": a reminder still to come
+    hint = page.locator("label .when")
+    page.fill("input[name=remind_at]", "oct 30 at 5pm")
+    sync_api.expect(hint).to_have_text("→ Fri Oct 30, 17:00")
+    page.fill("input[name=remind_at]", "yesterday")
+    sync_api.expect(hint).to_have_text("→ Wed Oct 21, 09:00 · already passed")
+    page.fill("input[name=remind_at]", "gibberish")
+    sync_api.expect(hint).to_have_text("not understood")
+    page.fill("input[name=remind_at]", "")
+    sync_api.expect(hint).to_have_text("")
+
+
+def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, live, conn):
+    page.goto(live + "/tasks/7")  # "call mum": a reminder still to come
+    field = page.locator(".date-field", has=page.locator("input[name=remind_at]"))
+    field.locator(".pick").click()  # showPicker() needs this real click's user activation
+    assert field.locator(".picker").input_value() == page.input_value("input[name=remind_at]").replace(" ", "T")
+    field.locator(".picker").evaluate(
+        "el => { el.value = '2026-11-05T17:30'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
+    assert page.input_value("input[name=remind_at]") == "2026-11-05 17:30"
+    sync_api.expect(page.locator("label .when")).to_have_text("→ Thu Nov 5, 17:30")  # the preview follows
+    with page.expect_navigation():
+        page.get_by_role("button", name="Save", exact=True).click()
+    assert datetime.fromisoformat(db.get_task(conn, 7)["remind_at"]).astimezone().strftime("%Y-%m-%d %H:%M") == "2026-11-05 17:30"
