@@ -38,8 +38,6 @@
   <input name="notes" placeholder="notes…" aria-label="Notes">
 {% endcall %}
 <ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step in ('later', 'waiting')), grip=True) }}{% endfor %}</ul>
-{# An abandoned project's steps, each revivable (which revives the project too). #}
-{% if abandoned %}<ul class="tasks">{% for t in abandoned %}{{ row(t, project=False) }}{% endfor %}</ul>{% endif %}
 {% set in_project = true %}{% include "_done_toggle.html" %}
 {% if times %}{{ tally('Time', times, cls='wide') }}{% endif %}
 {% if tasks %}{{ move_panel('project', current=p.id) }}{% endif %}

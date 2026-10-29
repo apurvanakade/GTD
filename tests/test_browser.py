@@ -222,7 +222,7 @@ def test_theme_toggle_overrides_system_and_persists(page, live):
 
 def test_drag_reorders_project_steps(page, live, conn):
     page.goto(live + "/projects/1")
-    titles = lambda: page.locator("ul.tasks li.task a.title").all_inner_texts()
+    titles = lambda: page.locator("ul[data-reorder] li.task a.title").all_inner_texts()
     assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
     with page.expect_response(lambda r: r.url.endswith("/order")) as saved:
         row(page, "lay tiles").locator(".grip").drag_to(row(page, "quote from Bob"), target_position={"x": 5, "y": 2})

@@ -242,10 +242,12 @@ def toggle_url(show, default=False):
     return url_for(request.endpoint, **request.view_args, **flip, **args)
 
 
-def completed(default=False, **filters):
-    """Template variables for the "Show completed" toggle (?done=1, or ?done=0 to hide where shown by default): the done tasks, newest completion first."""
+def completed(default=False, abandoned=False, **filters):
+    """Template variables for the "Show completed" toggle (?done=1, or ?done=0 to hide where shown by default): the done tasks,
+    newest completion first, and with abandoned=True the abandoned ones too, listed below them."""
     show = request.args.get("done", "1" if default else "0") == "1"
     return {"show_done": show, "done_tasks": db.done_tasks(conn(), **filters) if show else [],
+            "abandoned_tasks": db.done_tasks(conn(), state="abandoned", **filters) if show and abandoned else [],
             "toggle_url": toggle_url(show, default)}
 
 
@@ -610,10 +612,9 @@ def project_view(id):
         if fields.get("status") == "someday":
             flash(f"Moved “{fields['title']}” to someday / maybe.")
         return back()
-    abandoned = db.done_tasks(c, project_id=id, state="abandoned") if p["status"] == "abandoned" else []
     return render_template("project.html", p=p, area=p["area_id"] and db.get_horizon(c, p["area_id"]), tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
-                           abandoned=abandoned, project_groups=db.project_groups(c),
-                           times=db.step_totals(c, id, now()), **completed(default=True, project_id=id))
+                           project_groups=db.project_groups(c),
+                           times=db.step_totals(c, id, now()), **completed(default=True, abandoned=True, project_id=id))
 
 
 @app.post("/projects/<int:id>/abandon")

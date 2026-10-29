@@ -769,7 +769,8 @@ def test_abandoned_tasks_leave_every_list_and_show_on_done(client, conn):
     client.post(f"/tasks/{t}/delete")
     assert db.project_tasks(conn, pid) == [] and db.open_tasks(conn) == []
     assert "forgotten idea" not in client.get("/next").get_data(as_text=True)
-    assert "forgotten idea" not in client.get(f"/projects/{pid}").get_data(as_text=True)
+    page = client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert "forgotten idea" not in page.split("<h2>Abandoned")[0] and "forgotten idea" in page.split("<h2>Abandoned")[1]
     done = client.get("/done").get_data(as_text=True)
     assert "Abandoned" in done and "forgotten idea" in done and f"/tasks/{t}/revive" in done
     assert "forgotten idea" in client.get("/search?q=forgotten").get_data(as_text=True)
@@ -2388,3 +2389,19 @@ def test_task_rows_show_the_area(client, conn):
     ids = seed(conn)
     page = client.get("/next").get_data(as_text=True)
     assert f'<a class="proj" href="/projects/{ids["active"]}">Kitchen</a> <a class="area" href="/horizons/{ids["area"]}">Home</a>' in page
+
+
+def test_project_page_lists_its_abandoned_steps_below_completed(client, conn):
+    pid = db.add_project(conn, "Garden")
+    done = db.add_task(conn, "weeded", step="later", project_id=pid)
+    db.complete_task(conn, done, TODAY)
+    dropped = db.add_task(conn, "pond", step="later", project_id=pid)
+    db.abandon_task(conn, dropped)
+    page = client.get(f"/projects/{pid}").get_data(as_text=True)
+    completed, abandoned = page.split("<h2>Completed")[1].split("<h2>Abandoned")
+    assert ">weeded<" in completed and ">pond<" not in completed
+    assert ">pond<" in abandoned and f"/tasks/{dropped}/revive" in abandoned
+    # Hidden with the completed ones; absent when there are none.
+    assert "<h2>Abandoned" not in client.get(f"/projects/{pid}?done=0").get_data(as_text=True)
+    other = db.add_project(conn, "Empty")
+    assert "<h2>Abandoned" not in client.get(f"/projects/{other}").get_data(as_text=True)
