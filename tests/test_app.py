@@ -1922,10 +1922,28 @@ def test_a_reminder_in_the_past_is_refused_unless_unchanged(client, conn):
 
 def test_reminder_preview_reads_the_text_back(client):
     when = local(db.iso(NOW + timedelta(hours=2)))
-    assert client.get("/remind/parse?q=in 2 hours").get_json() == {"when": when.strftime("%a %b %-d, %H:%M"),
+    assert client.get("/parse/remind?q=in 2 hours").get_json() == {"reads": when.strftime("%a %b %-d, %H:%M"),
                                                                    "past": False}
-    assert client.get("/remind/parse?q=yesterday").get_json() == {"when": "Wed Oct 21, 09:00", "past": True}
-    assert client.get("/remind/parse?q=gibberish").get_json() == {"when": None, "past": False}
+    assert client.get("/parse/remind?q=yesterday").get_json() == {"reads": "Wed Oct 21, 09:00", "past": True}
+    assert client.get("/parse/remind?q=gibberish").get_json() == {"reads": None, "past": False}
+
+
+def test_due_preview_reads_the_text_back(client):  # today is Thu Oct 22
+    assert client.get("/parse/due?q=tomorrow").get_json() == {"reads": "Fri Oct 23", "past": False}
+    assert client.get("/parse/due?q=2026-10-30").get_json() == {"reads": "Fri Oct 30", "past": False}
+    assert client.get("/parse/due?q=gibberish").get_json() == {"reads": None, "past": False}
+
+
+def test_repeat_preview_reads_the_rule_and_the_next_date(client):  # today is Thu Oct 22
+    def reads(q, due=""):
+        return client.get("/parse/recur", query_string={"q": q, "due": due}).get_json()["reads"]
+    assert reads("weekly") == "every week · next Thu Oct 29"  # no due date: it gets today
+    assert reads("Every 2 Weeks", "oct 30") == "every 2 weeks · next Fri Nov 13"
+    assert reads("every 2 weeks", "2026-10-01") == "every 2 weeks · next Thu Oct 29"  # overdue: the first one after today
+    assert reads("monthly after done", "oct 30") == "every month after done · next Sun Nov 22 if done today"
+    assert reads("every 2 weeks", "gibberish") == "every 2 weeks · next Thu Nov 5"
+    assert reads("fortnightly") is None
+    assert client.get("/parse/nonsense?q=x").status_code == 404
 
 
 def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):

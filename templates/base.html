@@ -137,22 +137,27 @@ document.addEventListener('change', e => {
   if (!e.target.matches('.date-field .picker')) return;
   const text = e.target.closest('.date-field').querySelector('input[name]');
   text.value = e.target.value.replace('T', ' ');  // "2026-10-30 17:00", as the Remind box shows it
-  text.dispatchEvent(new Event('input', {bubbles: true}));  // so the Remind preview follows
+  text.dispatchEvent(new Event('input', {bubbles: true}));  // so the box's preview follows
 });
-// The task page's Remind box: as you type, the hint shows how it reads; untouched, it keeps "sent" (or nothing).
-const remind = document.querySelector('input[name=remind_at]');
-if (remind) {
-  const hint = remind.closest('label').querySelector('.when'), shown = remind.value;
+// The task page's Due, Repeats and Remind boxes: the hint beside each shows how it reads, live (/parse/<kind>). A
+// repeat's next date follows the Due box too. An untouched Remind box keeps "sent" (or nothing) instead.
+for (const hint of document.querySelectorAll('.hint.when')) {
+  const box = hint.closest('label').querySelector('input[name]'), kind = hint.dataset.parse, shown = box.value;
+  const due = box.form.elements.due_date;
   let asked = 0, wait;
-  remind.addEventListener('input', () => {
+  const show = () => {
     clearTimeout(wait);
-    const q = remind.value.trim(), n = ++asked;
-    if (!q || remind.value === shown) { hint.textContent = remind.value ? hint.dataset.sent : ''; return; }
+    const q = box.value.trim(), n = ++asked;
+    if (!q || (kind === 'remind' && box.value === shown)) { hint.textContent = (box.value && hint.dataset.sent) || ''; return; }
+    const url = `/parse/${kind}?q=${encodeURIComponent(q)}` + (kind === 'recur' ? '&due=' + encodeURIComponent(due.value) : '');
     wait = setTimeout(async () => {
-      const r = await (await fetch('/remind/parse?q=' + encodeURIComponent(q))).json();
-      if (n === asked) hint.textContent = !r.when ? 'not understood' : '→ ' + r.when + (r.past ? ' · already passed' : '');
+      const r = await (await fetch(url)).json();
+      if (n === asked) hint.textContent = !r.reads ? 'not understood' : '→ ' + r.reads + (r.past ? ' · already passed' : '');
     }, 150);
-  });
+  };
+  box.addEventListener('input', show);
+  if (kind === 'recur') due.addEventListener('input', show);
+  if (kind !== 'remind') show();  // what a saved date or rule means, from the start
 }
 // A project row's ▸ folds its steps out below it; "Expand all" does every row.
 const peek = (b, open) => {

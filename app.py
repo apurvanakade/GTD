@@ -874,11 +874,33 @@ def snooze(id):
     return "", 204
 
 
-@app.route("/remind/parse")
-def remind_parse():
-    """The task page's live preview of how the Remind box reads."""
-    when = dates.parse_when(request.args.get("q") or "", local_now())
-    return {"when": when and when.strftime(WHEN), "past": bool(when and when <= local_now())}
+DAY = "%a %b %-d"  # a date in words, as the Due and Repeats previews show it
+
+
+def describe_recur(rule):
+    """A repeat rule in plain words: "every 2 weeks after done"."""
+    n, unit = recur.parse(rule)
+    return f"every {unit if n == 1 else f'{n} {unit}s'}" + (" after done" if recur.after_done(rule) else "")
+
+
+@app.route("/parse/<kind>")
+def parse_preview(kind):
+    """The task page's live previews of how its Due, Repeats and Remind boxes read. A repeat's next date steps from
+    the Due box (`due`), as completing the task would; with no date it gets today, as saving would."""
+    q = request.args.get("q") or ""
+    if kind == "due":
+        d = dates.parse(q, today())
+        return {"reads": d and d.strftime(DAY), "past": False}
+    if kind == "recur":
+        if not recur.parse(q):
+            return {"reads": None, "past": False}
+        due = dates.parse(request.args.get("due") or "", today()) or today()
+        after = " if done today" if recur.after_done(q) else ""
+        return {"reads": f"{describe_recur(q)} · next {recur.next_due(q, due, today()).strftime(DAY)}{after}", "past": False}
+    if kind == "remind":
+        when = dates.parse_when(q, local_now())
+        return {"reads": when and when.strftime(WHEN), "past": bool(when and when <= local_now())}
+    abort(404)
 
 
 def reminder_loop():

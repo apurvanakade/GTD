@@ -759,7 +759,7 @@ def test_horizons_arrow_keys_move_between_levels(page, live):
 
 def test_remind_box_previews_how_it_reads(page, live):
     page.goto(live + "/tasks/7")  # "call mum": a reminder still to come
-    hint = page.locator("label .when")
+    hint = page.locator(".when[data-parse=remind]")
     page.fill("input[name=remind_at]", "oct 30 at 5pm")
     sync_api.expect(hint).to_have_text("→ Fri Oct 30, 17:00")
     page.fill("input[name=remind_at]", "yesterday")
@@ -770,6 +770,21 @@ def test_remind_box_previews_how_it_reads(page, live):
     sync_api.expect(hint).to_have_text("")
 
 
+def test_due_and_repeat_boxes_preview_how_they_read(page, live):
+    page.goto(live + "/tasks/7")
+    due, rule = page.locator(".when[data-parse=due]"), page.locator(".when[data-parse=recur]")
+    page.fill("input[name=due_date]", "tomorrow")
+    sync_api.expect(due).to_have_text("→ Fri Oct 23")
+    page.fill("input[name=recur]", "every 2 weeks")
+    sync_api.expect(rule).to_have_text("→ every 2 weeks · next Fri Nov 6")
+    page.fill("input[name=due_date]", "oct 30")  # the repeat's next date follows the due box
+    sync_api.expect(rule).to_have_text("→ every 2 weeks · next Fri Nov 13")
+    page.fill("input[name=recur]", "fortnightly")
+    sync_api.expect(rule).to_have_text("not understood")
+    page.fill("input[name=due_date]", "")
+    sync_api.expect(due).to_have_text("")
+
+
 def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, live, conn):
     page.goto(live + "/tasks/7")  # "call mum": a reminder still to come
     field = page.locator(".date-field", has=page.locator("input[name=remind_at]"))
@@ -778,7 +793,7 @@ def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, l
     field.locator(".picker").evaluate(
         "el => { el.value = '2026-11-05T17:30'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
     assert page.input_value("input[name=remind_at]") == "2026-11-05 17:30"
-    sync_api.expect(page.locator("label .when")).to_have_text("→ Thu Nov 5, 17:30")  # the preview follows
+    sync_api.expect(page.locator(".when[data-parse=remind]")).to_have_text("→ Thu Nov 5, 17:30")  # the preview follows
     with page.expect_navigation():
         page.get_by_role("button", name="Save", exact=True).click()
     assert datetime.fromisoformat(db.get_task(conn, 7)["remind_at"]).astimezone().strftime("%Y-%m-%d %H:%M") == "2026-11-05 17:30"

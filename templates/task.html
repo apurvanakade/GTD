@@ -34,12 +34,14 @@
   <label>Project
     {{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
   </label>
-  <label>Due {{ date_input(t.due_date) }}</label>
-  <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…"></label>
+  {#- Each .when hint shows how its box reads, as you type (the JS in base.html, /parse/<kind>). #}
+  <label>Due {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
+  <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…">
+    <span class="hint when" data-parse="recur"></span></label>
   <label>Remind {{ date_input(t.remind_at|local_minute, 'tomorrow 9am, fri 14:00, in 2 hours…', name='remind_at', label='Remind',
     type='datetime-local') }}
-    {#- How the box reads, as you type (the JS in base.html, /remind/parse); "sent" until then. #}
-    <span class="hint when" data-sent="{{ 'sent' if t.reminded_at }}"{% if t.reminded_at %} title="Sent {{ t.reminded_at|local_minute }}"{% endif %}>
+    {#- "sent" until the box is changed. #}
+    <span class="hint when" data-parse="remind" data-sent="{{ 'sent' if t.reminded_at }}"{% if t.reminded_at %} title="Sent {{ t.reminded_at|local_minute }}"{% endif %}>
       {{- 'sent' if t.reminded_at }}</span></label>
   <div class="row">
     <button class="primary">Save</button>
