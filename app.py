@@ -638,7 +638,7 @@ def project_add_task(id):
     db.get_project(c, id) or abort(404)
     fields = task_fields_from_form()
     if fields.get("title"):
-        fields.setdefault("step", "later" if db.project_next(c, id) else "next")
+        fields.setdefault("step", "later")  # "next" is only ever chosen, never a default
         db.add_task(c, fields.pop("title"), project_id=id, **fields)
     return redirect(url_for("project_view", id=id))
 

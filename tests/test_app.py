@@ -663,7 +663,8 @@ def test_project_step_without_title_is_ignored(client, conn):
     client.post(f"/projects/{pid}/tasks", data={"title": " "})
     assert db.project_tasks(conn, pid) == []
     client.post(f"/projects/{pid}/tasks", data={"title": "first"})
-    assert db.project_tasks(conn, pid)[0]["step"] == "next"  # no next yet, so the first step is it
+    assert db.project_tasks(conn, pid)[0]["step"] == "later"  # "next" is always chosen, even with no next yet
+    assert b'<option selected>later</option>' in client.get(f"/projects/{pid}").data
 
 
 def test_capture_on_inbox_has_no_flash_and_blank_is_ignored(client, conn):

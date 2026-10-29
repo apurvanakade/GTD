@@ -28,7 +28,7 @@
 <h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}</h2>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step', marks=True) %}
   <select name="step" aria-label="Step">
-    {% for s in ['next', 'later', 'waiting'] %}<option{% if s == ('later' if has_next else 'next') %} selected{% endif %}>{{ s }}</option>{% endfor %}
+    {% for s in ['next', 'later', 'waiting'] %}<option{% if s == 'later' %} selected{% endif %}>{{ s }}</option>{% endfor %}
   </select>
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats: weekly…" aria-label="Repeats">

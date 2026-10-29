@@ -165,7 +165,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **One next action per project.** `db.update_task`/`add_task` enforce it: when a project task becomes `next`, the project's other `next` tasks become `later`.
   - When a project's next action is finished, nothing is promoted automatically and nothing navigates: the project shows as stalled (⚠) until you pick one with "Make next" on its page.
   - ✓→ (on a project step's row outside its project page, and on its task page; `/tasks/<id>/done-then-project`, `complete_then_project()` in `app.py`) completes the step and opens its project, so you can pick the next one right away. It's the plain ✓ plus a deliberate jump; a task without a project just stays on the page.
-  - Adding a step to a project that already has a next action makes it `later` by default, and so does filing an inbox item into such a project.
+  - **`next` is always a conscious choice, never a default.** A step added on a project page defaults to `later` (its step picker preselects it), even when the project has no next action, and so does filing an inbox item. Only Make next, the step picker, or the Next page's add line (below) set `next`.
   - An active project with no `next` task is "stalled" (⚠).
   - Tasks of waiting and someday projects stay off Next Actions (`VISIBLE_NEXT`). Waiting projects are listed on the Waiting page.
 - **No contexts.** They were removed on 2026-10-23: they were never used, and having to pick one slowed processing. Don't bring them back without being asked.
