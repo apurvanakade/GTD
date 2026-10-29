@@ -195,7 +195,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **Horizons** live in one table keyed by `level`:
   - `purpose` and `vision` are single seeded notes that can't be deleted.
   - `goal` and `area` are lists; areas hold projects (above).
-  - The Horizons page is a deck like the review (no ticks): one card per `HORIZON_STEPS` key (purpose, vision, goal, area, projects, ground: H5 down to H0), `?level=`, else purpose; titles in `HORIZON_TITLES`. Purpose and vision cards autosave their notes; goal and area cards get the page's add line; deleting a goal or area returns to its card.
+  - The Horizons page is a deck like the review (no ticks): one card per `HORIZON_STEPS` key (purpose, vision, goal, area, projects, ground: H5 down to H0), `?level=`, else area (H2); titles in `HORIZON_TITLES`. Purpose and vision cards autosave their notes; goal and area cards get the page's add line; deleting a goal or area returns to its card.
 
 ## Tests
 

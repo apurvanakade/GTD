@@ -952,7 +952,7 @@ HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS},
 def horizons_view():
     level = request.args.get("level")
     if level not in HORIZON_STEPS:
-        level = HORIZON_STEPS[0]
+        level = "area"  # H2 by default: where projects are filed
     show = request.args.get("done") == "1"
     return render_template("horizons.html", levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
                            items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()),

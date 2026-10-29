@@ -490,8 +490,10 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     seed(conn)
     html = client.get("/horizons").get_data(as_text=True)
     assert html.count('class="dot') == len(HORIZON_STEPS) == 6
-    assert horizon_card(html)[0] == "purpose" and not ADD_LINE.search(html)  # opens at the top; no add line there
-    assert 'rel="prev"' not in html and 'href="/horizons?level=vision" rel="next"' in html
+    assert horizon_card(html)[0] == "area"  # opens at H2, where projects are filed
+    top = client.get("/horizons?level=purpose").get_data(as_text=True)
+    assert horizon_card(top)[0] == "purpose" and not ADD_LINE.search(top)  # no add line there
+    assert 'rel="prev"' not in top and 'href="/horizons?level=vision" rel="next"' in top
     goal = client.get("/horizons?level=goal").get_data(as_text=True)
     key, card = horizon_card(goal)
     assert key == "goal" and "Ship the kitchen" in card and "Home" not in card
@@ -499,7 +501,7 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     assert '<span class="count">1</span>' in card
     area = client.get("/horizons?level=area").get_data(as_text=True)
     assert '<input type="hidden" name="level" value="area">' in area and "3 projects<" in horizon_card(area)[1] and "Fall term" not in area
-    assert horizon_card(client.get("/horizons?level=bogus").get_data(as_text=True))[0] == "purpose"
+    assert horizon_card(client.get("/horizons?level=bogus").get_data(as_text=True))[0] == "area"
     assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
     vision = db.horizons(conn)["vision"][0]["id"]
     assert f'data-autosave="/autosave/horizons/{vision}"' in client.get("/horizons?level=vision").get_data(as_text=True)
