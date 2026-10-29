@@ -163,14 +163,15 @@ select:has(option[value="__new__"]:checked) + input { display: block; }
 .add select:has(option[value="__new__"]:checked) + input, .row select:has(option[value="__new__"]:checked) + input { display: inline-block; }
 
 /* Inbox: the projects to drop dragged rows on, slid in from the right while dragging, or pinned open by the
-   header's Projects button (the page then moves left of it). Grouped like the project dropdown's optgroups. */
+   header's Projects button. It floats over the page, which never moves. Grouped like the project dropdown's optgroups. */
 .drop-panel {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(280px, 45vw); overflow-y: auto; z-index: 20;
   padding: 16px 12px; background: var(--card); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgb(0 0 0 / .08);
   transform: translateX(100%); visibility: hidden; transition: transform .15s, visibility .15s;
 }
 body.dragging-inbox .drop-panel, body.pinned-panel .drop-panel { transform: none; visibility: visible; }
-body.pinned-panel { margin-right: min(296px, 45vw); }
+.drop-panel .unpin { display: none; float: right; }
+body.pinned-panel .drop-panel .unpin { display: block; }
 .pin-panel[aria-pressed="true"] { color: var(--fg); background: var(--soft); }
 .drop-panel .group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .drop-panel h3 { margin: 0 10px 4px; font-size: .9375rem; font-weight: 700; color: var(--fg); }

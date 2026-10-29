@@ -8,7 +8,7 @@
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
 {# Slides in while a row is dragged, or stays while pinned by the header's Projects button: drop a row on a
    project to file it as a later step. #}
-<aside class="drop-panel" data-move="{{ url_for('inbox_move') }}">{{ project_targets() }}</aside>
+<aside class="drop-panel" data-move="{{ url_for('inbox_move') }}"><button type="button" class="unpin" title="Hide the projects" aria-label="Hide the projects">✕</button>{{ project_targets() }}</aside>
 <script>
 (() => {
   const list = document.querySelector('ul.tasks'), panel = document.querySelector('.drop-panel');
@@ -22,6 +22,7 @@
   };
   try { pinned(localStorage.getItem('inbox-panel') === '1'); } catch {}
   pin.addEventListener('click', () => pinned(!body.classList.contains('pinned-panel')));
+  panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
   const close = () => { body.classList.remove('dragging-inbox', 'naming'); naming = null; name.value = ''; };
   const move = async (li, data) => {
     if (await post(panel.dataset.move, new URLSearchParams({id: li.dataset.id, ...data}))) li.remove();

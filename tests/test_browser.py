@@ -568,10 +568,20 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     assert panel.is_visible()  # still pinned after the drop
     page.reload()
     panel.wait_for(state="visible")  # and after a reload
-    page.locator(".pin-panel").click()
+    panel.locator(".unpin").click()  # the panel floats over the header's button
     panel.wait_for(state="hidden")
     page.reload()
     assert not panel.is_visible()
+
+
+def test_pinned_project_panel_overlaps_the_list(page, live):
+    page.set_viewport_size({"width": 1600, "height": 800})
+    page.goto(live + "/inbox")
+    left = lambda: page.locator("ul.tasks").evaluate("e => e.getBoundingClientRect().left")
+    before = left()
+    page.locator(".pin-panel").click()
+    page.locator(".drop-panel").wait_for(state="visible")
+    assert left() == before  # the panel floats over the page; the list stays put
 
 
 def test_review_arrow_keys_move_between_steps(page, live):
