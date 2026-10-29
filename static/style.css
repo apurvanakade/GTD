@@ -273,22 +273,25 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .tasks.filled > .task:hover > .meta { opacity: 1; }
 .tasks.filled > .task.idle > :is(.title, .peek) { opacity: .5; }
 
-/* Weekly review: one step card at a time, a rail of dots to move between them, past weeks as a streak. */
-.review { list-style: none; padding-left: 0; }
-.review > li:not(.on) { display: none; }
-.review > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
-.review h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
-.review h2 + .hint { margin: 2px 0 0 calc(1.3em + 10px); font-size: .85rem; }
-.review .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
-.review .count.clear { color: var(--muted); }
+/* Decks (Review, Horizons): one card at a time, a rail of dots to move between them. Review's past weeks: a streak. */
+.deck { list-style: none; padding-left: 0; }
+.deck > li:not(.on) { display: none; }
+.deck > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
+.deck h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
+.deck h2 + .hint { margin: 2px 0 0; font-size: .85rem; }
+.review h2 + .hint { margin-left: calc(1.3em + 10px); }
+.deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.deck .count.clear { color: var(--muted); }
 .review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }
 .review .tick button:hover { border-color: var(--accent); }
 .review > li.ticked .tick button { border-color: var(--accent); background: var(--accent); color: var(--bg); }
 .button.slot { visibility: hidden; }
-.rail { display: flex; gap: 6px; align-items: center; }
-.rail .dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--muted); }
-.rail .dot.done { background: var(--accent); border-color: var(--accent); }
-.rail .dot.on { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rail { display: flex; gap: 2px; align-items: center; }
+.rail .dot { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; }
+.rail .dot:hover { background: var(--soft); }
+.rail .dot::before { content: ""; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--muted); }
+.rail .dot.done::before { background: var(--accent); border-color: var(--accent); }
+.rail .dot.on::before { outline: 2px solid var(--accent); outline-offset: 2px; }
 .streak { display: flex; gap: 3px; flex-wrap: wrap; }
 .streak .wk { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
 .streak .wk.hit { background: var(--accent); }
@@ -296,7 +299,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .date { font-variant-numeric: tabular-nums; }
 .done-toggle { margin-top: 1.5em; font-size: .9rem; }
 .done-toggle a { color: var(--muted); }
-.horizon textarea { margin-top: 4px; }
+.deck textarea { margin-top: 8px; }
 
 /* Calendar. */
 .cal { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; }

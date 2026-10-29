@@ -373,7 +373,7 @@ def search_suggest():
             out.append({"title": r["title"], "url": url_for("reference_view", id=r["id"]), "kind": "reference",
                         "meta": ""})
         else:
-            url = url_for("horizon_view", id=r["id"]) if r["level"] in ("goal", "area") else url_for("horizons_view")
+            url = url_for("horizon_view", id=r["id"]) if r["level"] in ("goal", "area") else url_for("horizons_view", level=r["level"])
             out.append({"title": r["title"], "url": url, "kind": r["level"], "meta": ""})
     return out
 
@@ -764,10 +764,19 @@ if NTFY_URL:
 
 # --- horizons --------------------------------------------------------------
 
+# The Horizons page's cards, top down; horizons.html has one card per key.
+HORIZON_STEPS = ("purpose", "vision", "goal", "area", "projects", "ground")
+HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS},
+                  "projects": "H1 · Projects", "ground": "H0 · Ground level"}
+
+
 @app.route("/horizons")
 def horizons_view():
-    return render_template("horizons.html", levels=HORIZON_LEVELS, items=db.horizons(conn()),
-                           projects=db.projects(conn()), ground=db.h0_actions(conn()))
+    level = request.args.get("level")
+    if level not in HORIZON_STEPS:
+        level = HORIZON_STEPS[0]
+    return render_template("horizons.html", levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
+                           items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()))
 
 
 @app.post("/horizons")
@@ -788,13 +797,14 @@ def horizon_view(id):
                           notes=(request.form.get("notes") or "").strip())
         flash("Saved.")
         return back()
-    return render_template("horizon.html", h=h, label=dict((l, lab) for l, lab, _ in HORIZON_LEVELS)[h["level"]])
+    return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]])
 
 
 @app.post("/horizons/<int:id>/delete")
 def horizon_delete(id):
+    h = db.get_horizon(conn(), id) or abort(404)
     db.delete_horizon(conn(), id)
-    return redirect(url_for("horizons_view"))
+    return redirect(url_for("horizons_view", level=h["level"]))
 
 
 

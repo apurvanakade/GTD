@@ -63,10 +63,10 @@ def test_every_nav_page_loads_without_js_errors(page, live):
 
 
 def test_tick_off_fades_the_row_in_place(page, live, conn):
-    page.goto(live + "/horizons")
+    page.goto(live + "/horizons?level=ground")
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
-    assert page.url == live + "/horizons"
+    assert page.url == live + "/horizons?level=ground"
     assert row(page, "vacuum").get_attribute("class").split().count("gone") == 1
     assert db.get_task(conn, 5)["state"] == "done"
 
@@ -645,7 +645,7 @@ def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
     page.goto(live + "/next")
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
     assert style(page.locator("li.task").first, "borderBottomWidth") == "0px"
-    for url in ("/projects", "/someday", "/waiting", "/horizons"):
+    for url in ("/projects", "/someday", "/waiting", "/horizons?level=projects"):
         page.goto(live + url)
         rows = page.locator("ul.cards > li.task")
         assert rows.count() >= 1, url
@@ -731,3 +731,18 @@ def test_help_dialog_uses_the_theme(page, live):
     page.keyboard.press("?")
     bg = page.locator(".help-dialog").evaluate("e => getComputedStyle(e).backgroundColor")
     assert bg == page.evaluate("getComputedStyle(document.body).backgroundColor")
+
+
+def test_review_dots_are_easy_to_click(page, live):
+    page.goto(live + "/review")
+    boxes = [d.bounding_box() for d in page.locator(".rail .dot").all()]
+    assert all(b["width"] >= 24 and b["height"] >= 24 for b in boxes)
+    assert all(b2["x"] >= b1["x"] + b1["width"] for b1, b2 in zip(boxes, boxes[1:]))
+
+
+def test_horizons_arrow_keys_move_between_levels(page, live):
+    page.goto(live + "/horizons?level=goal")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_url("**/horizons?level=area")
+    page.locator(".rail .dot").first.click()
+    page.wait_for_url("**/horizons?level=purpose")

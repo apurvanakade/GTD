@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_deck.html" import stepper %}
 {% block title %}Weekly review{% endblock %}
 {# One step shows at a time; the rail of dots (ticked, current, to do) switches between them. #}
 {% macro card(key, label, hint, n=none) %}
@@ -10,12 +11,9 @@
     {{ caller() }}
   </li>
 {%- endmacro %}
-{% block actions %}{% set i = steps.index(step) %}
-  {%- if i > 0 %}<a class="button" href="{{ url_for('review', step=steps[i - 1]) }}" rel="prev" title="Previous step (left arrow)" aria-label="Previous step">‹</a>{% else %}<span class="button slot">‹</span>{% endif %}
-  <span class="rail">{% for s in steps %}<a href="{{ url_for('review', step=s) }}" class="dot{{ ' done' if s in checked }}{{ ' on' if s == step }}" title="{{ loop.index }}" aria-label="Step {{ loop.index }}"></a>{% endfor %}</span>
-  {%- if i < steps|length - 1 %}<a class="button" href="{{ url_for('review', step=steps[i + 1]) }}" rel="next" title="Next step (right arrow)" aria-label="Next step">›</a>{% else %}<span class="button slot">›</span>{% endif %}{% endblock %}
+{% block actions %}{{ stepper('review', 'step', steps, step, checked) }}{% endblock %}
 {% block body %}
-<ol class="review">
+<ol class="deck review">
   {% call card('sweep', 'Mind sweep', 'Capture every open loop in your head with +, then check your physical inbox, email and notes.') %}{% endcall %}
   {% call card('inbox', 'Inbox to zero', 'File, do or drop every inbox item.', counts.inbox) %}
     {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox') }}">Inbox →</a></p>{% endif %}

@@ -1,51 +1,63 @@
 {% extends "base.html" %}
 {% from "_task.html" import row, add_form with context %}
+{% from "_deck.html" import stepper %}
 {% block title %}Horizons{% endblock %}
 {% block heading %}<h1>Horizons of focus</h1>{% endblock %}
+{# One horizon shows at a time, H5 down to H0, like the weekly review's steps. #}
+{% set hints = {
+  'purpose': 'Why you do what you do, and the principles you won\'t compromise. Revisit yearly.',
+  'vision': 'What wild success looks like in 3–5 years, at work, at home, in health. Revisit yearly.',
+  'goal': 'What you want done in 1–2 years. Revisit quarterly: does each have a project serving it?',
+  'area': 'The responsibilities you keep up. Does each have the projects it needs?',
+  'projects': 'Your active projects. A stalled one (⚠) needs a next action.',
+  'ground': 'Tasks you chose to keep outside any project. Set H0 in a task\'s project picker.',
+} %}
+{% block actions %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endblock %}
 {% block body %}
-{% call add_form(url_for('horizon_create'), 'Add a goal or area of focus') %}
-  <select name="level" aria-label="Level"><option value="goal">goal</option><option value="area">area of focus</option></select>
+{% if step in ('goal', 'area') %}
+{% call add_form(url_for('horizon_create'), 'Add a goal' if step == 'goal' else 'Add an area of focus') %}
+  <input type="hidden" name="level" value="{{ step }}">
 {% endcall %}
-<p class="hint">Revisit goals quarterly, vision and purpose yearly.</p>
-{% for level, label, hint in levels %}
-<section class="horizon">
-  <h2>{{ label }}</h2>
-  {% if level in ('purpose', 'vision') %}{% set h = items[level][0] %}
-  <form method="post" action="{{ url_for('horizon_view', id=h.id) }}">
-    <textarea name="notes" rows="5" placeholder="{{ hint }}">{{ h.notes }}</textarea>
-    <div class="row"><button>Save</button></div>
-  </form>
-  {% else %}
-  <ul class="tasks">
-    {% for h in items[level] %}
-    <li class="task">
-      <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
-      {% if h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
-    </li>
+{% endif %}
+<ol class="deck">
+  <li id="{{ step }}" class="step on">
+    <h2>{{ titles[step] }}</h2>
+    <p class="hint">{{ hints[step] }}</p>
+    {% if step in ('purpose', 'vision') %}{% set h = items[step][0] %}
+    <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
+      <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', step)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
+      <p class="autosave hint" aria-live="polite"></p>
+      <div class="row"><button>Save</button></div>
+    </form>
+    {% elif step in ('goal', 'area') %}
+    <span class="count">{{ items[step]|length }}</span>
+    <ul class="tasks">
+      {% for h in items[step] %}
+      <li class="task">
+        <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
+        {% if h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
+      </li>
+      {% else %}
+      <li class="empty">None yet: add one above.</li>
+      {% endfor %}
+    </ul>
+    {% elif step == 'projects' %}
+    <span class="count">{{ projects|length }}</span>
+    <ul class="tasks cards">
+      {% for p in projects %}
+      <li class="task{% if not p.next_count %} stalled{% endif %}">
+        <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
+        <span class="meta">{{ p.open_count }} open</span>
+      </li>
+      {% else %}
+      <li class="empty">No active projects.</li>
+      {% endfor %}
+    </ul>
+    <p><a class="button" href="{{ url_for('projects_view') }}">Projects →</a></p>
     {% else %}
-    <li class="empty">None yet: add one above.</li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-</section>
-{% endfor %}
-<section class="horizon">
-  <h2>H1 · Projects</h2>
-  <ul class="tasks cards">
-    {% for p in projects %}
-    <li class="task{% if not p.next_count %} stalled{% endif %}">
-      <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
-      <span class="meta">{{ p.open_count }} open</span>
-    </li>
-    {% else %}
-    <li class="empty">No active projects.</li>
-    {% endfor %}
-  </ul>
-  <p><a href="{{ url_for('projects_view') }}">All projects →</a></p>
-</section>
-<section class="horizon">
-  <h2>H0 · Ground level</h2>
-  <p class="hint">Tasks you chose to keep outside any project. Set H0 in a task's project picker.</p>
-  <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
-</section>
+    <span class="count">{{ ground|length }}</span>
+    <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
+    {% endif %}
+  </li>
+</ol>
 {% endblock %}

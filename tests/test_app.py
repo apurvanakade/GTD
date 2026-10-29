@@ -8,7 +8,7 @@ import pytest
 import dates
 import db
 import recur
-from app import REVIEW_STEPS, app, local_input
+from app import HORIZON_STEPS, REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
 
 # The tasks table as it was before the status column split into state and step, for migration tests.
@@ -186,8 +186,8 @@ def test_tasks_need_a_project_or_h0(client, conn):
     client.post(f"/tasks/{item}", data={"title": "inbox item", "project_id": "h0"})
     assert db.get_task(conn, item)["ground"] and db.get_task(conn, item)["step"] is None
     assert [t["id"] for t in db.h0_actions(conn)] == [item]
-    html = client.get("/horizons").data.decode()
-    assert "inbox item" in html and f'href="/projects/{pid}">P</a>' in html  # H0 tasks and H1 projects
+    assert "inbox item" in client.get("/horizons?level=ground").data.decode()  # H0 tasks
+    assert f'href="/projects/{pid}">P</a>' in client.get("/horizons?level=projects").data.decode()  # H1 projects
 
     stray = db.add_task(conn, "stray wait", step="waiting")  # no project, not H0: it's an inbox item
     assert db.get_task(conn, stray)["inbox"] and stray not in [t["id"] for t in db.next_list(conn)]
@@ -461,8 +461,37 @@ def test_horizons(client, conn):
     pid = items["purpose"][0]["id"]
     client.post(f"/horizons/{pid}/delete")
     assert db.get_horizon(conn, pid) is not None  # purpose can't be deleted
-    client.post(f"/horizons/{gid}/delete")
-    assert db.get_horizon(conn, gid) is None
+    r = client.post(f"/horizons/{gid}/delete")
+    assert db.get_horizon(conn, gid) is None and r.headers["Location"] == "/horizons?level=goal"  # back to its card
+
+
+ADD_LINE = re.compile(r'<form[^>]*class="add')
+
+
+def horizon_card(html):
+    """The one Horizons card shown: its key and its HTML."""
+    m = re.search(r'<li id="(\w+)" class="step on">(.*?)</li>\s*</ol>', html, re.S)
+    return m and m.group(1), m and m.group(2)
+
+
+def test_horizons_show_one_level_at_a_time(client, conn):
+    """Like the weekly review: one card per horizon, H5 down to H0, and a rail of dots to move between them."""
+    seed(conn)
+    html = client.get("/horizons").get_data(as_text=True)
+    assert html.count('class="dot') == len(HORIZON_STEPS) == 6
+    assert horizon_card(html)[0] == "purpose" and not ADD_LINE.search(html)  # opens at the top; no add line there
+    assert 'rel="prev"' not in html and 'href="/horizons?level=vision" rel="next"' in html
+    goal = client.get("/horizons?level=goal").get_data(as_text=True)
+    key, card = horizon_card(goal)
+    assert key == "goal" and "Ship the kitchen" in card and "Home" not in card
+    assert '<input type="hidden" name="level" value="goal">' in goal  # the add line adds to the card shown
+    assert '<span class="count">1</span>' in card
+    area = client.get("/horizons?level=area").get_data(as_text=True)
+    assert '<input type="hidden" name="level" value="area">' in area and "Clean and calm" in horizon_card(area)[1]
+    assert horizon_card(client.get("/horizons?level=bogus").get_data(as_text=True))[0] == "purpose"
+    assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
+    vision = db.horizons(conn)["vision"][0]["id"]
+    assert f'data-autosave="/autosave/horizons/{vision}"' in client.get("/horizons?level=vision").get_data(as_text=True)
 
 
 def test_reference(client, conn):
@@ -673,7 +702,7 @@ def iso(dt):
 def test_timer_starts_from_a_task_and_starting_another_stops_it(client, conn):
     a = db.add_task(conn, "write", step="next", ground=1)
     b = db.add_task(conn, "read", step="next", ground=1)
-    assert b'action="/tasks/%d/start"' % a in client.get("/horizons").data  # ▶ on task rows
+    assert b'action="/tasks/%d/start"' % a in client.get("/horizons?level=ground").data  # ▶ on task rows
     client.post(f"/tasks/{a}/start", headers={"Referer": "/next"})
     assert db.timer_running(conn)["task_id"] == a
     page = client.get("/inbox").get_data(as_text=True)  # the running timer shows on every page
@@ -1599,14 +1628,13 @@ def test_date_button_does_not_share_the_calendar_class(client, conn):
 
 def test_horizons_h0_rows_have_no_h0_tag(client, conn):
     seed(conn)
-    html = client.get("/horizons").get_data(as_text=True)
+    html = client.get("/horizons?level=ground").get_data(as_text=True)
     assert "vacuum" in html and "Ground level: no project, on purpose" not in html
 
 
 def test_horizons_has_one_add_line_with_a_level(client, conn):
-    html = client.get("/horizons").get_data(as_text=True)
+    html = client.get("/horizons?level=area").get_data(as_text=True)
     assert len(re.findall(r'<form[^>]*class="add', html)) == 1
-    assert re.search(r'<select name="level"[^>]*>\s*<option value="goal"', html)
     client.post("/horizons", data={"level": "area", "title": "Health"})
     assert [h["title"] for h in db.horizons(conn)["area"]] == ["Health"]
 
@@ -1705,6 +1733,7 @@ def test_filing_into_a_done_project_reopens_it(client, conn):
     db.complete_task(conn, t, TODAY)
     db.update_task(conn, t, project_id=gone)
     assert db.get_project(conn, gone)["status"] == "done"
+
 
 # --- reminders ---------------------------------------------------------------
 
