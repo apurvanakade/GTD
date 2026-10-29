@@ -173,9 +173,9 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - The rows fold into due bands (`banded()` in `_task.html`, `BANDS`, `soon()` and the `bands` filter in `app.py`), each a `<details>` with a count: Now (overdue + today) open; This week, Later and No date folded. Empty bands aren't shown. The JS in `base.html` remembers a band you click open or folded, per page (`localStorage`, `fold:<path>:<band>`); only clicks are saved, since a band that starts open fires `toggle` too.
   - Dates and ↻ show on hover (an overdue date always), and the H0 page drops the rows' H0 tag.
 - **A task row's project link follows its title** (`.name` in `row()`), so it doesn't float alone in the right-hand column once dates hide; the title has `flex-basis: 0`, so a long one wraps instead of pushing the buttons onto a line of their own.
-- **Recurring tasks** keep their step (or H0) but don't count until their due date: the weekly review and `db.next_actions()` use `VISIBLE_NEXT`.
+- **Recurring tasks** keep their step (or H0), except a next step comes back as later (below), but don't count until their due date: the weekly review and `db.next_actions()` use `VISIBLE_NEXT`.
 - **The Next and H0 nav counts** show only tasks due today or overdue (`DUE_NEXT`, `VISIBLE_H0`), so undated tasks and future repeats aren't in the number.
-  - `complete_task()` marks the task done and inserts the next instance.
+  - `complete_task()` marks the task done and inserts the next instance. A repeating `next` step's instance is a `later` step, so the project stalls until you pick its next action; waiting steps and H0 tasks keep theirs.
   - A repeat rule without a due date gets today as its due date.
 - **Projects can't be marked done while they have open tasks.** Moving a project out of done clears its `completed_at`.
   - An open task joining a done project (filing, the dropdown, adding, reviving) reopens it as active (`_reopen_project()` in `add_task`/`update_task`/`revive_task`).

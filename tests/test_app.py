@@ -92,14 +92,25 @@ def test_move_project_to_someday_from_task(client, conn):
 
 # --- recurring + projects --------------------------------------------------
 
-def test_recurring_complete_spawns_hidden_next(client, conn):
-    tid = db.add_task(conn, "vacuum", step="next", project_id=db.add_project(conn, "Home"), recur="weekly",
-                      due_date="2026-10-22")
+def test_recurring_next_step_comes_back_as_later(client, conn):
+    """Picking the next action is a conscious decision: a repeating next step's new instance is a later step."""
+    pid = db.add_project(conn, "Home")
+    tid = db.add_task(conn, "vacuum", step="next", project_id=pid, recur="weekly", due_date="2026-10-22")
     assert [t["id"] for t in db.next_actions(conn, TODAY)] == [tid]
     client.post(f"/tasks/{tid}/complete", headers={"X-Requested-With": "fetch"})
-    assert db.next_actions(conn, TODAY) == []
-    (nxt,) = db.next_list(conn)  # still on the Next tab, striped, but not counted until due
-    assert nxt["due_date"] == "2026-10-29"
+    assert db.next_list(conn) == []
+    (new,) = db.project_tasks(conn, pid)
+    assert (new["step"], new["due_date"]) == ("later", "2026-10-29")
+    assert db.project_next(conn, pid) is None  # stalled until you pick one
+
+
+def test_recurring_waiting_step_and_h0_task_keep_their_place(client, conn):
+    pid = db.add_project(conn, "Home")
+    w = db.add_task(conn, "chase", step="waiting", project_id=pid, recur="weekly", due_date="2026-10-22")
+    h = db.add_task(conn, "stretch", ground=1, recur="daily", due_date="2026-10-22")
+    assert db.get_task(conn, db.complete_task(conn, w, TODAY))["step"] == "waiting"
+    new = db.get_task(conn, db.complete_task(conn, h, TODAY))
+    assert (new["ground"], new["step"]) == (1, None)
 
 
 def test_project_cannot_complete_with_open_tasks(client, conn):
@@ -1466,6 +1477,7 @@ def test_next_repeat_keeps_its_place_in_the_project(client, conn):
     db.reorder_project(conn, pid, [a, b])
     new = db.complete_task(conn, a, TODAY)
     assert [t["id"] for t in db.project_tasks(conn, pid)] == [new, b]
+    assert db.get_task(conn, new)["step"] == "later"
 
 
 def test_project_page_rows_line_up(client, conn):

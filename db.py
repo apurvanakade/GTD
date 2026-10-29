@@ -279,7 +279,8 @@ def revive_task(c, id):
 
 
 def complete_task(c, id, today, now=None):
-    """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None."""
+    """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None.
+    A next step's instance comes back as a later step: picking the next action stays a conscious decision."""
     t = get_task(c, id)
     if t is None or t["state"] != "open":
         return None
@@ -291,7 +292,8 @@ def complete_task(c, id, today, now=None):
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
         next_due = recur.next_due(t["recur"], due, today)
-        new_id = add_task(c, t["title"], notes=t["notes"], step=t["step"], project_id=t["project_id"],
+        step = "later" if t["step"] == "next" else t["step"]
+        new_id = add_task(c, t["title"], notes=t["notes"], step=step, project_id=t["project_id"],
                           ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
     c.commit()
     return new_id
