@@ -222,7 +222,7 @@ def inbox_move():
 def toggle_url(show, default=False):
     """This page's URL with ?done flipped, keeping other query args. A page that shows completed by default flips ?done=0."""
     args = {k: v for k, v in request.args.items() if k != "done" and k not in request.view_args}
-    flip = {} if show == default else {"done": int(not default)}
+    flip = {} if (not show) == default else {"done": int(not show)}
     return url_for(request.endpoint, **request.view_args, **flip, **args)
 
 

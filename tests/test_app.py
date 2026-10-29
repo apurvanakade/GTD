@@ -1141,6 +1141,10 @@ def test_done_toggle_on_lists(client, conn):
     shown = page(project)
     assert shown.index("newer step") < shown.index("older step")  # newest completion first
     assert "old tiles" not in shown and "Hide completed" in shown
+    assert f'href="{project}?done=0">Hide completed' in shown  # the toggle really hides
+    assert f'href="{project}">Show completed' in page(project + "?done=0")
+    assert 'href="/next?done=1">Show completed' in page("/next")
+    assert 'href="/next">Hide completed' in page("/next?done=1")
     assert "2026-10-22" in shown and "2026-10-19" in shown  # completion dates are shown
     assert "2026-10-22" in page("/done")
     assert "swept porch" in page("/h0?done=1") and "swept porch" not in page("/h0")
