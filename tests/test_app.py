@@ -2336,6 +2336,18 @@ def test_project_page_changes_the_area(client, conn):
     assert "Fall term (archived)</option>" in done  # its archived area stays selected, so Save keeps it
 
 
+def test_dragging_a_project_into_an_area_changes_its_area(client, conn):
+    ids = seed(conn)
+    order = lambda **kw: client.post("/projects/order/active", data=kw, headers={"X-Requested-With": "fetch"})
+    assert order(ids=f"{ids['stalled']},{ids['active']}", moved=ids["stalled"], area_id=ids["empty_area"]).status_code == 204
+    assert db.get_project(conn, ids["stalled"])["area_id"] == ids["empty_area"]
+    assert db.get_project(conn, ids["active"])["area_id"] == ids["area"]  # only the dragged one moves
+    order(ids=str(ids["someday"]), moved=ids["someday"], area_id=ids["empty_area"])  # not on this list: unchanged
+    assert db.get_project(conn, ids["someday"])["area_id"] == ids["area"]
+    order(ids=str(ids["stalled"]), moved=ids["stalled"], area_id=9999)  # not an area: unchanged
+    assert db.get_project(conn, ids["stalled"])["area_id"] == ids["empty_area"]
+
+
 def test_projects_and_someday_pages_group_by_area(client, conn):
     ids = seed(conn)
     page = client.get("/projects").get_data(as_text=True)

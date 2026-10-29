@@ -123,6 +123,8 @@ function capture() {
   inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
 }
 document.querySelector('.add-inbox').addEventListener('click', capture);
+// A select marked data-submit (the project page's area) saves its form as soon as a choice is picked.
+document.addEventListener('change', e => { if (e.target.matches('select[data-submit]')) e.target.form.requestSubmit(); });
 // 📅 opens the native date picker; its pick lands in the text box beside it.
 document.addEventListener('click', e => {
   const b = e.target.closest('.date-field .pick');
@@ -189,38 +191,54 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
 // Drag ⠿ to reorder a project's steps, or the projects on Projects and Someday; the new order is saved in the background.
-document.querySelectorAll('ul[data-reorder]').forEach(list => {
-  let dragged = null;
-  // Only the list's own rows count, not the steps a Someday row folds out.
-  const rows = () => [...list.children].filter(li => li.dataset.id);
-  // Only the grip starts a drag, so titles stay links and text stays selectable.
-  list.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; });
-  list.addEventListener('pointerup', () => list.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
-  list.addEventListener('dragstart', e => {
-    dragged = e.target.closest('li[draggable]');
-    if (!dragged) return;
-    dragged.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
+// There a project dragged into another area's list (same page, `data-area`) moves to that area; "No area" takes none.
+(() => {
+  let dragged = null, from = null;
+  // Only a list's own rows count, not the steps a project row folds out.
+  const rows = list => [...list.children].filter(li => li.dataset.id);
+  document.querySelectorAll('ul[data-reorder]').forEach(list => {
+    // Only the grip starts a drag, so titles stay links and text stays selectable.
+    list.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; });
+    list.addEventListener('pointerup', () => list.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
+    list.addEventListener('dragstart', e => {
+      dragged = e.target.closest('li[draggable]');
+      if (!dragged) return;
+      from = list;
+      dragged.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    list.addEventListener('dragover', e => {
+      if (!dragged || 'pinned' in dragged.dataset) return;  // the next action only moves out, to another project
+      if (list !== from && !(list.dataset.reorder === from.dataset.reorder && 'area' in list.dataset)) return;
+      const over = rows(list).find(li => li.contains(e.target));
+      if (!over) return;
+      e.preventDefault();
+      if (over === dragged) return;
+      const r = over.getBoundingClientRect();
+      // A project's next action is pinned to the top: nothing goes above it.
+      if (e.clientY < r.top + r.height / 2 && !('pinned' in over.dataset)) over.before(dragged); else over.after(dragged);
+    });
+    list.addEventListener('drop', e => e.preventDefault());
   });
-  list.addEventListener('dragover', e => {
-    const over = rows().find(li => li.contains(e.target));
-    if (!dragged || !over || 'pinned' in dragged.dataset) return;  // the next action only moves out, to another project
-    e.preventDefault();
-    if (over === dragged) return;
-    const r = over.getBoundingClientRect();
-    // A project's next action is pinned to the top: nothing goes above it.
-    if (e.clientY < r.top + r.height / 2 && !('pinned' in over.dataset)) over.before(dragged); else over.after(dragged);
-  });
-  list.addEventListener('drop', e => e.preventDefault());
-  list.addEventListener('dragend', () => {
-    if (!dragged) return;
+  document.addEventListener('dragend', () => {
+    if (!dragged || !from) return;
+    const list = dragged.closest('ul[data-reorder]');
     dragged.classList.remove('dragging');
     dragged.removeAttribute('draggable');
-    dragged = null;
-    const ids = rows().map(li => li.dataset.id).join(',');
-    post(list.dataset.reorder, new URLSearchParams({ids}));
+    if (!list) { dragged = from = null; return; }  // moved out to another project (move.js)
+    const body = new URLSearchParams({ids: rows(list).map(li => li.dataset.id).join(',')});
+    if (list !== from) {
+      body.set('moved', dragged.dataset.id);
+      body.set('area_id', list.dataset.area);
+      if (!rows(from).length) {  // the area it left is empty now: drop its heading too
+        if (from.previousElementSibling?.matches('h2.area-head')) from.previousElementSibling.remove();
+        from.remove();
+      }
+    }
+    dragged = from = null;
+    post(list.dataset.reorder, body);
   });
-});
+})();
 // Search suggests fuzzy title matches as you type; Enter or a click opens the highlighted one.
 // With no suggestions, Enter falls back to the full-text results page.
 (() => {

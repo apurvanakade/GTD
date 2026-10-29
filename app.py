@@ -560,8 +560,13 @@ def projects_view():
 
 @app.post("/projects/order/<any(active, someday):status>")
 def projects_order(status):
-    """The Projects and Someday pages' drag-and-drop sends the project ids in their new order."""
-    db.reorder_projects(conn(), status, [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
+    """The Projects and Someday pages' drag-and-drop sends the project ids in their new order. A project dragged into
+    another area's group (`moved`, with that group's `area_id`) changes area."""
+    c, area_id, moved = conn(), area_from(request.form.get("area_id")), request.form.get("moved", "")
+    p = moved.isdigit() and db.get_project(c, int(moved))
+    if area_id and p and p["status"] == status:
+        db.update_project(c, p["id"], area_id=area_id)
+    db.reorder_projects(c, status, [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
     return back()

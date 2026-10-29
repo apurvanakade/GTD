@@ -4,10 +4,10 @@
 {% block actions %}{% if groups %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('project_create'), 'New project – describe the outcome') %}{{ area_select(required=True) }}{% endcall %}
-{# One list per area, each dragged on its own; a project with no area is flagged until it gets one. #}
+{# One list per area; dragging a project into another area's list moves it there. One with no area is flagged until it gets one. #}
 {% for area, ps in groups %}
 <h2 class="area-head">{% if area %}<a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% else %}<span class="warn">⚠ No area</span>{% endif %}</h2>
-<ul class="tasks cards filled" data-reorder="{{ url_for('projects_order', status='active') }}">
+<ul class="tasks cards filled" data-reorder="{{ url_for('projects_order', status='active') }}"{% if area %} data-area="{{ area.id }}"{% endif %}>
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
 {% else %}

@@ -12,7 +12,7 @@
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
   <div class="row">
-    {{ area_select(p.area_id, keep=area) }}
+    {{ area_select(p.area_id, keep=area, submit=True) }}
     <button class="primary">Save</button>
     {% if p.status == 'abandoned' %}<button formaction="{{ url_for('project_revive', id=p.id) }}" title="Back to someday / maybe, with its steps">Revive</button>
     {% else %}

@@ -6,7 +6,7 @@
 {% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ area_select(required=True) }}{% endcall %}
 {% for area, ps in groups %}
 <h2 class="area-head">{% if area %}<a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% else %}<span class="warn">⚠ No area</span>{% endif %}</h2>
-<ul class="tasks cards" data-reorder="{{ url_for('projects_order', status='someday') }}">
+<ul class="tasks cards" data-reorder="{{ url_for('projects_order', status='someday') }}"{% if area %} data-area="{{ area.id }}"{% endif %}>
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
 {% else %}

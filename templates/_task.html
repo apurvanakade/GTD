@@ -106,8 +106,8 @@
 
 {# The open areas (the context's `areas`), for a new project's add line and a project's page. `keep`: the project's
    own area when it's archived, so saving leaves it there. #}
-{% macro area_select(selected=none, required=False, keep=none) %}
-<select name="area_id" aria-label="Area"{% if required %} required{% endif %}>
+{% macro area_select(selected=none, required=False, keep=none, submit=False) %}
+<select name="area_id" aria-label="Area"{% if required %} required{% endif %}{% if submit %} data-submit title="Area: saves when picked"{% endif %}>
   <option value="">area…</option>
   {% for a in areas %}<option value="{{ a.id }}"{% if a.id == selected %} selected{% endif %}>{{ a.title }}</option>{% endfor %}
   {% if keep and keep.archived_at %}<option value="{{ keep.id }}" selected>{{ keep.title }} (archived)</option>{% endif %}

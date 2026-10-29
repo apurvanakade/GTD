@@ -252,6 +252,35 @@ def test_drag_reorders_someday_projects(page, live, conn):
     assert titles() == ["Someday proj", "Another dream"]
 
 
+def test_dragging_a_project_into_another_area_changes_its_area(page, live, conn):
+    ids = {p["title"]: p["id"] for p in db.projects(conn)}
+    work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
+    db.add_task(conn, "pack", project_id=db.add_project(conn, "Office move", area_id=work), step="next")
+    page.goto(live + "/projects")
+    group = lambda title: page.locator("h2.area-head", has_text=title).locator("xpath=following-sibling::ul[1]")
+    with page.expect_response(lambda r: r.url.endswith("/order/active")) as saved:
+        row(page, "Kitchen").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 4})
+    assert saved.value.status == 204
+    assert db.get_project(conn, ids["Kitchen"])["area_id"] == work
+    assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move"]
+    # A project without an area gets one by the same drag; nothing can be dropped into "No area".
+    with page.expect_response(lambda r: r.url.endswith("/order/active")):
+        page.locator("li.task", has_text="Stalled").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 30})
+    assert db.get_project(conn, ids["Stalled"])["area_id"] == work
+    assert page.locator(".warn", has_text="No area").count() == 0  # its emptied group is gone
+    page.reload()
+    assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move", "⚠ Stalled"]
+
+
+def test_project_page_area_saves_on_pick(page, live, conn):
+    work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
+    page.goto(live + "/projects/1")
+    with page.expect_navigation():
+        page.get_by_label("Area").select_option(str(work))
+    assert db.get_project(conn, 1)["area_id"] == work
+    assert page.url == live + "/projects/1"
+
+
 def test_slash_on_inbox_focuses_its_add_box(page, live):
     page.goto(live + "/inbox")
     page.keyboard.press("/")
