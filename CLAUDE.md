@@ -32,7 +32,8 @@ Env vars:
 - `GTD_DB` points to the SQLite file. Default: `gtd.db` next to the code. On the VM it is `/var/lib/apps/gtd/gtd.db`; `GTD dev` sets it to `dev.db`. `gtd.db*` and `dev.db*` are gitignored (the repo is public).
 - `GTD_SECRET` sets the Flask session key used for flash messages.
 - `GTD_DEBUG=1` turns on Flask's debug mode and auto-reload.
-- `GTD_URL` overrides the live URL `GTD` opens.
+- `GTD_URL` overrides the live URL `GTD` opens. On the VM it is also the address a reminder's tap opens (`Click`); unset, a reminder has no link.
+- `NTFY_URL` is the ntfy topic reminders are POSTed to (on the VM `http://127.0.0.1:5007/gtd`). Unset (dev, tests): no reminder thread, nothing is sent.
 
 There is no build step, linter config or JS bundler.
 
@@ -114,6 +115,10 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **Reference** (`/reference`, table `reference`, `REFERENCE_FIELDS`) is one flat list of title + notes: information with no action, kept here so it needn't live in another app. No projects, tags or folders (yet); search finds it.
   - Adding an item opens its page, so its notes go in right away.
   - An item's page (`/reference/<id>`) lists the URLs in its notes as links above the textarea (the `links` filter in `app.py`: any `scheme://`, so `obsidian://` too). Deleting is a hard delete and returns to the list.
+- **Reminders** push a task's title to the phone at a chosen time, separate from its due date, through ntfy, self-hosted on the VM (set up by `ntfy-setup.sh` in the home-server repo; tailnet only, no auth; the phone's ntfy app subscribes to `gtd`).
+  - `tasks.remind_at` (UTC ISO, `db.iso()`) and `tasks.reminded_at` (set once sent). The task page's Remind box takes words (`dates.parse_when()`: `tomorrow 9am`, `fri 14:00`, `oct 30 at 5pm`, `in 2 hours`; a date alone means 9:00, a time alone the next one) and shows local `YYYY-MM-DD HH:MM` (`local_minute` filter), which it reads back unchanged.
+  - With `NTFY_URL` set, a daemon thread in `app.py` (`reminder_loop()`, one per gunicorn worker, so one) runs `send_reminders()` on every minute: open tasks with `remind_at <= now` and no `reminded_at` (`db.due_reminders()`). A failed send stays unsent and is retried next minute. Done and abandoned tasks never fire.
+  - Changing `remind_at` clears `reminded_at` (`update_task()`), so a new time fires again. A repeat's next instance gets a reminder as far from its new due date as the old one was, in local wall-clock time (`_shift_reminder()`).
 - **Timer** (`/timer`) replaced a standalone time tracker on 2026-10-22. Every time entry belongs to a task.
   - Table `time_entries` (`task_id` → `tasks`, `ON DELETE CASCADE`; `start_time`, `end_time` as UTC ISO-8601 to the second, written by `db.iso()`). No `end_time` means running. A partial unique index allows only one running entry.
   - `now()` in `app.py` reads `app.config["NOW"]` (pinned in tests), like `today()`. Never call `datetime.now()` in a route. Forms show and take local time (`local_input()`).

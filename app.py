@@ -1,5 +1,8 @@
 import os
 import re
+import threading
+import time
+import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit
@@ -19,6 +22,8 @@ HORIZON_LEVELS = [
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("GTD_SECRET", os.urandom(16))
+NTFY_URL = os.environ.get("NTFY_URL")  # the ntfy topic reminders are POSTed to; unset (dev, tests): none are sent
+GTD_URL = (os.environ.get("GTD_URL") or "").rstrip("/")  # the app's own address, so a reminder opens its task
 
 
 def conn():
@@ -87,6 +92,13 @@ def task_fields_from_form():
         fields.pop("recur")
     if fields.get("recur") and not fields.get("due_date"):
         fields["due_date"] = today().isoformat()
+    if "remind_at" in request.form:
+        raw = form_value("remind_at")
+        when = raw and dates.parse_when(raw, datetime.combine(today(), now().astimezone().time()))
+        if raw and not when:
+            flash(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
+        else:
+            fields["remind_at"] = when and db.iso(when.astimezone())  # the form's time is local
     return fields
 
 
@@ -612,6 +624,12 @@ def local_input(iso):
     return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%dT%H:%M")
 
 
+@app.template_filter("local_minute")
+def local_minute(iso):
+    """A stored UTC time as the local "YYYY-MM-DD HH:MM" the reminder box shows and dates.parse_when() reads back."""
+    return iso and datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%d %H:%M")
+
+
 @app.template_filter("hm")
 def hm(seconds):
     m = round(seconds or 0) // 60
@@ -704,6 +722,45 @@ def entry_edit(id):
 def entry_delete(id):
     db.delete_entry(conn(), id)
     return back("timer_view")
+
+
+# --- reminders -------------------------------------------------------------
+# A background thread posts each due reminder to ntfy, which pushes it to the phone. Only with NTFY_URL set;
+# gunicorn runs one worker, so there is one thread.
+
+def ntfy(t):
+    headers = {"Tags": "bell"}
+    if GTD_URL:
+        headers["Click"] = f"{GTD_URL}/tasks/{t['id']}"
+    urllib.request.urlopen(urllib.request.Request(NTFY_URL, data=t["title"].encode(), headers=headers), timeout=10)
+
+
+def send_reminders(c, at, send):
+    """Send every due reminder; one that fails stays unsent and is tried again next time."""
+    for t in db.due_reminders(c, at):
+        try:
+            send(t)
+        except OSError as err:
+            app.logger.warning("reminder %s not sent: %s", t["id"], err)
+        else:
+            db.mark_reminded(c, t["id"], at)
+
+
+def reminder_loop():
+    while True:
+        time.sleep(60 - time.time() % 60)  # on the minute, so a 9:00 reminder comes at 9:00
+        try:
+            c = db.connect()
+            try:
+                send_reminders(c, datetime.now(timezone.utc), ntfy)
+            finally:
+                c.close()
+        except Exception:
+            app.logger.exception("reminders")
+
+
+if NTFY_URL:
+    threading.Thread(target=reminder_loop, daemon=True, name="reminders").start()
 
 
 # --- horizons --------------------------------------------------------------

@@ -36,6 +36,8 @@
   </label>
   <label>Due {{ date_input(t.due_date) }}</label>
   <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…"></label>
+  <label>Remind <input name="remind_at" value="{{ t.remind_at|local_minute or '' }}" placeholder="tomorrow 9am, fri 14:00, in 2 hours…"
+    {%- if t.reminded_at %} title="Sent {{ t.reminded_at|local_minute }}"{% endif %}>{% if t.reminded_at %} <span class="hint">sent</span>{% endif %}</label>
   <div class="row">
     <button class="primary">Save</button>
     <button name="exit" value="1">Save &amp; exit</button>

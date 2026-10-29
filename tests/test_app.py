@@ -1,7 +1,7 @@
 import os
 import re
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -1682,3 +1682,109 @@ def test_filing_into_a_done_project_reopens_it(client, conn):
     db.complete_task(conn, t, TODAY)
     db.update_task(conn, t, project_id=gone)
     assert db.get_project(conn, gone)["status"] == "done"
+
+# --- reminders ---------------------------------------------------------------
+
+def local(iso):
+    """A stored UTC time as a naive local datetime, so assertions hold in any timezone."""
+    return datetime.fromisoformat(iso).astimezone().replace(tzinfo=None)
+
+
+AT = datetime(2026, 10, 22, 14, 30)  # Thursday afternoon, local
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("tomorrow 9am", datetime(2026, 10, 23, 9, 0)), ("fri 14:00", datetime(2026, 10, 23, 14, 0)),
+    ("oct 30 at 5pm", datetime(2026, 10, 30, 17, 0)), ("sat 9:15 pm", datetime(2026, 10, 24, 21, 15)),
+    ("9am tomorrow", datetime(2026, 10, 23, 9, 0)), ("tomorrow noon", datetime(2026, 10, 23, 12, 0)),
+    ("today 12am", datetime(2026, 10, 22, 0, 0)), ("today 12pm", datetime(2026, 10, 22, 12, 0)),
+    ("5pm", datetime(2026, 10, 22, 17, 0)), ("9am", datetime(2026, 10, 23, 9, 0)),  # the next one
+    ("tomorrow", datetime(2026, 10, 23, 9, 0)), ("in 2 hours", datetime(2026, 10, 22, 16, 30)),
+    ("in 30 min", datetime(2026, 10, 22, 15, 0)), ("in 3 days", datetime(2026, 10, 25, 9, 0)),
+    ("2026-10-30 09:00", datetime(2026, 10, 30, 9, 0)), ("2026-10-30T18:45", datetime(2026, 10, 30, 18, 45)),
+    ("tomorrow 25:00", None), ("tomorrow 13pm", None), ("blah 9am", None), ("blah", None), ("", None),
+])
+def test_natural_times(text, expected):
+    assert dates.parse_when(text, AT) == expected
+
+
+def test_task_page_sets_a_reminder_in_words(client, conn):
+    tid = db.add_task(conn, "call", ground=1)
+    client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": "tomorrow 9am"})
+    assert local(db.get_task(conn, tid)["remind_at"]) == datetime(2026, 10, 23, 9, 0)
+    html = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert 'name="remind_at" value="2026-10-23 09:00"' in html
+    client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": "gibberish"}, follow_redirects=True)
+    assert local(db.get_task(conn, tid)["remind_at"]) == datetime(2026, 10, 23, 9, 0)  # kept
+    client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": ""})
+    assert db.get_task(conn, tid)["remind_at"] is None
+
+
+def test_an_unparseable_reminder_is_flashed(client, conn):
+    tid = db.add_task(conn, "call", ground=1)
+    r = client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": "gibberish"}, follow_redirects=True)
+    assert "Didn&#39;t understand reminder" in r.get_data(as_text=True)
+
+
+def test_changing_a_reminder_rearms_it(conn):
+    tid = db.add_task(conn, "call", ground=1, remind_at="2026-10-22T13:00:00+00:00")
+    db.mark_reminded(conn, tid, NOW)
+    db.update_task(conn, tid, title="call", remind_at="2026-10-22T13:00:00+00:00")  # unchanged: stays sent
+    assert db.get_task(conn, tid)["reminded_at"]
+    db.update_task(conn, tid, remind_at="2026-10-23T13:00:00+00:00")
+    assert db.get_task(conn, tid)["reminded_at"] is None
+
+
+def test_due_reminders_are_sent_once_and_retried_on_failure(client, conn):
+    from app import send_reminders
+    due = db.add_task(conn, "due", ground=1, remind_at=db.iso(NOW - timedelta(minutes=1)))
+    db.add_task(conn, "later", ground=1, remind_at=db.iso(NOW + timedelta(minutes=1)))
+    db.complete_task(conn, db.add_task(conn, "done", ground=1, remind_at=db.iso(NOW - timedelta(hours=1))), TODAY)
+    db.abandon_task(conn, db.add_task(conn, "dropped", remind_at=db.iso(NOW - timedelta(hours=1))))
+
+    def fail(t):
+        raise OSError("ntfy down")
+    send_reminders(conn, NOW, fail)
+    assert db.get_task(conn, due)["reminded_at"] is None
+    sent = []
+    send_reminders(conn, NOW, sent.append)
+    assert [t["title"] for t in sent] == ["due"]
+    send_reminders(conn, NOW, sent.append)
+    assert len(sent) == 1
+
+
+def test_ntfy_posts_the_title_with_a_link_to_the_task(monkeypatch):
+    import app as app_module
+    got = {}
+
+    def urlopen(req, timeout):
+        got.update(url=req.full_url, data=req.data, click=req.get_header("Click"), timeout=timeout)
+    monkeypatch.setattr(app_module.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(app_module, "NTFY_URL", "http://127.0.0.1:5007/gtd")
+    monkeypatch.setattr(app_module, "GTD_URL", "https://home.example.ts.net")
+    app_module.ntfy({"id": 7, "title": "call mum ☎"})
+    assert got == {"url": "http://127.0.0.1:5007/gtd", "data": "call mum ☎".encode(),
+                   "click": "https://home.example.ts.net/tasks/7", "timeout": 10}
+
+
+def test_a_repeat_keeps_its_reminder_time_relative_to_the_due_date(conn):
+    remind = db.iso(datetime(2026, 10, 28, 18, 0).astimezone())  # the evening before, local
+    tid = db.add_task(conn, "bins", ground=1, recur="weekly", due_date="2026-10-29", remind_at=remind)
+    new = db.get_task(conn, db.complete_task(conn, tid, TODAY))
+    assert new["due_date"] == "2026-11-05"
+    assert local(new["remind_at"]) == datetime(2026, 11, 4, 18, 0)  # same wall-clock time, across DST
+    assert new["reminded_at"] is None
+
+
+def test_migration_adds_reminder_columns(tmp_path):
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.PROJECTS_TABLE.format(name="projects") + ";" + db.TASKS_TABLE.format(name="tasks")
+                      .replace("  remind_at TEXT,\n  reminded_at TEXT,\n", "") + ";")
+    old.execute("INSERT INTO tasks (title) VALUES ('t')")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    assert tuple(c.execute("SELECT remind_at, reminded_at FROM tasks").fetchone()) == (None, None)
+    c.close()
+    db.connect(path).close()

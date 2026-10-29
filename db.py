@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 
 import fuzzy
 import recur
@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS {name} (
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT,
+  remind_at TEXT,
+  reminded_at TEXT,
   CHECK ((step IS NULL) = (project_id IS NULL)),
   CHECK (NOT (ground AND project_id IS NOT NULL))
 )
@@ -80,7 +82,8 @@ CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NO
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """.replace("{projects}", PROJECTS_TABLE.format(name="projects")).replace("{tasks}", TASKS_TABLE.format(name="tasks"))
 
-TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground", "position"}  # state changes via complete/abandon/revive
+# State changes via complete/abandon/revive. remind_at is a UTC ISO time; reminded_at is set once it has been sent.
+TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground", "position", "remind_at"}
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
@@ -134,6 +137,10 @@ def _migrate(c):
     if "projects" in old and "updated_at" not in [r[1] for r in c.execute("PRAGMA table_info(projects)")]:
         c.execute("ALTER TABLE projects ADD COLUMN updated_at TEXT")  # last edit of title, notes or status
         c.commit()
+    if "tasks" in old and "remind_at" not in [r[1] for r in c.execute("PRAGMA table_info(tasks)")]:
+        c.execute("ALTER TABLE tasks ADD COLUMN remind_at TEXT")  # phone reminders (ntfy)
+        c.execute("ALTER TABLE tasks ADD COLUMN reminded_at TEXT")
+        c.commit()
 
 
 def _insert(c, table, allowed, fields):
@@ -170,6 +177,9 @@ def update_task(c, id, **fields):
     """Returns the titles of project tasks demoted to later because this one became next."""
     current = get_task(c, id)
     _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current))
+    if current and "remind_at" in fields and fields["remind_at"] != current["remind_at"]:
+        c.execute("UPDATE tasks SET reminded_at = NULL WHERE id = ?", (id,))  # a new time is sent again
+        c.commit()
     _reopen_project(c, id)
     return _one_next(c, id, was_next=current is not None and current["step"] == "next")
 
@@ -257,11 +267,32 @@ def complete_task(c, id, today, now=None):
     new_id = None
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
+        next_due = recur.next_due(t["recur"], due, today)
         new_id = add_task(c, t["title"], notes=t["notes"], step=t["step"], project_id=t["project_id"],
-                          ground=t["ground"], recur=t["recur"], position=t["position"],
-                          due_date=recur.next_due(t["recur"], due, today).isoformat())
+                          ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat(),
+                          remind_at=_shift_reminder(t["remind_at"], due, next_due))
     c.commit()
     return new_id
+
+
+def _shift_reminder(remind_at, due, next_due):
+    """The next instance's reminder: as far from its due date as the old one was, in local wall-clock time
+    (so 6pm the evening before stays 6pm across a DST change). None without a reminder or an old due date."""
+    if not remind_at or not due:
+        return None
+    local = datetime.fromisoformat(remind_at).astimezone().replace(tzinfo=None)
+    return iso((datetime.combine(next_due, time()) + (local - datetime.combine(due, time()))).astimezone())
+
+
+def due_reminders(c, now):
+    """Open tasks whose reminder time has come and that haven't been sent yet."""
+    return c.execute("""SELECT id, title FROM tasks WHERE state = 'open' AND reminded_at IS NULL AND remind_at <= ?
+        ORDER BY remind_at, id""", (iso(now),)).fetchall()
+
+
+def mark_reminded(c, id, now):
+    c.execute("UPDATE tasks SET reminded_at = ? WHERE id = ?", (iso(now), id))
+    c.commit()
 
 
 def tasks_with_step(c, step):
