@@ -1121,11 +1121,11 @@ def test_becoming_next_moves_a_step_to_the_top(client, conn):
     assert titles() == ["e", "b", "a!", "c", "d"]
 
 
-def test_project_next_action_has_no_grip(client, conn):
+def test_project_next_action_is_pinned_but_has_a_grip_to_move_it_out(client, conn):
     ids = seed(conn)
     page = client.get(f"/projects/{ids['active']}").get_data(as_text=True)
-    rows = re.findall(r'<li class="task[^"]*" data-id="(\d+)"[^>]*>\s*<span class="grip( slot)?"', page)
-    assert dict(rows) == {"2": " slot", "3": "", "4": ""}  # buy tiles is next: pinned, but its column is kept
+    rows = re.findall(r'<li class="task[^"]*" data-id="(\d+)"( data-pinned)?>\s*<span class="grip" title="([^"]*)"', page)
+    assert sorted(rows) == [("2", " data-pinned", "Drag to another project"), ("3", "", "Drag to reorder"), ("4", "", "Drag to reorder")]
 
 
 def test_done_page_lists_finished_tasks_and_projects(client, conn):
@@ -1595,14 +1595,14 @@ def test_inbox_drag_moves_an_item_into_a_project(client, conn):
     a, b = db.add_task(conn, "a"), db.add_task(conn, "b")
     pid = db.add_project(conn, "P")
     db.add_task(conn, "p next", project_id=pid, step="next")
-    assert client.post("/inbox/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
     assert (db.get_task(conn, a)["project_id"], db.get_task(conn, a)["step"]) == (pid, "later")
     assert db.get_task(conn, b)["inbox"]
     assert b"Moved" not in client.get("/inbox").data  # no flash left over for the next page
     # Dropped on an area's "＋ New…" with a name: a new project in that area. Without an area, none.
     area = db.add_horizon(conn, "area", "Home")
-    assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 400
-    assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh", "area_id": area}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 400
+    assert client.post("/tasks/move", data={"id": b, "new_project": "Fresh", "area_id": area}, headers=FETCH).status_code == 204
     fresh = [p for _, ps, _ in db.project_groups(conn) for p in ps if p["title"] == "Fresh"]
     assert len(fresh) == 1 and db.get_task(conn, b)["project_id"] == fresh[0]["id"] and fresh[0]["area_id"] == area
 
@@ -1613,16 +1613,53 @@ def test_inbox_drag_edges(client, conn):
     filed = db.add_task(conn, "filed", project_id=pid, step="next")
     other = db.add_project(conn, "Other")
     # No project: it stays in the inbox.
-    assert client.post("/inbox/move", data={"id": a, "project_id": ""}, headers=FETCH).status_code == 400
+    assert client.post("/tasks/move", data={"id": a, "project_id": ""}, headers=FETCH).status_code == 400
     assert db.get_task(conn, a)["inbox"]
     # H0 is a choice too.
-    assert client.post("/inbox/move", data={"id": a, "project_id": "h0"}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": a, "project_id": "h0"}, headers=FETCH).status_code == 204
     assert db.get_task(conn, a)["ground"] == 1
-    # An item no longer in the inbox is left alone, and no project is created for it.
-    assert client.post("/inbox/move", data={"id": filed, "project_id": str(other)}, headers=FETCH).status_code == 400
-    assert client.post("/inbox/move", data={"id": filed, "new_project": "Ghost"}, headers=FETCH).status_code == 400
-    assert (db.get_task(conn, filed)["project_id"], db.get_task(conn, filed)["step"]) == (pid, "next")
+    # A finished task is left alone, and no project is created for it.
+    db.complete_task(conn, filed, TODAY)
+    assert client.post("/tasks/move", data={"id": filed, "project_id": str(other)}, headers=FETCH).status_code == 400
+    assert client.post("/tasks/move", data={"id": filed, "new_project": "Ghost", "area_id": db.add_horizon(conn, "area", "A")},
+                       headers=FETCH).status_code == 400
+    assert db.get_task(conn, filed)["project_id"] == pid
     assert not [p for _, ps, _ in db.project_groups(conn) for p in ps if p["title"] == "Ghost"]
+
+
+def test_dragging_moves_any_open_task_between_projects(client, conn):
+    a, b = db.add_project(conn, "A"), db.add_project(conn, "B")
+    nxt = db.add_task(conn, "a next", project_id=a, step="next")
+    wait = db.add_task(conn, "a waiting", project_id=a, step="waiting")
+    b_next = db.add_task(conn, "b next", project_id=b, step="next")
+    move = lambda id, target: client.post("/tasks/move", data={"id": id, "project_id": target}, headers=FETCH).status_code
+    # A next action lands as a later step: B keeps its own next, A stalls until you pick one.
+    assert move(nxt, str(b)) == 204
+    assert (db.get_task(conn, nxt)["project_id"], db.get_task(conn, nxt)["step"]) == (b, "later")
+    assert db.get_task(conn, b_next)["step"] == "next" and not db.project_next(conn, a)
+    # A waiting step stays waiting, so it stays on the Waiting list.
+    assert move(wait, str(b)) == 204
+    assert (db.get_task(conn, wait)["project_id"], db.get_task(conn, wait)["step"]) == (b, "waiting")
+    # Dropped on its own project: nothing changes, not even its step.
+    assert move(b_next, str(b)) == 204 and db.get_task(conn, b_next)["step"] == "next"
+    # Out to H0 and back into a project.
+    assert move(b_next, "h0") == 204
+    assert (db.get_task(conn, b_next)["ground"], db.get_task(conn, b_next)["step"], db.get_task(conn, b_next)["project_id"]) == (1, None, None)
+    assert move(b_next, str(a)) == 204
+    assert (db.get_task(conn, b_next)["ground"], db.get_task(conn, b_next)["step"]) == (0, "later")
+    # A project step not worth doing is kept as reference.
+    assert move(wait, "reference") == 204 and db.get_task(conn, wait) is None
+    assert [r["title"] for r in db.references(conn)] == ["a waiting"]
+
+
+def test_every_task_list_has_the_drop_panel(client, conn):
+    ids = seed(conn)
+    for url in ("/inbox", "/next", "/h0", "/waiting", f"/projects/{ids['active']}"):
+        html = client.get(url).get_data(as_text=True)
+        assert 'class="drop-panel"' in html and 'class="pin-panel"' in html, url
+    # A project page doesn't offer the project itself.
+    html = client.get(f"/projects/{ids['active']}").get_data(as_text=True)
+    assert f'data-current="{ids["active"]}"' in html
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):
@@ -1756,7 +1793,7 @@ def test_project_pickers_are_one_list_grouped_by_area(client, conn):
 def test_filing_into_a_done_project_reopens_it(client, conn):
     pid = db.add_project(conn, "Old", status="done")
     a = db.add_task(conn, "a")
-    assert client.post("/inbox/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
     assert (db.get_project(conn, pid)["status"], db.get_project(conn, pid)["completed_at"]) == ("active", None)
     done = db.add_project(conn, "Finished", status="done")
     db.add_task(conn, "b", project_id=done, step="next")
@@ -2208,16 +2245,17 @@ def test_inbox_item_dropped_on_reference_becomes_one(client, conn):
     db.timer_start(conn, timed, NOW - timedelta(hours=1))
     db.timer_stop(conn, NOW)
     assert 'data-project="reference"' in client.get("/inbox").get_data(as_text=True)
-    assert client.post("/inbox/move", data={"id": a, "project_id": "reference"}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": a, "project_id": "reference"}, headers=FETCH).status_code == 204
     assert [(r["title"], r["notes"]) for r in db.references(conn)] == [("wifi password", "hunter2")]
     assert db.get_task(conn, a) is None  # it isn't a task any more
     # One with time on it is abandoned instead, so its time stays.
-    assert client.post("/inbox/move", data={"id": timed, "project_id": "reference"}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": timed, "project_id": "reference"}, headers=FETCH).status_code == 204
     assert db.get_task(conn, timed)["state"] == "abandoned" and len(db.time_entries(conn)) == 1
     assert len(db.references(conn)) == 2
-    # Only an inbox item.
+    # Not a finished one.
     filed = db.add_task(conn, "h", ground=1)
-    assert client.post("/inbox/move", data={"id": filed, "project_id": "reference"}, headers=FETCH).status_code == 400
+    db.complete_task(conn, filed, TODAY)
+    assert client.post("/tasks/move", data={"id": filed, "project_id": "reference"}, headers=FETCH).status_code == 400
     assert len(db.references(conn)) == 2
 
 

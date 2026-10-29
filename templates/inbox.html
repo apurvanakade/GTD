@@ -1,80 +1,12 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form, project_targets with context %}
+{% from "_task.html" import row, add_form, pin_button, move_panel with context %}
 {% block title %}Inbox{% endblock %}
-{% block actions %}{% if tasks %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the projects open to drop on">Projects</button>{% endif %}{% endblock %}
+{% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', marks=True) }}
 {% if tasks %}
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
-{# Slides in while a row is dragged, or stays while pinned by the header's Projects button: drop a row on a
-   project to file it as a later step. #}
-<aside class="drop-panel" data-move="{{ url_for('inbox_move') }}"><button type="button" class="unpin" title="Hide the projects" aria-label="Hide the projects">✕</button>{{ project_targets() }}</aside>
-<script>
-(() => {
-  const list = document.querySelector('ul.tasks'), panel = document.querySelector('.drop-panel');
-  const body = document.body;
-  const pin = document.querySelector('.pin-panel');
-  let dragged = null, naming = null;  // naming: {li, target} while a new project's name is typed
-  const pinned = on => {  // remembered per browser, like a folded band
-    body.classList.toggle('pinned-panel', on);
-    pin.setAttribute('aria-pressed', on);
-    try { localStorage.setItem('inbox-panel', on ? '1' : '0'); } catch {}
-  };
-  try { pinned(localStorage.getItem('inbox-panel') === '1'); } catch {}
-  pin.addEventListener('click', () => pinned(!body.classList.contains('pinned-panel')));
-  panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
-  const close = () => {
-    body.classList.remove('dragging-inbox', 'naming');
-    if (naming) { naming.target.classList.remove('naming'); naming.target.querySelector('input').value = ''; }
-    naming = null;
-  };
-  const move = async (li, data) => {
-    if (await post(panel.dataset.move, new URLSearchParams({id: li.dataset.id, ...data}))) li.remove();
-  };
-  list.querySelectorAll('li.task').forEach(li => li.draggable = true);
-  list.addEventListener('dragstart', e => {
-    dragged = e.target.closest('li.task');
-    if (!dragged) return;
-    dragged.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
-    body.classList.add('dragging-inbox');
-  });
-  list.addEventListener('dragend', () => {
-    panel.querySelectorAll('.over').forEach(t => t.classList.remove('over'));
-    if (dragged) dragged.classList.remove('dragging');
-    dragged = null;
-    if (!naming) close();
-  });
-  panel.addEventListener('dragover', e => {
-    const t = e.target.closest('.target');
-    panel.querySelectorAll('.over').forEach(o => o !== t && o.classList.remove('over'));
-    if (t && dragged) { e.preventDefault(); t.classList.add('over'); }
-  });
-  panel.addEventListener('drop', e => {
-    const t = e.target.closest('.target');
-    if (!t || !dragged) return;
-    e.preventDefault();
-    if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
-    // The panel stays open for the name; Enter files it into a new project in the target's area, Esc or clicking away cancels.
-    naming = {li: dragged, target: t};
-    body.classList.add('naming');
-    t.classList.add('naming');
-    t.querySelector('input').focus();
-  });
-  panel.querySelectorAll('.new input').forEach(name => {
-    name.addEventListener('keydown', e => {
-      if (!naming) return;
-      if (e.key === 'Escape') { e.preventDefault(); close(); }
-      if (e.key === 'Enter' && name.value.trim()) {
-        e.preventDefault();
-        move(naming.li, {new_project: name.value.trim(), area_id: naming.target.dataset.area});
-        close();
-      }
-    });
-    name.addEventListener('blur', close);
-  });
-})();
-</script>
+{{ move_panel('inbox') }}
 {% else %}
 <p class="empty clear">Empty. Capture anything on your mind above.</p>
 {% endif %}

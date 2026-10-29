@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form, area_select, tally with context %}
+{% from "_task.html" import row, date_input, add_form, area_select, tally, pin_button, move_panel with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for'), 'abandoned': ('done', 'Done')}.get(p.status, ('projects_view', 'Projects')) %}
 <p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if area %} · <a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% endif %}{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
 {% endblock %}
 {% block heading %}{% endblock %}
+{% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 <form method="post" class="project" data-autosave="{{ url_for('autosave', kind='projects', id=p.id) }}">
   <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
@@ -41,4 +42,5 @@
 {% if abandoned %}<ul class="tasks">{% for t in abandoned %}{{ row(t, project=False) }}{% endfor %}</ul>{% endif %}
 {% set in_project = true %}{% include "_done_toggle.html" %}
 {% if times %}{{ tally('Time', times, cls='wide') }}{% endif %}
+{% if tasks %}{{ move_panel('project', current=p.id) }}{% endif %}
 {% endblock %}

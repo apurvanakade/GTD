@@ -1,7 +1,7 @@
 {% macro row(t, project=True, make_next=False, grip=False) %}
 {% set closed = t.state != 'open' %}
 <li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
-  {% if grip and t.step == 'next' and not closed %}<span class="grip slot" aria-hidden="true">⠿</span>
+  {% if grip and t.step == 'next' and not closed %}<span class="grip" title="Drag to another project" aria-hidden="true">⠿</span>
   {% elif grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
@@ -83,12 +83,25 @@
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">
 {% endmacro %}
 
-{% macro project_targets() %}
-<div class="target" data-project="h0">H0 · ground level (no project)</div>
+{# The drop panel's targets: H0, Reference, then the one project list; `current` (a project id, or 'h0') is where the
+   page's tasks already are, so it isn't offered. #}
+{% macro project_targets(current=none) %}
+{% if current != 'h0' %}<div class="target" data-project="h0">H0 · ground level (no project)</div>{% endif %}
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
 {% for label, ps, area in project_groups %}<section class="group"><h3>{{ label }}</h3>
   {% if area %}<div class="target new" data-project="__new__" data-area="{{ area }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project in {{ label }}" autocomplete="off"></div>{% endif %}
-  {% for p in ps %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status in ('waiting', 'someday') %} <span class="meta">{{ p.status }}</span>{% endif %}</div>{% endfor %}</section>{% endfor %}
+  {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status in ('waiting', 'someday') %} <span class="meta">{{ p.status }}</span>{% endif %}</div>{% endfor %}</section>{% endfor %}
+{% endmacro %}
+
+{# Every task list's drop panel (static/move.js): it slides in while an open row is dragged, or stays while pinned by
+   the header's Projects button (pin_button()); dropping a row on a target moves the task there. `key` names the page
+   for remembering the pin; `reload`: the page redraws after a move instead of dropping the row (Waiting, where a
+   moved waiting step stays). #}
+{% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the projects open to drop on">Projects</button>{% endmacro %}
+{% macro move_panel(key, current=none, reload=False) %}
+<aside class="drop-panel" data-move="{{ url_for('task_move') }}" data-key="{{ key }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}>
+  <button type="button" class="unpin" title="Hide the projects" aria-label="Hide the projects">✕</button>{{ project_targets(current) }}</aside>
+<script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}
 
 {# The open areas (the context's `areas`), for a new project's add line and a project's page. `keep`: the project's

@@ -206,13 +206,14 @@ def inbox():
     return render_template("inbox.html", tasks=db.inbox_tasks(conn()), project_groups=db.project_groups(conn()))
 
 
-@app.post("/inbox/move")
-def inbox_move():
-    """Inbox's drag panel: file the dropped item into a project (or H0, or a new project) as a later step;
-    the project picks its next. Called by fetch, which removes the row itself."""
+@app.post("/tasks/move")
+def task_move():
+    """The drop panel on every task list: move the dropped open task to another project (or H0, a new project, or
+    Reference). It lands as a later step, since the project picks its next; a waiting step stays waiting. Dropped
+    where it already is, nothing changes. Called by fetch, which updates the page itself."""
     c = conn()
     t = db.get_task(c, request.form.get("id", type=int) or 0)
-    if not t or not t["inbox"]:  # e.g. a stale tab: it has been filed already
+    if not t or t["state"] != "open":  # e.g. a stale tab: it has been finished since
         abort(400)
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
         db.add_reference(c, t["title"], notes=t["notes"])
@@ -224,6 +225,10 @@ def inbox_move():
     fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
     if orphaned(fields.get("project_id"), fields.get("ground")):
         abort(400)
+    if fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"]):
+        return "", 204
+    if fields.get("project_id"):
+        fields["step"] = "waiting" if t["step"] == "waiting" else "later"
     db.update_task(c, t["id"], **fields)
     return "", 204
 
@@ -270,7 +275,7 @@ def next_add():
 
 @app.route("/h0")
 def h0_view():
-    return render_template("h0.html", tasks=db.h0_actions(conn()), **completed(ground=1))
+    return render_template("h0.html", tasks=db.h0_actions(conn()), project_groups=db.project_groups(conn()), **completed(ground=1))
 
 
 def soon(due):
@@ -607,7 +612,7 @@ def project_view(id):
         return back()
     abandoned = db.done_tasks(c, project_id=id, state="abandoned") if p["status"] == "abandoned" else []
     return render_template("project.html", p=p, area=p["area_id"] and db.get_horizon(c, p["area_id"]), tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
-                           abandoned=abandoned,
+                           abandoned=abandoned, project_groups=db.project_groups(c),
                            times=db.step_totals(c, id, now()), **completed(default=True, project_id=id))
 
 

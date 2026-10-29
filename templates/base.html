@@ -204,7 +204,7 @@ document.querySelectorAll('ul[data-reorder]').forEach(list => {
   });
   list.addEventListener('dragover', e => {
     const over = rows().find(li => li.contains(e.target));
-    if (!dragged || !over) return;
+    if (!dragged || !over || 'pinned' in dragged.dataset) return;  // the next action only moves out, to another project
     e.preventDefault();
     if (over === dragged) return;
     const r = over.getBoundingClientRect();
@@ -274,9 +274,13 @@ document.addEventListener('submit', async e => {
   f.closest('li').classList.add('gone');
   const n = f.closest('details.band')?.querySelector('summary b');
   if (n) n.textContent = Math.max(0, n.textContent - 1);
+  refreshNav();
+});
+// The nav's dots after a change made in place (tick-off, a row dragged to another project).
+async function refreshNav() {
   const fresh = new DOMParser().parseFromString(await (await fetch(location.href)).text(), 'text/html').querySelector('nav');
   if (fresh) document.querySelector('nav').replaceWith(fresh);
-});
+}
 // A click anywhere on a row opens it, as its title link would. Its buttons, links, fields, grip and folded-out
 // steps keep their own jobs, and a click that ends a text selection selects.
 document.addEventListener('click', e => {

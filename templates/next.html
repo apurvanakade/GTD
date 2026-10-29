@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% from "_task.html" import banded, project_select, date_input, add_form with context %}
+{% from "_task.html" import banded, project_select, date_input, add_form, pin_button, move_panel with context %}
 {% block title %}Next actions{% endblock %}
+{% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('next_add'), 'Add a next action', marks=True) %}
   {{ project_select() }}
@@ -9,4 +10,5 @@
 {% endcall %}
 {{ banded(tasks, empty='No next actions. Clear the inbox or check stalled projects.') }}
 {% include "_done_toggle.html" %}
+{% if tasks %}{{ move_panel('next') }}{% endif %}
 {% endblock %}

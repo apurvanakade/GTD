@@ -1,6 +1,7 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, project_select, add_form with context %}
+{% from "_task.html" import row, date_input, project_select, add_form, pin_button, move_panel with context %}
 {% block title %}{{ title }}{% endblock %}
+{% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('waiting_add'), 'Waiting for… (who, what)', marks=True) %}
   {{ project_select(h0=False) }}
@@ -20,4 +21,5 @@
 {% elif not projects %}
 <p class="empty clear">{{ empty }}</p>
 {% endif %}
+{% if tasks %}{{ move_panel('waiting', reload=True) }}{% endif %}
 {% endblock %}

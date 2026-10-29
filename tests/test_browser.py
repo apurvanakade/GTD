@@ -587,6 +587,45 @@ def test_pinned_project_panel_overlaps_the_list(page, live):
     assert left() == before  # the panel floats over the page; the list stays put
 
 
+def test_dragging_a_next_action_onto_another_project_moves_it(page, live, conn):
+    page.goto(live + "/next")
+    now = page.locator("details[data-band=now] summary b")
+    before = int(now.text_content())
+    drag_to_panel(page, row(page, "buy tiles").locator(".title"), '[data-project="2"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"2\"]')")
+    assert page.url == live + "/next" and int(now.text_content()) == before - 1
+    assert (db.get_task(conn, 2)["project_id"], db.get_task(conn, 2)["step"]) == (2, "later")  # next stays a conscious choice
+
+
+def test_dragging_an_h0_task_files_it_in_a_project(page, live, conn):
+    page.goto(live + "/h0")
+    page.locator(".pin-panel").click()
+    assert page.locator('.drop-panel [data-project="h0"]').count() == 0  # it's H0 already
+    drag_to_panel(page, row(page, "vacuum").locator(".title"), '[data-project="1"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"5\"]')")
+    t = db.get_task(conn, 5)
+    assert (t["project_id"], t["step"], t["ground"]) == (1, "later", 0)
+
+
+def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
+    page.goto(live + "/waiting")
+    drag_to_panel(page, row(page, "quote from Bob").locator(".title"), '[data-project="2"]')
+    page.wait_for_function("document.querySelector('li.task[data-id=\"4\"] .proj')?.textContent === 'Stalled'")
+    assert (db.get_task(conn, 4)["project_id"], db.get_task(conn, 4)["step"]) == (2, "waiting")
+
+
+def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, live, conn):
+    page.goto(live + "/projects/1")
+    assert page.locator('.drop-panel [data-project="1"]').count() == 0  # not its own project
+    drag_to_panel(page, row(page, "lay tiles").locator(".grip"), '[data-project="2"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"3\"]')")
+    assert (db.get_task(conn, 3)["project_id"], db.get_task(conn, 3)["step"]) == (2, "later")
+    # The next action can't be reordered, but it can go: the page redraws, the project now stalled.
+    drag_to_panel(page, row(page, "buy tiles").locator(".grip"), '[data-project="2"]')
+    page.locator("h2 .warn").wait_for()
+    assert row(page, "buy tiles").count() == 0 and db.get_task(conn, 2)["project_id"] == 2
+
+
 def test_review_arrow_keys_move_between_steps(page, live):
     page.goto(live + "/review?step=overdue")
     page.keyboard.press("ArrowRight")
