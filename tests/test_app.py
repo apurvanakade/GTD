@@ -2058,3 +2058,113 @@ def test_new_items_go_to_the_top(client, conn):
     assert db.projects(conn)[0]["id"] == z
     db.update_project(conn, a, status="someday")
     assert db.projects(conn, "someday")[0]["id"] == a
+
+
+# --- abandoned projects, inbox → reference -----------------------------------
+
+def test_abandoning_a_project_abandons_its_open_steps_and_lists_it_on_done(client, conn):
+    pid = db.add_project(conn, "Boat", status="someday")
+    a = db.add_task(conn, "a", step="next", project_id=pid)
+    b = db.add_task(conn, "b", step="later", project_id=pid)
+    done = db.add_task(conn, "finished", step="later", project_id=pid)
+    db.complete_task(conn, done, TODAY)
+    earlier = db.add_task(conn, "dropped before", step="later", project_id=pid)
+    db.abandon_task(conn, earlier)
+    client.post(f"/tasks/{a}/start")
+    r = client.post(f"/projects/{pid}/abandon", headers={"Referer": f"/projects/{pid}"})
+    assert r.headers["Location"] == f"/projects/{pid}"  # no jump
+    p = db.get_project(conn, pid)
+    assert p["status"] == "abandoned" and p["completed_at"] and p["position"] is None
+    assert [db.get_task(conn, i)["state"] for i in (a, b, done)] == ["abandoned", "abandoned", "done"]
+    assert db.timer_running(conn) is None and len(db.time_entries(conn)) == 1  # stopped, time kept
+    # It leaves every list and picker, and Done lists it (not its steps one by one), revivable.
+    assert ">Boat<" not in client.get("/someday").get_data(as_text=True)
+    assert not [p for _, ps in db.project_groups(conn) for p in ps if p["id"] == pid]
+    page = client.get("/done").get_data(as_text=True).split("<h2>Abandoned")[1]
+    assert "Boat" in page and f"/projects/{pid}/revive" in page and ">a<" not in page
+    project_page = client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert f"/projects/{pid}/revive" in project_page and f"/projects/{pid}/abandon" not in project_page
+    assert 'href="/done"' in project_page  # its crumb leads up to Done
+    assert f'href="/tasks/{a}"' in project_page and f"/tasks/{a}/revive" in project_page  # its steps, each revivable
+    # Revive: back as someday with the steps it took down; one abandoned before stays abandoned.
+    client.post(f"/projects/{pid}/revive")
+    p = db.get_project(conn, pid)
+    assert p["status"] == "someday" and p["completed_at"] is None
+    assert [(db.get_task(conn, i)["state"], db.get_task(conn, i)["step"]) for i in (a, b, done, earlier)] == [
+        ("open", "later"), ("open", "later"), ("done", "later"), ("abandoned", "later")]
+
+
+def test_abandon_and_revive_ignore_other_statuses(client, conn):
+    pid = db.add_project(conn, "P")
+    client.post(f"/projects/{pid}/revive")  # not abandoned: nothing happens
+    assert db.get_project(conn, pid)["status"] == "active"
+    client.post(f"/projects/{pid}/abandon")
+    client.post(f"/projects/{pid}/abandon")  # twice: still the first time
+    first = db.get_project(conn, pid)["completed_at"]
+    assert db.get_project(conn, pid)["status"] == "abandoned" and first
+    # The plain status buttons can't set or leave it.
+    client.post(f"/projects/{pid}", data={"title": "P", "status": "active"})
+    assert db.get_project(conn, pid)["status"] == "abandoned"
+    other = db.add_project(conn, "Q")
+    client.post(f"/projects/{other}", data={"title": "Q", "status": "abandoned"})
+    assert db.get_project(conn, other)["status"] == "active"
+    assert client.post("/projects/999/abandon").status_code == 404
+
+
+def test_reviving_one_step_of_an_abandoned_project_brings_the_project_back(client, conn):
+    pid = db.add_project(conn, "P")
+    t = db.add_task(conn, "t", step="next", project_id=pid)
+    db.abandon_project(conn, pid)
+    client.post(f"/tasks/{t}/revive")
+    assert db.get_project(conn, pid)["status"] == "someday" and db.get_task(conn, t)["state"] == "open"
+
+
+def test_task_page_of_an_abandoned_project_keeps_its_project(client, conn):
+    pid = db.add_project(conn, "Gone")
+    t = db.add_task(conn, "t", step="next", project_id=pid)
+    db.abandon_project(conn, pid)
+    html = client.get(f"/tasks/{t}").get_data(as_text=True)
+    assert f'<option value="{pid}" selected>Gone</option>' in html
+    client.post(f"/tasks/{t}", data={"title": "t", "project_id": str(pid)})
+    assert db.get_task(conn, t)["project_id"] == pid
+
+
+def test_migration_lets_projects_be_abandoned(tmp_path):
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.PROJECTS_TABLE.format(name="projects").replace("'someday', 'done'", "'someday'") + ";"
+                      + db.TASKS_TABLE.format(name="tasks") + """;
+      CREATE TABLE time_entries (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL
+        REFERENCES tasks(id) ON DELETE CASCADE, start_time TEXT NOT NULL, end_time TEXT);
+      INSERT INTO projects (id, title, position) VALUES (1, 'P', 3);
+      INSERT INTO tasks (id, title, step, project_id) VALUES (1, 't', 'next', 1);
+      INSERT INTO time_entries (task_id, start_time, end_time) VALUES (1, 'x', 'y');""")
+    old.commit()
+    old.close()
+    c = db.connect(path)
+    assert "'abandoned'" in c.execute("SELECT sql FROM sqlite_master WHERE name = 'projects'").fetchone()[0]
+    assert db.get_task(c, 1)["project_id"] == 1 and db.get_project(c, 1)["position"] == 3
+    assert [tuple(r) for r in c.execute("SELECT task_id FROM time_entries")] == [(1,)]
+    db.abandon_project(c, 1)
+    assert db.get_project(c, 1)["status"] == "abandoned"
+    c.close()
+    db.connect(path).close()  # second connect is a no-op
+
+
+def test_inbox_item_dropped_on_reference_becomes_one(client, conn):
+    a = db.add_task(conn, "wifi password", notes="hunter2")
+    timed = db.add_task(conn, "timed")
+    db.timer_start(conn, timed, NOW - timedelta(hours=1))
+    db.timer_stop(conn, NOW)
+    assert 'data-project="reference"' in client.get("/inbox").get_data(as_text=True)
+    assert client.post("/inbox/move", data={"id": a, "project_id": "reference"}, headers=FETCH).status_code == 204
+    assert [(r["title"], r["notes"]) for r in db.references(conn)] == [("wifi password", "hunter2")]
+    assert db.get_task(conn, a) is None  # it isn't a task any more
+    # One with time on it is abandoned instead, so its time stays.
+    assert client.post("/inbox/move", data={"id": timed, "project_id": "reference"}, headers=FETCH).status_code == 204
+    assert db.get_task(conn, timed)["state"] == "abandoned" and len(db.time_entries(conn)) == 1
+    assert len(db.references(conn)) == 2
+    # Only an inbox item.
+    filed = db.add_task(conn, "h", ground=1)
+    assert client.post("/inbox/move", data={"id": filed, "project_id": "reference"}, headers=FETCH).status_code == 400
+    assert len(db.references(conn)) == 2

@@ -61,4 +61,8 @@ def seed(c):
     db.mark_reminded(c, 4, NOW)  # "quote from Bob": sent; "call mum" still to come
     db.complete_review(c, TODAY - timedelta(days=7))
     db.toggle_review_step(c, "sweep")  # this week's review under way
-    return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done}
+    dropped = db.add_project(c, "Dropped proj", status="someday")
+    db.add_task(c, "given-up step", step="next", project_id=dropped)
+    db.abandon_project(c, dropped)
+    return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
+            "dropped": dropped}

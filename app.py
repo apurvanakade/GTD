@@ -203,6 +203,13 @@ def inbox_move():
     t = db.get_task(c, request.form.get("id", type=int) or 0)
     if not t or not t["inbox"]:  # e.g. a stale tab: it has been filed already
         abort(400)
+    if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
+        db.add_reference(c, t["title"], notes=t["notes"])
+        if db.task_seconds(c, t["id"], now()):
+            db.abandon_task(c, t["id"], now())  # its time is kept
+        else:
+            db.delete_task(c, t["id"])
+        return "", 204
     fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
     if orphaned(fields.get("project_id"), fields.get("ground")):
         abort(400)
@@ -358,7 +365,7 @@ def links(text):
 @app.route("/done")
 def done():
     return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"),
-                           abandoned=db.done_tasks(conn(), state="abandoned"))
+                           abandoned=db.done_tasks(conn(), state="abandoned"), dropped=db.abandoned_projects(conn()))
 
 
 # The weekly review's steps, in order; review.html has one section per key.
@@ -568,7 +575,8 @@ def project_view(id):
         if "notes" in fields:
             fields["notes"] = fields["notes"] or ""
         fields["title"] = fields.get("title") or p["title"]
-        status = request.form.get("status")
+        # An abandoned project comes back only through Revive, which brings its steps back too.
+        status = None if p["status"] == "abandoned" else request.form.get("status")
         if status == "done" and db.project_tasks(c, id):
             flash("Finish, move or delete the project's open tasks first.")
         elif status in ("active", "waiting", "someday", "done"):
@@ -577,8 +585,29 @@ def project_view(id):
         if fields.get("status") == "someday":
             flash(f"Moved “{fields['title']}” to someday / maybe.")
         return back()
+    abandoned = db.done_tasks(c, project_id=id, state="abandoned") if p["status"] == "abandoned" else []
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
+                           abandoned=abandoned,
                            times=db.step_totals(c, id, now()), **completed(default=True, project_id=id))
+
+
+@app.post("/projects/<int:id>/abandon")
+def project_abandon(id):
+    """Give up on a project, with its open steps: it moves to Done, revivable. Stays on the page."""
+    c = conn()
+    p = db.get_project(c, id) or abort(404)
+    db.abandon_project(c, id, now())
+    flash(f"Abandoned “{p['title']}”: it's on Done.")
+    return back()
+
+
+@app.post("/projects/<int:id>/revive")
+def project_revive(id):
+    c = conn()
+    db.get_project(c, id) or abort(404)
+    db.revive_project(c, id)
+    flash("Revived to someday / maybe.")
+    return back()
 
 
 @app.post("/projects/<int:id>/delete")

@@ -8,7 +8,7 @@ import recur
 # On the server GTD_DB points to /var/lib/apps/gtd/gtd.db; locally `GTD dev` points it to dev.db.
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
-# Someday and waiting are project statuses only. A task has a state (open, done, or abandoned: deleted but revivable)
+# Someday and waiting are project statuses only; an abandoned project is given up (on Done, revivable). A task has a state (open, done, or abandoned: deleted but revivable)
 # and, only inside a project, a step: an active project has exactly one "next" step, its other open steps are "waiting"
 # or "later". H0 tasks (ground level) and inbox items (neither a project nor H0) have no step.
 PROJECTS_TABLE = """
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS {name} (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done', 'abandoned')),
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT,
@@ -141,6 +141,15 @@ def _migrate(c):
         c.execute("ALTER TABLE tasks ADD COLUMN remind_at TEXT")  # phone reminders (ntfy)
         c.execute("ALTER TABLE tasks ADD COLUMN reminded_at TEXT")
         c.commit()
+    if "projects" in old and "'abandoned'" not in old["projects"]:
+        # Projects can be abandoned: a new CHECK, so a rebuild. Foreign keys off, or dropping projects would
+        # empty every task's project_id.
+        cols = "id, title, notes, status, position, created_at, completed_at, updated_at"
+        c.execute("PRAGMA foreign_keys = OFF")
+        c.executescript(f"""BEGIN; {PROJECTS_TABLE.format(name="projects_new")};
+            INSERT INTO projects_new ({cols}) SELECT {cols} FROM projects;
+            DROP TABLE projects; ALTER TABLE projects_new RENAME TO projects; COMMIT;""")
+        c.execute("PRAGMA foreign_keys = ON")
 
 
 def _insert(c, table, allowed, fields):
@@ -194,10 +203,14 @@ def update_task(c, id, **fields):
 
 
 def _reopen_project(c, id):
-    """A done project with an open task isn't done any more: filing into one (pickers list done projects) reopens it."""
-    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL,
-          position = (SELECT coalesce(min(position), 0) - 1 FROM projects WHERE status = 'active')
-        WHERE status = 'done' AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,))
+    """A done project with an open task isn't done any more: filing into one (pickers list done projects) reopens it.
+    An abandoned one (a step revived) comes back as someday, like a revived project."""
+    p = c.execute("""SELECT id, status FROM projects WHERE status IN ('done', 'abandoned')
+        AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,)).fetchone()
+    if p:
+        status = "active" if p["status"] == "done" else "someday"
+        c.execute("UPDATE projects SET status = ?, completed_at = NULL, position = ? WHERE id = ?",
+                  (status, _top(c, "projects", "status = ?", status), p["id"]))
     c.commit()
 
 
@@ -379,7 +392,7 @@ def search(c, q):
         ORDER BY t.completed_at DESC LIMIT 50""", args).fetchall()
     where, args = _matching(q, ["title", "notes"])
     projects = c.execute(f"""SELECT * FROM projects WHERE {where}
-        ORDER BY status = 'done', lower(title)""", args).fetchall()
+        ORDER BY status IN ('done', 'abandoned'), lower(title)""", args).fetchall()
     horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title)", args).fetchall()
     references = c.execute(f"SELECT * FROM reference WHERE {where} ORDER BY lower(title)", args).fetchall()
     return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references}
@@ -395,7 +408,7 @@ def suggest(c, q, limit=10):
     rows += [("reference", r) for r in c.execute("SELECT * FROM reference")]
     hits = [(fuzzy.score(q, r["title"]), kind, r) for kind, r in rows]
     hits = [h for h in hits if h[0] is not None]
-    closed = lambda kind, r: (kind == "task" and r["state"] != "open") or (kind == "project" and r["status"] == "done")
+    closed = lambda kind, r: (kind == "task" and r["state"] != "open") or (kind == "project" and r["status"] in ("done", "abandoned"))
     hits.sort(key=lambda h: (not fuzzy.exact(q, h[2]["title"]), closed(h[1], h[2]), -h[0], h[2]["title"].lower()))
     return [(kind, r) for _, kind, r in hits[:limit]]
 
@@ -431,6 +444,41 @@ def delete_project(c, id):
     c.execute("DELETE FROM projects WHERE id = ?", (id,))
     c.commit()
     return True
+
+
+def abandon_project(c, id, now=None):
+    """Give up on a project: it and its open steps are abandoned together (one shared completed_at, to the
+    millisecond so no step abandoned on its own matches, tells revive which steps it took down), its timer is
+    stopped and its time kept. It leaves every list for Done."""
+    p = get_project(c, id)
+    if not p or p["status"] == "abandoned":
+        return
+    running = timer_running(c)
+    if running and running["project_id"] == id:
+        timer_stop(c, now or datetime.now(timezone.utc))
+    stamp = c.execute("SELECT strftime('%Y-%m-%d %H:%M:%f', 'now')").fetchone()[0]
+    c.execute("UPDATE tasks SET state = 'abandoned', completed_at = ? WHERE project_id = ? AND state = 'open'", (stamp, id))
+    c.execute("""UPDATE projects SET status = 'abandoned', completed_at = ?, updated_at = ?, position = NULL
+        WHERE id = ?""", (stamp, stamp, id))
+    c.commit()
+
+
+def revive_project(c, id):
+    """An abandoned project comes back as someday, with the steps abandoned along with it as later steps."""
+    p = get_project(c, id)
+    if not p or p["status"] != "abandoned":
+        return
+    c.execute("""UPDATE tasks SET state = 'open', step = 'later', completed_at = NULL
+        WHERE project_id = ? AND state = 'abandoned' AND completed_at = ?""", (id, p["completed_at"]))
+    c.execute("""UPDATE projects SET status = 'someday', completed_at = NULL, updated_at = datetime('now'), position = ?
+        WHERE id = ?""", (_top(c, "projects", "status = ?", "someday"), id))
+    c.commit()
+
+
+def abandoned_projects(c, limit=100):
+    """Abandoned projects, newest first."""
+    return c.execute("SELECT * FROM projects WHERE status = 'abandoned' ORDER BY completed_at DESC, id DESC LIMIT ?",
+                     (limit,)).fetchall()
 
 
 def get_project(c, id):
@@ -470,9 +518,12 @@ def open_steps(c, status="active"):
 
 def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
     """Finished (or, with state="abandoned", abandoned) tasks, newest first; optionally only one project's,
-    or only H0 (ground=1) / non-H0 (ground=0)."""
+    or only H0 (ground=1) / non-H0 (ground=0). Without a project, an abandoned project's steps are left out:
+    Done lists the project instead."""
     where, args = "t.state = ?", [state]
-    if project_id is not None:
+    if project_id is None:
+        where += " AND coalesce(p.status, '') != 'abandoned'"
+    else:
         where += " AND t.project_id = ?"
         args.append(project_id)
     if ground is not None:

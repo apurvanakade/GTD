@@ -67,8 +67,9 @@
 
 {# The one project list (db.project_groups(): Active, Waiting, Someday, Done), as the task dropdown here and as
    Inbox's drop panel in project_targets(). "＋ New…" (value __new__) reveals the name box beside it, in CSS;
-   the server ignores it without a name. #}
-{% macro project_select(selected=none, h0=True) %}
+   the server ignores it without a name. `keep` (a task of an abandoned project, which no list offers) keeps its
+   project selectable, so saving the task leaves it there. #}
+{% macro project_select(selected=none, h0=True, keep=none) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>
   {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
@@ -76,12 +77,14 @@
   {% for label, ps in project_groups %}<optgroup label="{{ label }}">
     {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
   </optgroup>{% endfor %}
+  {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
 </select>
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">
 {% endmacro %}
 
 {% macro project_targets() %}
 <div class="target" data-project="h0">H0 · ground level (no project)</div>
+<div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
 <div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
 {% for label, ps in project_groups %}<section class="group"><h3>{{ label }}</h3>{% for p in ps %}<div class="target" data-project="{{ p.id }}">{{ p.title }}</div>{% endfor %}</section>{% endfor %}
 {% endmacro %}

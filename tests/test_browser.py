@@ -526,6 +526,14 @@ def test_dragging_an_inbox_row_onto_a_project_files_it(page, live, conn):
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
 
 
+def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
+    page.goto(live + "/inbox")
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="reference"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    assert db.get_task(conn, 1) is None
+    assert [(r["title"], r["notes"]) for r in db.references(conn) if r["title"] == "inbox item"] == [("inbox item", "from email")]
+
+
 def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live, conn):
     page.goto(live + "/inbox")
     drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')

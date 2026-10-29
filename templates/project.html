@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_task.html" import row, date_input, add_form, tally with context %}
 {% block title %}{{ p.title }}{% endblock %}
-{% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for')}.get(p.status, ('projects_view', 'Projects')) %}
+{% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for'), 'abandoned': ('done', 'Done')}.get(p.status, ('projects_view', 'Projects')) %}
 <p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
 {% endblock %}
 {% block heading %}{% endblock %}
@@ -12,14 +12,19 @@
   <p class="autosave hint" aria-live="polite"></p>
   <div class="row">
     <button class="primary">Save</button>
+    {% if p.status == 'abandoned' %}<button formaction="{{ url_for('project_revive', id=p.id) }}" title="Back to someday / maybe, with its steps">Revive</button>
+    {% else %}
     {% if p.status != 'active' %}<button name="status" value="active">Activate</button>{% endif %}
     {% if p.status != 'waiting' %}<button name="status" value="waiting">Waiting</button>{% endif %}
     {% if p.status != 'someday' %}<button name="status" value="someday">Someday</button>{% endif %}
     {% if p.status != 'done' %}<button name="status" value="done">Complete</button>{% endif %}
+    <button formaction="{{ url_for('project_abandon', id=p.id) }}" title="Give up on it and its open steps: it moves to Done, revivable">Abandon</button>
+    {% endif %}
     {% if not tasks and not times %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger end" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
   </div>
 </form>
-{% if p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
+{% if p.status == 'abandoned' %}<p class="hint">Abandoned project: Revive brings it back to someday / maybe, with its steps.</p>
+{% elif p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
 <h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}</h2>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step', marks=True) %}
   <select name="step" aria-label="Step">
@@ -30,6 +35,8 @@
   <input name="notes" placeholder="notes…" aria-label="Notes">
 {% endcall %}
 <ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step in ('later', 'waiting')), grip=True) }}{% endfor %}</ul>
+{# An abandoned project's steps, each revivable (which revives the project too). #}
+{% if abandoned %}<ul class="tasks">{% for t in abandoned %}{{ row(t, project=False) }}{% endfor %}</ul>{% endif %}
 {% set in_project = true %}{% include "_done_toggle.html" %}
 {% if times %}{{ tally('Time', times, cls='wide') }}{% endif %}
 {% endblock %}

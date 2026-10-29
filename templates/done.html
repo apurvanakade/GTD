@@ -17,9 +17,17 @@
 <p class="empty">Nothing finished yet.</p>
 {% endif %}
 <h2>Abandoned</h2>
+{% if dropped %}
+<ul class="tasks cards">
+  {% for p in dropped %}
+  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta">{{ p.completed_at|local_date }}</span>
+    <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to someday / maybe, with its steps">Revive</button></form></li>
+  {% endfor %}
+</ul>
+{% endif %}
 {% if abandoned %}
 <ul class="tasks">{% for t in abandoned %}{{ row(t) }}{% endfor %}</ul>
-{% else %}
+{% elif not dropped %}
 <p class="empty">Nothing abandoned.</p>
 {% endif %}
 {% endblock %}

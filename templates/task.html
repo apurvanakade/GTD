@@ -32,7 +32,7 @@
     </select>
   </label>{% endif %}
   <label>Project
-    {{ project_select('h0' if t.ground else t.project_id) }}
+    {{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
   </label>
   <label>Due {{ date_input(t.due_date) }}</label>
   <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks, every 2 weeks after done…"></label>
