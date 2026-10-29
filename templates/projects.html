@@ -1,23 +1,18 @@
 {% extends "base.html" %}
-{% from "_task.html" import add_form, peek_button, peek_steps with context %}
+{% from "_task.html" import add_form, area_select, project_card, peek_button, peek_steps with context %}
 {% block title %}Projects{% endblock %}
-{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
+{% block actions %}{% if groups %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
-{{ add_form(url_for('project_create'), 'New project – describe the outcome') }}
+{% call add_form(url_for('project_create'), 'New project – describe the outcome') %}{{ area_select(required=True) }}{% endcall %}
+{# One list per area, each dragged on its own; a project with no area is flagged until it gets one. #}
+{% for area, ps in groups %}
+<h2 class="area-head">{% if area %}<a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% else %}<span class="warn">⚠ No area</span>{% endif %}</h2>
 <ul class="tasks cards filled" data-reorder="{{ url_for('projects_order', status='active') }}">
-  {# The row fills up as steps get done, and fades once the project has sat untouched for IDLE_DAYS. #}
-  {% for p in projects %}{% set total = p.open_count + p.done_count %}{% set idle = p.last_active|idle_days %}
-  <li class="task{% if not p.next_count %} stalled{% endif %}{% if idle >= IDLE_DAYS %} idle{% endif %}" data-id="{{ p.id }}" style="--done: {{ (100 * p.done_count / total)|round|int if total else 0 }}%" title="{{ p.done_count }} of {{ total }} steps done{% if idle >= IDLE_DAYS %} · No activity for {{ idle }} days{% endif %}">
-    <span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>
-    {{ peek_button() }}
-    <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
-    <span class="meta">{{ p.open_count }} open</span>
-    {{ peek_steps(steps.get(p.id, [])) }}
-  </li>
-  {% else %}
-  <li class="empty">No active projects.</li>
-  {% endfor %}
+  {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
+{% else %}
+<ul class="tasks cards"><li class="empty">No active projects.</li></ul>
+{% endfor %}
 <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
 {% if show_done %}
 <h2>Completed</h2>

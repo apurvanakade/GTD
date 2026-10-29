@@ -9,6 +9,7 @@
   {# The project follows the title, in the same text flow; the meta column keeps only step, date and repeat. #}
   <span class="name"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
     {%- if project and t.project_title %} <a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
+      {%- if t.area_title %} <a class="area" href="{{ url_for('horizon_view', id=t.area_id) }}">{{ t.area_title }}</a>{% endif %}
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
@@ -65,17 +66,17 @@
 </span>
 {% endmacro %}
 
-{# The one project list (db.project_groups(): Active, Waiting, Someday, Done), as the task dropdown here and as
-   Inbox's drop panel in project_targets(). "＋ New…" (value __new__) reveals the name box beside it, in CSS;
-   the server ignores it without a name. `keep` (a task of an abandoned project, which no list offers) keeps its
-   project selectable, so saving the task leaves it there. #}
+{# The one project list (db.project_groups(): each open area, then No area, then Done), as the task dropdown here
+   and as Inbox's drop panel in project_targets(). Each area starts with its own "＋ New project…" (value
+   __new__:<area id>), which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
+   task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
 {% macro project_select(selected=none, h0=True, keep=none) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>
   {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
-  <option value="__new__">＋ New project…</option>
-  {% for label, ps in project_groups %}<optgroup label="{{ label }}">
-    {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
+  {% for label, ps, area in project_groups %}<optgroup label="{{ label }}">
+    {% if area %}<option value="__new__:{{ area }}">＋ New project…</option>{% endif %}
+    {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{{ ' · ' ~ p.status if p.status in ('waiting', 'someday') }}</option>{% endfor %}
   </optgroup>{% endfor %}
   {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
 </select>
@@ -85,8 +86,34 @@
 {% macro project_targets() %}
 <div class="target" data-project="h0">H0 · ground level (no project)</div>
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
-<div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
-{% for label, ps in project_groups %}<section class="group"><h3>{{ label }}</h3>{% for p in ps %}<div class="target" data-project="{{ p.id }}">{{ p.title }}</div>{% endfor %}</section>{% endfor %}
+{% for label, ps, area in project_groups %}<section class="group"><h3>{{ label }}</h3>
+  {% if area %}<div class="target new" data-project="__new__" data-area="{{ area }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project in {{ label }}" autocomplete="off"></div>{% endif %}
+  {% for p in ps %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status in ('waiting', 'someday') %} <span class="meta">{{ p.status }}</span>{% endif %}</div>{% endfor %}</section>{% endfor %}
+{% endmacro %}
+
+{# The open areas (the context's `areas`), for a new project's add line and a project's page. `keep`: the project's
+   own area when it's archived, so saving leaves it there. #}
+{% macro area_select(selected=none, required=False, keep=none) %}
+<select name="area_id" aria-label="Area"{% if required %} required{% endif %}>
+  <option value="">area…</option>
+  {% for a in areas %}<option value="{{ a.id }}"{% if a.id == selected %} selected{% endif %}>{{ a.title }}</option>{% endfor %}
+  {% if keep and keep.archived_at %}<option value="{{ keep.id }}" selected>{{ keep.title }} (archived)</option>{% endif %}
+</select>
+{% endmacro %}
+
+{# A project as a card (Projects, Someday, an area's page): it fills up as steps get done and fades once untouched for
+   IDLE_DAYS; ▸ folds out its open steps. A someday one offers Activate instead. #}
+{% macro project_card(p, steps) %}
+{% set total = p.open_count + p.done_count %}{% set idle = p.last_active|idle_days %}{% set live = p.status == 'active' %}
+<li class="task{% if live and not p.next_count %} stalled{% endif %}{% if live and idle >= IDLE_DAYS %} idle{% endif %}" data-id="{{ p.id }}"
+  {%- if live %} style="--done: {{ (100 * p.done_count / total)|round|int if total else 0 }}%" title="{{ p.done_count }} of {{ total }} steps done{% if idle >= IDLE_DAYS %} · No activity for {{ idle }} days{% endif %}"{% endif %}>
+  {% if p.status in ('active', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
+  {{ peek_button() }}
+  <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if live and not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
+  <span class="meta">{{ p.open_count }} open</span>
+  {% if p.status == 'someday' %}<form method="post" action="{{ url_for('project_view', id=p.id) }}" class="row-btn"><button name="status" value="active">Activate</button></form>{% endif %}
+  {{ peek_steps(steps.get(p.id, [])) }}
+</li>
 {% endmacro %}
 
 {# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}

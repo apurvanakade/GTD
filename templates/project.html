@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form, tally with context %}
+{% from "_task.html" import row, date_input, add_form, area_select, tally with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for'), 'abandoned': ('done', 'Done')}.get(p.status, ('projects_view', 'Projects')) %}
-<p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
+<p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if area %} · <a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% endif %}{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
 {% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -11,6 +11,7 @@
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
   <div class="row">
+    {{ area_select(p.area_id, keep=area) }}
     <button class="primary">Save</button>
     {% if p.status == 'abandoned' %}<button formaction="{{ url_for('project_revive', id=p.id) }}" title="Back to someday / maybe, with its steps">Revive</button>
     {% else %}
@@ -23,6 +24,7 @@
     {% if not tasks and not times %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger end" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
   </div>
 </form>
+{% if not p.area_id and p.status not in ('done', 'abandoned') %}<p class="hint warn">⚠ No area: pick the area this project belongs to.</p>{% endif %}
 {% if p.status == 'abandoned' %}<p class="hint">Abandoned project: Revive brings it back to someday / maybe, with its steps.</p>
 {% elif p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
 <h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}</h2>

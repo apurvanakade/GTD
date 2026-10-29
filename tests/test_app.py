@@ -498,7 +498,7 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     assert '<input type="hidden" name="level" value="goal">' in goal  # the add line adds to the card shown
     assert '<span class="count">1</span>' in card
     area = client.get("/horizons?level=area").get_data(as_text=True)
-    assert '<input type="hidden" name="level" value="area">' in area and "Clean and calm" in horizon_card(area)[1]
+    assert '<input type="hidden" name="level" value="area">' in area and "3 projects<" in horizon_card(area)[1] and "Fall term" not in area
     assert horizon_card(client.get("/horizons?level=bogus").get_data(as_text=True))[0] == "purpose"
     assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
     vision = db.horizons(conn)["vision"][0]["id"]
@@ -645,8 +645,9 @@ def test_complete_twice_is_harmless(client, conn):
 
 
 def test_projects_create_and_status(client, conn):
+    area = db.add_horizon(conn, "area", "Home")
     assert client.post("/projects", data={"title": "  "}).headers["Location"] == "/projects"
-    client.post("/projects", data={"title": "Paint fence"})
+    client.post("/projects", data={"title": "Paint fence", "area_id": area})
     pid = db.projects(conn)[-1]["id"]
     assert db.get_project(conn, pid)["title"] == "Paint fence"
     client.post(f"/projects/{pid}", data={"title": "", "notes": "", "status": "bogus"})
@@ -816,7 +817,7 @@ def test_edit_and_delete_time_entries(client, conn):
 
 
 def test_time_totals_on_task_project_and_timer_pages(client, conn):
-    pid = db.add_project(conn, "Kitchen")
+    pid = db.add_project(conn, "Kitchen", area_id=db.add_horizon(conn, "area", "Home"))
     a = db.add_task(conn, "measure", step="next", project_id=pid)
     b = db.add_task(conn, "tile", step="later", project_id=pid)
     h0 = db.add_task(conn, "stretch", step="next", ground=1)
@@ -829,8 +830,8 @@ def test_time_totals_on_task_project_and_timer_pages(client, conn):
     assert "1h 00m" in client.get(f"/tasks/{a}").get_data(as_text=True)
     assert "1h 20m" in client.get(f"/projects/{pid}").get_data(as_text=True)
     page = client.get("/timer").get_data(as_text=True)
-    assert "Kitchen" in page and "1h 20m" in page and "H0 · ground level" in page and "0h 10m" in page
-    assert db.week_totals(conn, NOW - timedelta(days=1), NOW) == [("Kitchen", 4800), ("H0 · ground level", 600)]
+    assert "Home" in page and "1h 20m" in page and "H0 · ground level" in page and "0h 10m" in page
+    assert db.week_totals(conn, NOW - timedelta(days=1), NOW) == [("Home", 4800), ("H0 · ground level", 600)]  # by area
 
 
 
@@ -859,11 +860,12 @@ def test_task_page_timer_sits_in_the_header(client, conn):
 
 def test_new_project_from_task_form(client, conn):
     tid = db.add_task(conn, "ring Bob")
-    r = client.post(f"/tasks/{tid}", data={"project_id": "h0", "new_project": " Garden ", "step": "next"})
+    area = db.add_horizon(conn, "area", "Home")
+    r = client.post(f"/tasks/{tid}", data={"project_id": f"__new__:{area}", "new_project": " Garden ", "step": "next"})
     assert r.status_code in (200, 302)
     t = db.get_task(conn, tid)
     p = conn.execute("SELECT * FROM projects WHERE title = 'Garden'").fetchone()
-    assert p and p["status"] == "active"
+    assert p and p["status"] == "active" and p["area_id"] == area  # in the area whose "＋ New project…" was picked
     assert t["project_id"] == p["id"] and not t["ground"] and t["step"] == "next"
     assert b'name="new_project"' in client.get(f"/tasks/{tid}").data
 
@@ -871,11 +873,10 @@ def test_new_project_from_task_form(client, conn):
 def test_new_option_without_a_name_picks_nothing(client, conn):
     """The pickers' "＋ New…" option only reveals the name box; picked with the box left empty, it's no choice."""
     tid = db.add_task(conn, "ring Bob")
-    conn.commit()
+    area = db.add_horizon(conn, "area", "Home")
     html = client.get(f"/tasks/{tid}").data.decode()
-    assert html.count('value="__new__"') == 1
-    client.post(f"/tasks/{tid}", data={"project_id": "__new__",
-                                       "new_project": ""})
+    assert html.count(f'value="__new__:{area}"') == 1  # one per area
+    client.post(f"/tasks/{tid}", data={"project_id": f"__new__:{area}", "new_project": ""})
     t = db.get_task(conn, tid)
     assert t["project_id"] is None and not t["ground"]
     assert not conn.execute("SELECT 1 FROM projects WHERE title = '__new__'").fetchone()
@@ -929,7 +930,8 @@ def test_project_lists_carry_each_projects_open_steps(client, conn):
 
 def test_timer_week_totals_have_bars(client, conn):
     for title, hours in (("dig", 2), ("rake", 1)):
-        db.timer_start(conn, db.add_task(conn, title, step="next", project_id=db.add_project(conn, title)),
+        area = db.add_horizon(conn, "area", title)
+        db.timer_start(conn, db.add_task(conn, title, step="next", project_id=db.add_project(conn, title, area_id=area)),
                        NOW - timedelta(hours=hours))
         db.timer_stop(conn, NOW - timedelta(hours=hours) + timedelta(minutes=30 * hours))
     conn.commit()
@@ -941,7 +943,8 @@ def test_timer_week_totals_have_bars(client, conn):
 def test_timer_today_tally_beside_week(client, conn):
     """Today counts only entries started since local midnight; This week counts both."""
     for title, start in (("dig", NOW - timedelta(hours=1)), ("rake", NOW - timedelta(days=1))):
-        db.timer_start(conn, db.add_task(conn, title, step="next", project_id=db.add_project(conn, title)), start)
+        area = db.add_horizon(conn, "area", title)
+        db.timer_start(conn, db.add_task(conn, title, step="next", project_id=db.add_project(conn, title, area_id=area)), start)
         db.timer_stop(conn, start + timedelta(minutes=30))
     conn.commit()
     html = client.get("/timer").data.decode()
@@ -1201,9 +1204,11 @@ def test_add_waiting_for_on_the_waiting_page(client, conn):
 
 
 def test_add_someday_project_on_the_someday_page(client, conn):
-    r = client.post("/someday/add", data={"title": "learn the cello"})
+    area = db.add_horizon(conn, "area", "Fun")
+    client.post("/someday/add", data={"title": "no area"})  # refused: a project needs an area
+    r = client.post("/someday/add", data={"title": "learn the cello", "area_id": area})
     assert r.headers["Location"].endswith("/someday")
-    assert [p["title"] for p in db.projects(conn, "someday")] == ["learn the cello"]
+    assert [(p["title"], p["area_id"]) for p in db.projects(conn, "someday")] == [("learn the cello", area)]
     client.post("/someday/add", data={"title": "  "})
     assert len(db.projects(conn, "someday")) == 1
 
@@ -1314,7 +1319,7 @@ def test_review_shows_one_step_at_a_time(client, conn):
     key, card = step_card(client.get("/review?step=overdue").get_data(as_text=True), "overdue")
     assert key == "overdue" and '<span class="count">1</span>' in card and "buy tiles" in card
     key, card = step_card(client.get("/review?step=stalled").get_data(as_text=True), "stalled")
-    assert '<span class="count">1</span>' in card
+    assert '<span class="count">2</span>' in card and "no area" in card  # "Stalled": no next action, and no area
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
     assert 'href="/inbox"' in card and "/process" not in card  # deal with it on the Inbox page
     r = client.post("/review/inbox")  # ticking moves on to the next unticked step
@@ -1448,12 +1453,13 @@ def test_toggle_url_survives_a_clashing_query_arg(client, conn):
 
 
 def test_new_project_is_not_created_without_a_task(client, conn):
+    area = db.add_horizon(conn, "area", "Home")
     for url in ("/next/add", "/waiting/add", "/calendar"):
-        client.post(url, data={"title": " ", "project_id": "__new__", "new_project": "Ghost"})
-    pid = db.add_project(conn, "P")
+        client.post(url, data={"title": " ", "project_id": f"__new__:{area}", "new_project": "Ghost"})
+    pid = db.add_project(conn, "P", area_id=area)
     t = db.add_task(conn, "t", project_id=pid, step="next")
-    client.post(f"/tasks/{t}", data={"title": "t", "due_date": "bogus date", "project_id": "__new__", "new_project": "Real"})
-    assert [p["title"] for _, ps in db.project_groups(conn) for p in ps] == ["Real", "P"]  # the task page still files it
+    client.post(f"/tasks/{t}", data={"title": "t", "due_date": "bogus date", "project_id": f"__new__:{area}", "new_project": "Real"})
+    assert [p["title"] for _, ps, _ in db.project_groups(conn) for p in ps] == ["Real", "P"]  # the task page still files it
 
 
 def test_h0_task_can_join_a_project_directly(client, conn):
@@ -1591,10 +1597,12 @@ def test_inbox_drag_moves_an_item_into_a_project(client, conn):
     assert (db.get_task(conn, a)["project_id"], db.get_task(conn, a)["step"]) == (pid, "later")
     assert db.get_task(conn, b)["inbox"]
     assert b"Moved" not in client.get("/inbox").data  # no flash left over for the next page
-    # Dropped on "＋ New…" with a name: a new project.
-    assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 204
-    fresh = [p for _, ps in db.project_groups(conn) for p in ps if p["title"] == "Fresh"]
-    assert len(fresh) == 1 and db.get_task(conn, b)["project_id"] == fresh[0]["id"]
+    # Dropped on an area's "＋ New…" with a name: a new project in that area. Without an area, none.
+    area = db.add_horizon(conn, "area", "Home")
+    assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 400
+    assert client.post("/inbox/move", data={"id": b, "new_project": "Fresh", "area_id": area}, headers=FETCH).status_code == 204
+    fresh = [p for _, ps, _ in db.project_groups(conn) for p in ps if p["title"] == "Fresh"]
+    assert len(fresh) == 1 and db.get_task(conn, b)["project_id"] == fresh[0]["id"] and fresh[0]["area_id"] == area
 
 
 def test_inbox_drag_edges(client, conn):
@@ -1612,15 +1620,17 @@ def test_inbox_drag_edges(client, conn):
     assert client.post("/inbox/move", data={"id": filed, "project_id": str(other)}, headers=FETCH).status_code == 400
     assert client.post("/inbox/move", data={"id": filed, "new_project": "Ghost"}, headers=FETCH).status_code == 400
     assert (db.get_task(conn, filed)["project_id"], db.get_task(conn, filed)["step"]) == (pid, "next")
-    assert not [p for _, ps in db.project_groups(conn) for p in ps if p["title"] == "Ghost"]
+    assert not [p for _, ps, _ in db.project_groups(conn) for p in ps if p["title"] == "Ghost"]
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):
     db.add_task(conn, "a")
-    pid = db.add_project(conn, "P")
+    area = db.add_horizon(conn, "area", "Home")
+    pid = db.add_project(conn, "P", area_id=area)
     html = client.get("/inbox").data.decode()
     for target in (str(pid), "h0", "__new__"):
         assert f'data-project="{target}"' in html
+    assert f'data-project="__new__" data-area="{area}"' in html  # a new project starts in an area
     assert 'type="checkbox"' not in html
 
 
@@ -1717,24 +1727,28 @@ def test_migration_adds_project_updated_at(tmp_path):
     db.connect(path).close()
 
 
-def test_project_pickers_are_one_list_grouped_by_status(client, conn):
+def test_project_pickers_are_one_list_grouped_by_area(client, conn):
     ids = seed(conn)
-    pid = db.add_project(conn, "Another active")
-    db.reorder_projects(conn, "active", [pid, ids["active"], ids["stalled"]])  # dragged first on Projects, so first here too
-    assert [(label, [p["title"] for p in ps]) for label, ps in db.project_groups(conn)] == [
-        ("Active", ["Another active", "Kitchen", "Stalled"]), ("Waiting", ["Waiting proj"]),
-        ("Someday", ["Someday proj"]), ("Done", ["Done proj"])]
-    expected = [(label, [str(p["id"]) for p in ps]) for label, ps in db.project_groups(conn)]
+    pid = db.add_project(conn, "Another active", area_id=ids["area"])
+    db.reorder_projects(conn, "active", [pid, ids["active"]])  # dragged first on Projects, so first here too
+    # Each open area (even an empty one), active then waiting then someday; then no area; then done. No archived area.
+    assert [(label, [p["title"] for p in ps]) for label, ps, _ in db.project_groups(conn)] == [
+        ("Home", ["Another active", "Kitchen", "Waiting proj", "Someday proj"]), ("Work", []),
+        ("No area", ["Stalled"]), ("Done", ["Done proj"])]
+    expected = [(label, [str(p["id"]) for p in ps]) for label, ps, _ in db.project_groups(conn)]
 
     def groups(html, group, item):
         return [(label, re.findall(item, body)) for label, body in re.findall(group, html, re.S)]
 
     db.add_task(conn, "loose")
     task = client.get("/tasks/1").data.decode()
-    assert groups(task, r'<optgroup label="(\w+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
+    assert groups(task, r'<optgroup label="([\w ]+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
     inbox = client.get("/inbox").data.decode()
-    assert groups(inbox, r'<section class="group"><h3>(\w+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
-    assert "(someday)" not in task + inbox  # the group says it
+    assert groups(inbox, r'<section class="group"><h3>([\w ]+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
+    assert "Someday proj · someday" in task and "Fall term" not in task + inbox
+    # Each area starts with its own "＋ New project…", in both.
+    assert f'value="__new__:{ids["area"]}"' in task and f'value="__new__:{ids["empty_area"]}"' in task
+    assert f'data-area="{ids["empty_area"]}"' in inbox
 
 
 def test_filing_into_a_done_project_reopens_it(client, conn):
@@ -2114,7 +2128,7 @@ def test_abandoning_a_project_abandons_its_open_steps_and_lists_it_on_done(clien
     assert db.timer_running(conn) is None and len(db.time_entries(conn)) == 1  # stopped, time kept
     # It leaves every list and picker, and Done lists it (not its steps one by one), revivable.
     assert ">Boat<" not in client.get("/someday").get_data(as_text=True)
-    assert not [p for _, ps in db.project_groups(conn) for p in ps if p["id"] == pid]
+    assert not [p for _, ps, _ in db.project_groups(conn) for p in ps if p["id"] == pid]
     page = client.get("/done").get_data(as_text=True).split("<h2>Abandoned")[1]
     assert "Boat" in page and f"/projects/{pid}/revive" in page and ">a<" not in page
     project_page = client.get(f"/projects/{pid}").get_data(as_text=True)
@@ -2230,3 +2244,107 @@ def test_migration_files_done_inbox_items_under_h0(tmp_path):
     assert [tuple(r) for r in c.execute("SELECT title, ground FROM tasks ORDER BY id")] == [
         ("old done", 1), ("old abandoned", 0), ("open", 0)]
     c.close()
+
+
+# --- areas (H2) on projects ------------------------------------------------
+
+def test_migration_adds_project_area_and_area_archiving(tmp_path):
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.executescript(db.PROJECTS_TABLE.format(name="projects").replace(",\n  area_id INTEGER REFERENCES horizons(id)", "")
+                      + """; CREATE TABLE horizons (id INTEGER PRIMARY KEY, level TEXT NOT NULL CHECK (level IN
+                      ('purpose', 'vision', 'goal', 'area')), title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+                      created_at TEXT NOT NULL DEFAULT (datetime('now')));
+                      INSERT INTO projects (title) VALUES ('p'); INSERT INTO horizons (level, title) VALUES ('area', 'Home');""")
+    old.close()
+    c = db.connect(path)
+    assert db.projects(c)[0]["area_id"] is None and db.areas(c)[0]["archived_at"] is None
+    assert [p["title"] for p in db.no_area(c)] == ["p"]
+    c.close()
+    db.connect(path).close()  # second connect is a no-op
+
+
+def test_a_project_needs_an_area(client, conn):
+    area, goal = db.add_horizon(conn, "area", "Home"), db.add_horizon(conn, "goal", "Ship it")
+    client.post("/projects", data={"title": "Paint fence"})
+    assert not db.projects(conn) and "Pick an area" in client.get("/projects").get_data(as_text=True)
+    client.post("/projects", data={"title": "Paint fence", "area_id": goal})  # a goal isn't an area
+    assert not db.projects(conn)
+    client.post("/projects", data={"title": "Paint fence", "area_id": area})
+    assert [(p["title"], p["area_id"]) for p in db.projects(conn)] == [("Paint fence", area)]
+    with pytest.raises(ValueError):
+        db.add_project(conn, "x", area_id=goal)
+    # A new project from a task's picker without an area isn't created; the task stays in the inbox.
+    tid = db.add_task(conn, "ring Bob")
+    client.post(f"/tasks/{tid}", data={"project_id": "__new__", "new_project": "Ghost"})
+    assert not conn.execute("SELECT 1 FROM projects WHERE title = 'Ghost'").fetchone() and db.get_task(conn, tid)["inbox"]
+
+
+def test_project_page_changes_the_area(client, conn):
+    ids = seed(conn)
+    page = client.get(f"/projects/{ids['stalled']}").get_data(as_text=True)
+    assert "⚠ No area" in page
+    client.post(f"/projects/{ids['stalled']}", data={"title": "Stalled", "area_id": ids["empty_area"]})
+    assert db.get_project(conn, ids["stalled"])["area_id"] == ids["empty_area"]
+    client.post(f"/projects/{ids['stalled']}", data={"title": "Stalled", "area_id": ""})  # blank: unchanged
+    assert db.get_project(conn, ids["stalled"])["area_id"] == ids["empty_area"]
+    page = client.get(f"/projects/{ids['active']}").get_data(as_text=True)
+    assert f'<a href="/horizons/{ids["area"]}">Home</a>' in page  # the crumb links up to its area
+    assert f'<option value="{ids["area"]}" selected>Home</option>' in page
+    done = client.get(f"/projects/{ids['done']}").get_data(as_text=True)
+    assert "Fall term (archived)</option>" in done  # its archived area stays selected, so Save keeps it
+
+
+def test_projects_and_someday_pages_group_by_area(client, conn):
+    ids = seed(conn)
+    page = client.get("/projects").get_data(as_text=True)
+    heads = re.findall(r'<h2 class="area-head">(.*?)</h2>', page)
+    assert heads == [f'<a href="/horizons/{ids["area"]}">Home</a>', '<span class="warn">⚠ No area</span>']
+    assert page.count('data-reorder="/projects/order/active"') == 2  # each area's list is dragged on its own
+    someday = client.get("/someday").get_data(as_text=True)
+    assert re.findall(r'<h2 class="area-head">(.*?)</h2>', someday) == [f'<a href="/horizons/{ids["area"]}">Home</a>']
+
+
+def test_an_area_page_is_its_hub(client, conn):
+    ids = seed(conn)
+    page = client.get(f"/horizons/{ids['area']}").get_data(as_text=True)
+    for title in ("Kitchen", "Waiting proj", "Someday proj"):
+        assert title in page
+    assert "Stalled" not in page and ">Active<" in page and ">Waiting<" in page and "Delete" not in page
+    client.post("/projects", data={"title": "Garden", "area_id": ids["area"]},
+                headers={"Referer": f"/horizons/{ids['area']}"})
+    assert db.projects(conn)[0]["title"] == "Garden" and db.projects(conn)[0]["area_id"] == ids["area"]
+    # Only an area no project is in (done ones too) can be deleted.
+    assert client.post(f"/horizons/{ids['area']}/delete").headers["Location"] == f"/horizons/{ids['area']}"
+    assert db.get_horizon(conn, ids["area"])
+    assert client.post(f"/horizons/{ids['archived_area']}/delete").status_code == 302
+    assert db.get_horizon(conn, ids["archived_area"])
+    assert "Delete" in client.get(f"/horizons/{ids['empty_area']}").get_data(as_text=True)
+    client.post(f"/horizons/{ids['empty_area']}/delete")
+    assert not db.get_horizon(conn, ids["empty_area"])
+
+
+def test_archiving_an_area(client, conn):
+    ids = seed(conn)
+    client.post(f"/horizons/{ids['area']}/archive")  # it has open projects
+    assert not db.get_horizon(conn, ids["area"])["archived_at"]
+    assert "Finish, move or abandon" in client.get(f"/horizons/{ids['area']}").get_data(as_text=True)
+    # An archived area is on Done and behind Horizons' "Show archived", not on the area card.
+    assert "Fall term" in client.get("/done").get_data(as_text=True)
+    assert "Fall term" not in client.get("/horizons?level=area").get_data(as_text=True)
+    assert "Fall term" in client.get("/horizons?level=area&done=1").get_data(as_text=True)
+    assert "Unarchive" in client.get(f"/horizons/{ids['archived_area']}").get_data(as_text=True)
+    client.post(f"/horizons/{ids['archived_area']}/archive")  # the same button unarchives
+    assert not db.get_horizon(conn, ids["archived_area"])["archived_at"]
+    client.post(f"/horizons/{ids['archived_area']}/archive")
+    assert db.get_horizon(conn, ids["archived_area"])["archived_at"]
+    # An open project in an archived area brings the area back, as an open task reopens a done project.
+    db.add_task(conn, "one more", project_id=ids["done"])
+    assert db.get_project(conn, ids["done"])["status"] == "active"
+    assert not db.get_horizon(conn, ids["archived_area"])["archived_at"]
+
+
+def test_task_rows_show_the_area(client, conn):
+    ids = seed(conn)
+    page = client.get("/next").get_data(as_text=True)
+    assert f'<a class="proj" href="/projects/{ids["active"]}">Kitchen</a> <a class="area" href="/horizons/{ids["area"]}">Home</a>' in page

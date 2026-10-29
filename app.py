@@ -57,15 +57,21 @@ def local_now():
 @app.context_processor
 def template_globals():
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
-            "timer": db.timer_running(conn())}
+            "timer": db.timer_running(conn()), "areas": db.areas(conn()), "IDLE_DAYS": IDLE_DAYS}
 
 
-NEW = "__new__"  # project_select's "＋ New…" option (_task.html)
+NEW = "__new__"  # project_select's "＋ New project…" option, one per area: __new__:<area id> (_task.html)
 
 
 def form_value(name):
     """Stripped form value, or None when blank."""
     return (request.form.get(name) or "").strip() or None
+
+
+def area_from(raw):
+    """The id of the area a form names, or None."""
+    h = raw and str(raw).isdigit() and db.get_horizon(conn(), int(raw))
+    return h["id"] if h and h["level"] == "area" else None
 
 
 def task_fields_from_form(current=None):
@@ -83,9 +89,14 @@ def task_fields_from_form(current=None):
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
     new_project = form_value("new_project")
-    if new_project:  # typed into the "or new project…" box; overrides the dropdown
-        fields["project_id"] = db.add_project(conn(), new_project)
-        fields["ground"] = 0
+    if new_project:  # typed into the "new project" box; overrides the dropdown. Its area: the "＋ New…" picked, or area_id
+        raw = request.form.get("project_id") or ""
+        area_id = area_from(raw.partition(":")[2] if raw.startswith(NEW) else request.form.get("area_id"))
+        if area_id:
+            fields["project_id"] = db.add_project(conn(), new_project, area_id=area_id)
+            fields["ground"] = 0
+        else:
+            flash(f"A project needs an area: “{new_project}” wasn't created. Pick “＋ New project…” under an area.")
     if request.form.get("step") in ("next", "waiting", "later"):  # a project's step; H0 and inbox tasks drop it
         fields["step"] = request.form["step"]
     for name, parse in (("due_date", parse_due), ("recur", parse_recur)):
@@ -311,15 +322,13 @@ def waiting_add():
 
 @app.route("/someday")
 def someday():
-    return render_template("someday.html", projects=db.projects(conn(), "someday"),
+    return render_template("someday.html", groups=db.by_area(conn(), db.projects(conn(), "someday")),
                            steps=db.open_steps(conn(), "someday"))
 
 
 @app.post("/someday/add")
 def someday_add():
-    title = form_value("title")
-    if title:
-        db.add_project(conn(), title, status="someday")
+    add_project_from_form("someday")
     return redirect(url_for("someday"))
 
 
@@ -365,6 +374,7 @@ def links(text):
 @app.route("/done")
 def done():
     return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"),
+                           archived=db.areas(conn(), archived=True),
                            abandoned=db.done_tasks(conn(), state="abandoned"), dropped=db.abandoned_projects(conn()))
 
 
@@ -399,7 +409,8 @@ def review():
     for d in past:
         by_week.setdefault(date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday()), d)
     weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
-    return render_template("review.html", stalled=db.stalled_projects(c), overdue=db.overdue(c, today()),
+    return render_template("review.html", stalled=db.stalled_projects(c), no_area=db.no_area(c),
+                           overdue=db.overdue(c, today()),
                            nexts=nexts, scheduled=len(all_next) - len(nexts),
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 
@@ -535,7 +546,7 @@ def make_next(id):
 @app.route("/projects")
 def projects_view():
     show = request.args.get("done") == "1"
-    return render_template("projects.html", projects=db.projects(conn()), steps=db.open_steps(conn()), IDLE_DAYS=IDLE_DAYS,
+    return render_template("projects.html", groups=db.by_area(conn(), db.projects(conn())), steps=db.open_steps(conn()),
                            show_done=show, toggle_url=toggle_url(show),
                            done_projects=db.projects(conn(), "done") if show else [])
 
@@ -549,11 +560,18 @@ def projects_order(status):
     return back()
 
 
+def add_project_from_form(status="active"):
+    """The add line's new project (Projects, Someday, an area's page): it needs an area."""
+    title, area_id = form_value("title"), area_from(request.form.get("area_id"))
+    if title and not area_id:
+        flash(f"Pick an area for “{title}”.")
+    elif title:
+        db.add_project(conn(), title, status=status, area_id=area_id)
+
+
 @app.post("/projects")
 def project_create():
-    title = form_value("title")
-    if title:
-        db.add_project(conn(), title)
+    add_project_from_form()
     return back("projects_view")
 
 
@@ -575,6 +593,8 @@ def project_view(id):
         if "notes" in fields:
             fields["notes"] = fields["notes"] or ""
         fields["title"] = fields.get("title") or p["title"]
+        if area_from(request.form.get("area_id")):  # left blank (a project with none yet): unchanged
+            fields["area_id"] = area_from(request.form["area_id"])
         # An abandoned project comes back only through Revive, which brings its steps back too.
         status = None if p["status"] == "abandoned" else request.form.get("status")
         if status == "done" and db.project_tasks(c, id):
@@ -586,7 +606,7 @@ def project_view(id):
             flash(f"Moved “{fields['title']}” to someday / maybe.")
         return back()
     abandoned = db.done_tasks(c, project_id=id, state="abandoned") if p["status"] == "abandoned" else []
-    return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
+    return render_template("project.html", p=p, area=p["area_id"] and db.get_horizon(c, p["area_id"]), tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
                            abandoned=abandoned,
                            times=db.step_totals(c, id, now()), **completed(default=True, project_id=id))
 
@@ -933,8 +953,10 @@ def horizons_view():
     level = request.args.get("level")
     if level not in HORIZON_STEPS:
         level = HORIZON_STEPS[0]
+    show = request.args.get("done") == "1"
     return render_template("horizons.html", levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
-                           items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()))
+                           items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()),
+                           show_done=show, toggle_url=toggle_url(show), archived=db.areas(conn(), archived=True) if show else [])
 
 
 @app.post("/horizons")
@@ -955,14 +977,40 @@ def horizon_view(id):
                           notes=(request.form.get("notes") or "").strip())
         flash("Saved.")
         return back()
-    return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]])
+    if h["level"] != "area":
+        return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]])
+    # An area's page is its hub: its projects by status, and an add line for a new one.
+    lists = [(label, db.projects(c, status, area_id=id)) for label, status in AREA_LISTS]
+    show = request.args.get("done") == "1"
+    return render_template("horizon.html", h=h, label=HORIZON_TITLES["area"], lists=lists, steps=db.open_steps(c, None),
+                           empty=not c.execute("SELECT 1 FROM projects WHERE area_id = ?", (id,)).fetchone(),
+                           show_done=show, toggle_url=toggle_url(show),
+                           done_projects=db.projects(c, "done", area_id=id) if show else [])
+
+
+AREA_LISTS = (("Active", "active"), ("Waiting", "waiting"), ("Someday / maybe", "someday"))
 
 
 @app.post("/horizons/<int:id>/delete")
 def horizon_delete(id):
     h = db.get_horizon(conn(), id) or abort(404)
-    db.delete_horizon(conn(), id)
+    if not db.delete_horizon(conn(), id):
+        flash("Only an area no project is in can be deleted: move its projects first.")
+        return redirect(url_for("horizon_view", id=id))
     return redirect(url_for("horizons_view", level=h["level"]))
+
+
+@app.post("/horizons/<int:id>/archive")
+def area_archive(id):
+    """An area that's over (a term's course): it leaves the lists and pickers for Done. Stays on the page."""
+    h = db.get_horizon(conn(), id) or abort(404)
+    if h["archived_at"]:
+        db.unarchive_area(conn(), id)
+    elif not db.archive_area(conn(), id):
+        flash("Finish, move or abandon its projects first.")
+    else:
+        flash(f"Archived “{h['title']}”: it's on Done.")
+    return back()
 
 
 

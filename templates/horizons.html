@@ -8,7 +8,7 @@
   'purpose': 'Why you do what you do, and the principles you won\'t compromise. Revisit yearly.',
   'vision': 'What wild success looks like in 3–5 years, at work, at home, in health. Revisit yearly.',
   'goal': 'What you want done in 1–2 years. Revisit quarterly: does each have a project serving it?',
-  'area': 'The responsibilities you keep up. Does each have the projects it needs?',
+  'area': 'The responsibilities you keep up; every project belongs to one. Does each have the projects it needs?',
   'projects': 'Your active projects. A stalled one (⚠) needs a next action.',
   'ground': 'Tasks you chose to keep outside any project. Set H0 in a task\'s project picker.',
 } %}
@@ -35,12 +35,20 @@
       {% for h in items[step] %}
       <li class="task">
         <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
-        {% if h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
+        {% if step == 'area' %}<span class="meta">{{ h.project_count }} project{{ 's' if h.project_count != 1 }}</span>
+        {% elif h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
       </li>
       {% else %}
       <li class="empty">None yet: add one above.</li>
       {% endfor %}
     </ul>
+    {% if step == 'area' %}
+    <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide archived' if show_done else 'Show archived' }}</a></p>
+    {% if show_done %}<ul class="tasks">
+      {% for h in archived %}<li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a><span class="meta">{{ h.archived_at|local_date }}</span></li>
+      {% else %}<li class="empty">No archived areas.</li>{% endfor %}
+    </ul>{% endif %}
+    {% endif %}
     {% elif step == 'projects' %}
     <span class="count">{{ projects|length }}</span>
     <ul class="tasks cards">

@@ -238,7 +238,8 @@ def test_drag_reorders_project_steps(page, live, conn):
 
 
 def test_drag_reorders_someday_projects(page, live, conn):
-    db.add_project(conn, "Another dream", status="someday")  # Projects shares the code; this covers both
+    home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
+    db.add_project(conn, "Another dream", status="someday", area_id=home)  # Projects shares the code; this covers both
     page.goto(live + "/someday")
     page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
     titles = lambda: page.locator("ul.tasks > li.task > a.title").all_inner_texts()
@@ -331,11 +332,12 @@ def test_new_option_reveals_the_name_box(page, live):
     page.goto(live + "/tasks/2")
     box = page.locator("input[name=new_project]")
     assert box.is_hidden()
-    page.select_option("select[name=project_id]", "__new__")
+    page.select_option("select[name=project_id]", "__new__:4")  # Home's "＋ New project…"
     assert box.is_visible()
     page.fill("input[name=new_project]", "Garage")
     page.get_by_role("button", name="Save", exact=True).click()
     assert page.locator("select[name=project_id] option:checked").inner_text() == "Garage"
+    assert page.locator("select[name=project_id] option:checked").evaluate("o => o.parentElement.label") == "Home"
 
 
 def test_clicking_a_calendar_day_sets_the_add_date(page, live):
@@ -536,21 +538,22 @@ def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
 
 def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
-    name = page.locator(".drop-panel input[name=new_project]")
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"][data-area="4"]')
+    name = page.locator(".drop-panel .naming input[name=new_project]")
     name.wait_for(state="visible")
+    assert page.locator(".drop-panel input[name=new_project]:visible").count() == 1  # only the area dropped on
     assert page.evaluate("document.activeElement.name") == "new_project"
     page.keyboard.type("Dragged")
     page.keyboard.press("Enter")
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
-    assert db.get_task(conn, 1)["project_title"] == "Dragged"
+    assert (db.get_task(conn, 1)["project_title"], db.get_task(conn, 1)["area_title"]) == ("Dragged", "Home")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
 
 
 def test_escape_cancels_naming_a_new_project(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
-    page.locator(".drop-panel input[name=new_project]").wait_for(state="visible")
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"][data-area="4"]')
+    page.locator(".drop-panel .naming input[name=new_project]").wait_for(state="visible")
     page.keyboard.press("Escape")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
     assert db.get_task(conn, 1)["inbox"] and row(page, "inbox item").count() == 1
@@ -562,7 +565,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     panel.wait_for(state="hidden")
     page.locator(".pin-panel").click()
     panel.wait_for(state="visible")
-    assert panel.locator("h3").all_text_contents() == ["Active", "Waiting", "Someday", "Done"]
+    assert panel.locator("h3").all_text_contents() == ["Home", "Work", "No area", "Done"]
     drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert panel.is_visible()  # still pinned after the drop

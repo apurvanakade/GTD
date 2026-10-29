@@ -159,8 +159,8 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
 
 /* Picking "＋ New…" reveals the name box next to the select. */
 input[name="new_project"] { display: none; }
-select:has(option[value="__new__"]:checked) + input { display: block; }
-.add select:has(option[value="__new__"]:checked) + input, .row select:has(option[value="__new__"]:checked) + input { display: inline-block; }
+select:has(option[value^="__new__"]:checked) + input { display: block; }
+.add select:has(option[value^="__new__"]:checked) + input, .row select:has(option[value^="__new__"]:checked) + input { display: inline-block; }
 
 /* Inbox: the projects to drop dragged rows on, slid in from the right while dragging, or pinned open by the
    header's Projects button. It floats over the page, which never moves. Grouped like the project dropdown's optgroups. */
@@ -177,9 +177,10 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .drop-panel h3 { margin: 0 10px 4px; font-size: .9375rem; font-weight: 700; color: var(--fg); }
 .drop-panel .group .target { padding: 5px 10px 5px 20px; margin: 1px 0; }
 .drop-panel .target { padding: 8px 10px; margin: 2px 0; border-radius: 8px; border: 1px dashed transparent; }
+.drop-panel .target .meta { color: var(--muted); font-size: .8rem; }
 .drop-panel .target.new, .drop-panel .target[data-project="h0"] { color: var(--muted); }
 .drop-panel .new input { display: none; margin-top: 6px; }
-body.naming .drop-panel .new input { display: block; }
+.drop-panel .new.naming input { display: block; }
 .drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
 
 .flash { background: var(--soft); padding: 8px 12px; border-radius: 8px; }
@@ -199,7 +200,7 @@ body.naming .drop-panel .new input { display: block; }
 .edit label { display: block; margin: 10px 0; color: var(--muted); font-size: .9rem; }
 .edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }
 .edit label input[name="new_project"] { display: none; }
-.edit label select:has(option[value="__new__"]:checked) + input { display: block; }
+.edit label select:has(option[value^="__new__"]:checked) + input { display: block; }
 /* Reference page: the URLs in its notes, clickable (a textarea can't be). */
 ul.links { list-style: none; padding: 0; margin: 12px 0; }
 ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
@@ -221,6 +222,11 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
 .task .remind { font-size: .75rem; filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task .proj::before { content: "▸ "; }
+.task .area { color: var(--muted); font-size: .75rem; white-space: nowrap; opacity: .8; }
+.task .area::before { content: "· "; }
+.area-head { margin-bottom: 6px; }
+.area-head a { color: inherit; text-decoration: none; }
+.area-head a:hover { text-decoration: underline; }
 .task form { margin: 0; }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
 .task.stalled .title { color: var(--warn); }

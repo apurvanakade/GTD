@@ -54,6 +54,12 @@ def seed(c):
     db.add_horizon(c, "goal", "Ship the kitchen")
     area = db.add_horizon(c, "area", "Home")
     db.update_horizon(c, area, notes="Clean and calm\nsecond line")
+    for pid in (active, waiting, someday):
+        db.update_project(c, pid, area_id=area)  # "Stalled" has none yet: flagged ⚠
+    empty = db.add_horizon(c, "area", "Work")  # no projects: deletable
+    term = db.add_horizon(c, "area", "Fall term")  # over: archived, its done project still in it
+    db.update_project(c, done, area_id=term)
+    db.archive_area(c, term)
     db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
@@ -65,4 +71,4 @@ def seed(c):
     db.add_task(c, "given-up step", step="next", project_id=dropped)
     db.abandon_project(c, dropped)
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
-            "dropped": dropped}
+            "dropped": dropped, "area": area, "empty_area": empty, "archived_area": term}

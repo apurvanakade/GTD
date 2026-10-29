@@ -12,9 +12,9 @@
 <script>
 (() => {
   const list = document.querySelector('ul.tasks'), panel = document.querySelector('.drop-panel');
-  const name = panel.querySelector('input[name=new_project]'), body = document.body;
+  const body = document.body;
   const pin = document.querySelector('.pin-panel');
-  let dragged = null, naming = null;
+  let dragged = null, naming = null;  // naming: {li, target} while a new project's name is typed
   const pinned = on => {  // remembered per browser, like a folded band
     body.classList.toggle('pinned-panel', on);
     pin.setAttribute('aria-pressed', on);
@@ -23,7 +23,11 @@
   try { pinned(localStorage.getItem('inbox-panel') === '1'); } catch {}
   pin.addEventListener('click', () => pinned(!body.classList.contains('pinned-panel')));
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
-  const close = () => { body.classList.remove('dragging-inbox', 'naming'); naming = null; name.value = ''; };
+  const close = () => {
+    body.classList.remove('dragging-inbox', 'naming');
+    if (naming) { naming.target.classList.remove('naming'); naming.target.querySelector('input').value = ''; }
+    naming = null;
+  };
   const move = async (li, data) => {
     if (await post(panel.dataset.move, new URLSearchParams({id: li.dataset.id, ...data}))) li.remove();
   };
@@ -51,15 +55,24 @@
     if (!t || !dragged) return;
     e.preventDefault();
     if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
-    naming = dragged;  // the panel stays open for the name; Enter files it, Esc or clicking away cancels
+    // The panel stays open for the name; Enter files it into a new project in the target's area, Esc or clicking away cancels.
+    naming = {li: dragged, target: t};
     body.classList.add('naming');
-    name.focus();
+    t.classList.add('naming');
+    t.querySelector('input').focus();
   });
-  name.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-    if (e.key === 'Enter' && name.value.trim()) { e.preventDefault(); move(naming, {new_project: name.value.trim()}); close(); }
+  panel.querySelectorAll('.new input').forEach(name => {
+    name.addEventListener('keydown', e => {
+      if (!naming) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      if (e.key === 'Enter' && name.value.trim()) {
+        e.preventDefault();
+        move(naming.li, {new_project: name.value.trim(), area_id: naming.target.dataset.area});
+        close();
+      }
+    });
+    name.addEventListener('blur', close);
   });
-  name.addEventListener('blur', close);
 })();
 </script>
 {% else %}
