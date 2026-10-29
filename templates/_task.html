@@ -91,3 +91,17 @@
   {% if caller is defined %}<div class="add-more">{{ caller() }}</div>{% endif %}
 </form>
 {% endmacro %}
+
+
+{# Time as bars, as on the Timer page: a big total, then one accent bar per item, longest first.
+   `totals` are (label, seconds) pairs, or (label, seconds, task id) to make the label open that task. #}
+{% macro tally(heading, totals, blank='', cls='') %}
+<section class="tally{{ ' ' ~ cls if cls }}">
+<h2>{{ heading }} {% if totals %}<b>{{ totals|sum(attribute=1)|hm }}</b>{% endif %}</h2>
+{% if totals %}{% set top = totals[0][1] or 1 %}<ul>
+  {% for item in totals %}{% set label, secs = item[0], item[1] %}<li title="{{ label }} · {{ secs|hm }}">
+    {%- if item|length > 2 %}<a class="who" href="{{ url_for('task_view', id=item[2]) }}">{{ label }}</a>{% else %}<span class="who">{{ label }}</span>{% endif -%}
+    <span class="bar"><i style="width: {{ (100 * secs / top)|round|int }}%"></i></span><span class="dur">{{ secs|hm }}</span></li>{% endfor %}
+</ul>{% else %}<p class="empty">{{ blank }}</p>{% endif %}
+</section>
+{% endmacro %}

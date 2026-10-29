@@ -335,6 +335,9 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .tally ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 9em) 1fr auto; gap: 8px 12px; align-items: center; }
 .tally li { display: contents; }
 .tally .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .85rem; }
+a.who { text-decoration: none; }
+a.who:hover { color: var(--fg); }
+.tally.wide ul { grid-template-columns: minmax(0, 18em) 1fr auto; }  /* a project page's: full width, step titles run longer */
 .tally .bar > i { display: block; height: 8px; min-width: 4px; border-radius: 4px; background: var(--accent); }
 .tally .dur { color: var(--muted); font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; }
 .history { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto auto auto auto; }

@@ -631,10 +631,11 @@ def task_seconds(c, task_id, now):
                      (iso(now), task_id)).fetchone()[0]
 
 
-def project_seconds(c, project_id, now):
-    """Time on all of a project's tasks, done ones included."""
-    return c.execute(f"""SELECT coalesce(sum({SECONDS}), 0) FROM time_entries e JOIN tasks t ON t.id = e.task_id
-        WHERE t.project_id = ?""", (iso(now), project_id)).fetchone()[0]
+def step_totals(c, project_id, now):
+    """[(task title, seconds, task id)] for a project's timed tasks, done ones included, most time first."""
+    rows = c.execute(f"""SELECT t.id, t.title, sum({SECONDS}) AS secs FROM time_entries e JOIN tasks t ON t.id = e.task_id
+        WHERE t.project_id = ? GROUP BY t.id ORDER BY secs DESC, t.id""", (iso(now), project_id)).fetchall()
+    return [(r["title"], round(r["secs"]), r["id"]) for r in rows]
 
 
 def week_totals(c, since, now):

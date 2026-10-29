@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form with context %}
+{% from "_task.html" import row, date_input, add_form, tally with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block crumb %}{% set up = {'someday': ('someday', 'Someday / maybe'), 'waiting': ('waiting', 'Waiting for')}.get(p.status, ('projects_view', 'Projects')) %}
 <p class="crumb"><a href="{{ url_for(up[0]) }}">{{ up[1] }}</a>{% if p.status != 'active' %} · {{ p.status }}{% endif %}</p>
@@ -16,11 +16,11 @@
     {% if p.status != 'waiting' %}<button name="status" value="waiting">Waiting</button>{% endif %}
     {% if p.status != 'someday' %}<button name="status" value="someday">Someday</button>{% endif %}
     {% if p.status != 'done' %}<button name="status" value="done">Complete</button>{% endif %}
-    {% if not tasks and not seconds %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger end" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
+    {% if not tasks and not times %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger end" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
   </div>
 </form>
 {% if p.status != 'active' %}<p class="hint">{{ p.status|capitalize }} project: its tasks stay off Next Actions until you activate it.</p>{% endif %}
-<h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}{% if seconds %} <span class="hint">· {{ seconds|hm }} spent</span>{% endif %}</h2>
+<h2>Tasks{% if p.status == 'active' and not has_next %} <span class="warn">⚠ pick the next action</span>{% endif %}</h2>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step') %}
   <select name="step" aria-label="Step">
     {% for s in ['next', 'later', 'waiting'] %}<option{% if s == ('later' if has_next else 'next') %} selected{% endif %}>{{ s }}</option>{% endfor %}
@@ -31,4 +31,5 @@
 {% endcall %}
 <ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step in ('later', 'waiting')), grip=True) }}{% endfor %}</ul>
 {% set in_project = true %}{% include "_done_toggle.html" %}
+{% if times %}{{ tally('Time', times, cls='wide') }}{% endif %}
 {% endblock %}

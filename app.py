@@ -517,8 +517,7 @@ def project_view(id):
             flash(f"Moved “{fields['title']}” to someday / maybe.")
         return back()
     return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
-                           seconds=db.project_seconds(c, id, now()),
-                           **completed(default=True, project_id=id))
+                           times=db.step_totals(c, id, now()), **completed(default=True, project_id=id))
 
 
 @app.post("/projects/<int:id>/delete")

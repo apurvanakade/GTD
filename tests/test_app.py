@@ -911,6 +911,29 @@ def test_timer_today_tally_beside_week(client, conn):
     assert "<table" not in today_col + week_col  # bars, not a table
 
 
+def test_project_page_times_each_step(client, conn):
+    """A project page tallies time like the Timer page: the total, then one bar per step, longest first,
+    done steps included; untimed steps aren't listed. Each label opens its task."""
+    pid = db.add_project(conn, "Kitchen")
+    for title, mins in (("measure", 30), ("order", 90), ("idle", 0)):
+        t = db.add_task(conn, title, step="later", project_id=pid)
+        if mins:
+            db.timer_start(conn, t, NOW - timedelta(minutes=mins))
+            db.timer_stop(conn, NOW)
+    done = db.add_task(conn, "sketch", step="later", project_id=pid)
+    db.timer_start(conn, done, NOW - timedelta(minutes=60))
+    db.timer_stop(conn, NOW)
+    db.complete_task(conn, done, TODAY, NOW)
+    html = client.get(f"/projects/{pid}?done=0").data.decode()
+    tally = re.search(r'<section class="tally wide">\s*<h2>Time\s*<b>3h 00m</b></h2>(.*?)</section>', html, re.S).group(1)
+    assert re.findall(r'class="who"[^>]*>([^<]+)<', tally) == ["order", "sketch", "measure"]
+    assert re.findall(r'width:\s*(\d+)%', tally) == ["100", "67", "33"]
+    assert f'href="/tasks/{done}"' in tally and "idle" not in tally
+    assert "spent" not in html  # the total lives in the tally now
+    empty = db.add_project(conn, "Untimed")
+    assert 'class="tally"' not in client.get(f"/projects/{empty}").data.decode()
+
+
 # --- natural-language dates --------------------------------------------------
 
 @pytest.mark.parametrize("text,expected", [  # TODAY is Thursday 2026-10-22
