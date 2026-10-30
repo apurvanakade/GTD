@@ -601,6 +601,33 @@ def test_dragging_an_inbox_row_onto_a_project_files_it(page, live, conn):
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
 
 
+def test_shift_clicked_rows_drag_together(page, live, conn):
+    page.goto(live + "/inbox")
+    orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
+    row(page, "inbox item").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    row(page, "legacy orphan").locator(".title").click(modifiers=["Shift"])  # the title too: selects, doesn't open
+    assert page.url == live + "/inbox" and len(page.context.pages) == 1
+    assert page.locator("li.task.selected").count() == 2
+    row(page, "inbox item").click(modifiers=["Shift"], position={"x": 400, "y": 10})  # toggles off
+    assert page.locator("li.task.selected").count() == 1
+    page.keyboard.press("Escape")
+    assert page.locator("li.task.selected").count() == 0
+    row(page, "inbox item").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    row(page, "legacy orphan").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    drag_to_panel(page, row(page, "legacy orphan").locator(".title"), '[data-project="1"]')
+    page.wait_for_function("!document.querySelector('li.task.selected')")
+    assert db.get_task(conn, 1)["project_id"] == db.get_task(conn, orphan)["project_id"] == 1
+    assert page.locator("main li.task[data-id]").count() == 0
+
+
+def test_an_unselected_row_drags_alone(page, live, conn):
+    page.goto(live + "/inbox")
+    row(page, "legacy orphan").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    assert db.get_task(conn, 1)["project_id"] == 1 and row(page, "legacy orphan").count() == 1
+
+
 def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
     page.goto(live + "/inbox")
     drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="reference"]')

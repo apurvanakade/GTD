@@ -234,29 +234,32 @@ def inbox():
 
 @app.post("/tasks/move")
 def task_move():
-    """The drop panel on every task list: move the dropped open task to another project (or H0, a new project, or
-    Reference). It lands as a later step, since the project picks its next; a waiting step stays waiting. Dropped
-    where it already is, nothing changes. Called by fetch, which updates the page itself."""
+    """The drop panel on every task list: move the dropped open tasks (one row, or several shift-selected, in page
+    order) to another project (or H0, a new project, or Reference), all or none. A task lands as a later step, since
+    the project picks its next; a waiting step stays waiting. Dropped where it already is, nothing changes. Called by
+    fetch, which updates the page itself."""
     c = conn()
-    t = db.get_task(c, request.form.get("id", type=int) or 0)
-    if not t or t["state"] != "open":  # e.g. a stale tab: it has been finished since
+    tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
+    if not tasks or not all(t and t["state"] == "open" for t in tasks):  # e.g. a stale tab: finished since
         abort(400)
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
         with db.transaction(c):
-            db.add_reference(c, t["title"], notes=t["notes"])
-            if db.task_seconds(c, t["id"], now()):
-                db.abandon_task(c, t["id"], now())  # its time is kept
-            else:
-                db.delete_task(c, t["id"])
+            for t in tasks:
+                db.add_reference(c, t["title"], notes=t["notes"])
+                if db.task_seconds(c, t["id"], now()):
+                    db.abandon_task(c, t["id"], now())  # its time is kept
+                else:
+                    db.delete_task(c, t["id"])
         return "", 204
-    fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
-    if orphaned(fields.get("project_id"), fields.get("ground")):
-        abort(400)
-    if fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"]):
-        return "", 204
-    if fields.get("project_id"):
-        fields["step"] = "waiting" if t["step"] == "waiting" else "later"
-    db.update_task(c, t["id"], today=today(), **fields)
+    with db.transaction(c):
+        fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
+        if orphaned(fields.get("project_id"), fields.get("ground")):
+            abort(400)
+        for t in reversed(tasks):  # each goes to the top of its project: the last first keeps the page's order
+            if fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"]):
+                continue
+            step = {"step": "waiting" if t["step"] == "waiting" else "later"} if fields.get("project_id") else {}
+            db.update_task(c, t["id"], today=today(), **fields, **step)
     return "", 204
 
 

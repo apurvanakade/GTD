@@ -267,6 +267,7 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
+.task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
 .task.gone { opacity: .35; text-decoration: line-through; }
 .done button {
   width: 18px; height: 18px; padding: 0; border-radius: 50%;

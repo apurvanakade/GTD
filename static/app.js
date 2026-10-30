@@ -293,10 +293,10 @@ async function refreshNav() {
   } catch {}  // only the dots go stale
 }
 // A click anywhere on a row opens it, as its title link would. Its buttons, links, fields, grip and folded-out
-// steps keep their own jobs, and a click that ends a text selection selects.
+// steps keep their own jobs, a click that ends a text selection selects, and a shift-click selects the row (move.js).
 document.addEventListener('click', e => {
   const li = e.target.closest('li.task');
-  if (!li || e.button || e.target.closest('a, button, input, select, textarea, label, form, .grip, .steps')
+  if (!li || e.button || e.shiftKey || e.target.closest('a, button, input, select, textarea, label, form, .grip, .steps')
       || String(getSelection())) return;
   const a = li.querySelector(':scope > .title, :scope > .name > .title');
   if (!a) return;

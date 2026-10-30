@@ -2381,3 +2381,27 @@ def test_the_db_dates_h0_tasks_and_leaves_others_alone(conn):
     conn.execute("UPDATE tasks SET due_date = NULL WHERE id = ?", (tid,))  # an old undated one
     db.revive_task(conn, tid, today=TODAY)
     assert db.get_task(conn, tid)["due_date"] == "2026-10-22"
+
+
+def test_several_tasks_move_together(client, conn):
+    """Shift-selected rows dragged at once: one request, one transaction, in the page's order."""
+    a, b, c = db.add_task(conn, "a"), db.add_task(conn, "b"), db.add_task(conn, "c")
+    pid = add_project(conn, "P")
+    db.add_task(conn, "p next", project_id=pid, step="next")
+    assert client.post("/tasks/move", data={"id": [a, b], "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert [t["title"] for t in db.project_tasks(conn, pid)] == ["p next", "a", "b"]
+    assert db.get_task(conn, c)["inbox"]
+    # A new project is made once for all of them.
+    area = db.add_horizon(conn, "area", "Home")
+    d = db.add_task(conn, "d")
+    assert client.post("/tasks/move", data={"id": [c, d], "new_project": "Fresh", "area_id": area}, headers=FETCH).status_code == 204
+    assert db.get_task(conn, c)["project_id"] == db.get_task(conn, d)["project_id"]
+    assert sum(p["title"] == "Fresh" for _, ps, _ in db.project_groups(conn) for p in ps) == 1
+    # One that's no longer open: nothing moves.
+    db.complete_task(conn, c, TODAY)
+    assert client.post("/tasks/move", data={"id": [d, c], "project_id": "h0"}, headers=FETCH).status_code == 400
+    assert not db.get_task(conn, d)["ground"]
+    # To Reference, each becomes an item.
+    e, f = db.add_task(conn, "e"), db.add_task(conn, "f")
+    assert client.post("/tasks/move", data={"id": [e, f], "project_id": "reference"}, headers=FETCH).status_code == 204
+    assert {"e", "f"} <= {r["title"] for r in db.references(conn)} and not db.get_task(conn, e)
