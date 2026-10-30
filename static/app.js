@@ -96,18 +96,24 @@ function toast(messages) {
   for (const m of messages) box.append(Object.assign(document.createElement('p'), {className: 'flash', textContent: m}));
   document.querySelector('main').before(box);
 }
-// 📅 opens the native date picker; its pick lands in the text box beside it.
+// 📅 opens the native date picker; its pick lands in the text box beside it. On a touch screen the native input
+// itself lies over 📅 (style.css), since iPad Safari doesn't always open showPicker(): the tap opens it.
+// Pressing 📅 leaves the box: its own change waits for the pick (`picking`), which then saves it.
+// The picker starts on the box's date (and time, for the Remind box) when it holds one, else today.
+const startPick = field => {
+  field.classList.add('picking');
+  const picker = field.querySelector('.picker'), v = field.querySelector('input[name]').value.replace(' ', 'T');
+  picker.value = (picker.type === 'date' ? /^\d{4}-\d\d-\d\d$/ : /^\d{4}-\d\d-\d\dT\d\d:\d\d$/).test(v) ? v : '';
+  return picker;
+};
+document.addEventListener('pointerdown', e => {
+  const field = e.target.closest('.date-field .pick, .date-field .picker')?.parentElement;
+  if (field) startPick(field);
+});
 document.addEventListener('click', e => {
   const b = e.target.closest('.date-field .pick');
-  if (!b) return;
-  const field = b.closest('.date-field'), text = field.querySelector('input[name]'), picker = field.querySelector('.picker');
-  // The picker starts on the box's date (and time, for the Remind box) when it holds one, else today.
-  const v = text.value.replace(' ', 'T');
-  picker.value = (picker.type === 'date' ? /^\d{4}-\d\d-\d\d$/ : /^\d{4}-\d\d-\d\dT\d\d:\d\d$/).test(v) ? v : '';
-  picker.showPicker();
+  if (b) startPick(b.parentElement).showPicker();
 });
-// Pressing 📅 leaves the box: its own change waits for the pick (`picking`), which then saves it.
-document.addEventListener('pointerdown', e => e.target.closest('.date-field .pick')?.parentElement.classList.add('picking'));
 document.addEventListener('focusin', e => { if (e.target.matches('.date-field input[name]')) e.target.parentElement.classList.remove('picking'); });
 document.addEventListener('change', e => {
   if (!e.target.matches('.date-field .picker')) return;

@@ -115,6 +115,28 @@ def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
     assert page.locator(".capture-dialog").evaluate("d => d.open")
 
 
+def test_on_a_touch_screen_the_calendar_button_is_the_native_picker(browser, live, conn):
+    """iPad Safari doesn't reliably open showPicker(): there a tap lands on the native date input itself."""
+    ctx = browser.new_context(has_touch=True, is_mobile=True, viewport={"width": 1024, "height": 768})
+    page = ctx.new_page()
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+    page.goto(live + "/tasks/2")
+    assert page.evaluate("matchMedia('(pointer: coarse)').matches")
+    page.fill("input[name=due_date]", "2026-11-03")
+    field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
+    box = field.locator(".pick").bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    assert page.evaluate(f"document.elementFromPoint({x}, {y}).className") == "picker"
+    page.touchscreen.tap(x, y)
+    assert field.locator(".picker").input_value() == "2026-11-03"  # starts on the box's date
+    field.locator(".picker").evaluate(
+        "el => { el.value = '2026-11-05'; el.dispatchEvent(new Event('change', {bubbles: true})); }")
+    assert page.input_value("input[name=due_date]") == "2026-11-05"
+    ctx.close()
+    assert errors == []
+
+
 def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, conn):
     page.goto(live + "/tasks/2")
     page.fill("input[name=due_date]", "")
