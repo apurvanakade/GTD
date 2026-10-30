@@ -140,7 +140,7 @@
 {% endmacro %}
 
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
-{% macro title_marks() %}<p class="hint marks">&gt;fri due · *weekly repeat · !3pm remind</p>{% endmacro %}
+{% macro title_marks() %}<p class="hint marks">@fri due · *weekly repeat · !3pm remind</p>{% endmacro %}
 
 {# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
 {% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', marks=False) %}

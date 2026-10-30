@@ -154,10 +154,10 @@ def parse_reminder(raw):
         return db.iso(when.astimezone())
 
 
-# An add line's title can end with these, in any order: "pay rent >nov 1 *monthly !oct 30 9am". Each needs a space
-# before it and none after, so "Yes! do it", "a > b" and a bare "!3pm" stay plain titles.
-TITLE_MARKS = {">": ("due_date", parse_due), "*": ("recur", parse_recur), "!": ("remind_at", parse_reminder)}
-TITLE_MARK = re.compile(r"\s([>*!])(\S[^>*!]*?)\s*$")
+# An add line's title can end with these, in any order: "pay rent @nov 1 *monthly !oct 30 9am". Each needs a space
+# before it and none after, so "Yes! do it", "a @ b", "mail bob@x.com" and a bare "!3pm" stay plain titles.
+TITLE_MARKS = {"@": ("due_date", parse_due), "*": ("recur", parse_recur), "!": ("remind_at", parse_reminder)}
+TITLE_MARK = re.compile(r"\s([@*!])(\S[^@*!]*?)\s*$")
 
 
 def split_title(title):

@@ -1910,7 +1910,7 @@ def test_a_bang_that_isnt_a_reminder_stays_in_the_title(client, conn, title, fla
     ("/calendar", {}),
 ])
 def test_add_lines_take_due_repeat_and_reminder_in_any_order(client, conn, url, data):
-    client.post(url, data={"title": "pay rent *monthly !oct 30 9am >nov 1", **data})
+    client.post(url, data={"title": "pay rent *monthly !oct 30 9am @nov 1", **data})
     t = conn.execute("SELECT * FROM tasks WHERE title = 'pay rent'").fetchone()
     assert (t["due_date"], t["recur"], local(t["remind_at"])) == ("2026-11-01", "monthly", datetime(2026, 10, 30, 9, 0))
 
@@ -1922,8 +1922,8 @@ def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
 
 
 @pytest.mark.parametrize("title, flashed", [
-    ("pay rent >blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
-    ("a > b", None), ("5 * 3", None),
+    ("pay rent @blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
+    ("a @ b", None), ("5 * 3", None), ("mail bob@x.com", None),
 ])
 def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, flashed):
     html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
@@ -1933,17 +1933,23 @@ def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, fla
 
 
 def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
-    hint = "&gt;fri due · *weekly repeat · !3pm remind"
+    hint = "@fri due · *weekly repeat · !3pm remind"
     pid = add_project(conn, "P")
     for url in ("/inbox", "/next", "/h0", "/waiting", "/calendar", f"/projects/{pid}"):
         assert client.get(url).get_data(as_text=True).count(hint) == 2, url  # its add line, and the capture dialog
     assert client.get("/projects").get_data(as_text=True).count(hint) == 1  # the dialog only
-    assert "<kbd>!3pm</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
+    assert "<kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
+
+
+def test_a_greater_than_is_no_longer_a_due_mark(client, conn):
+    client.post("/capture", data={"title": "pay rent >fri"})
+    t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
+    assert (t["title"], t["due_date"]) == ("pay rent >fri", None)
 
 def test_capture_confirms_the_reminder(client, conn):
     html = client.post("/capture", data={"title": "call back !tomorrow 3pm"}, follow_redirects=True).get_data(as_text=True)
     assert "Added to inbox: call back · reminder Fri Oct 23, 15:00" in html
-    html = client.post("/capture", data={"title": "pay rent >nov 1 *monthly"}, follow_redirects=True).get_data(as_text=True)
+    html = client.post("/capture", data={"title": "pay rent @nov 1 *monthly"}, follow_redirects=True).get_data(as_text=True)
     assert "Added to inbox: pay rent · due 2026-11-01 · ↻ monthly" in html
 
 
