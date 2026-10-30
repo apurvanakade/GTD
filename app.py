@@ -199,7 +199,7 @@ def capture():
     fields = task_fields_from_form()
     if fields.get("title"):
         title = fields.pop("title")
-        db.add_task(conn(), title, **fields)
+        db.add_task(conn(), title, today=today(), **fields)
         if not (request.referrer or "").endswith(url_for("inbox")):  # the inbox list already shows it
             parts = [f"Added to inbox: {title}"]
             if "due_date" in fields:
@@ -243,7 +243,7 @@ def task_move():
         return "", 204
     if fields.get("project_id"):
         fields["step"] = "waiting" if t["step"] == "waiting" else "later"
-    db.update_task(c, t["id"], **fields)
+    db.update_task(c, t["id"], today=today(), **fields)
     return "", 204
 
 
@@ -280,7 +280,7 @@ def add_next_action():
     fields["step"] = "later" if pid and db.project_next(conn(), pid) else "next"
     if orphaned(pid, fields.get("ground")):
         flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
-    db.add_task(conn(), fields.pop("title"), **fields)
+    db.add_task(conn(), fields.pop("title"), today=today(), **fields)
 
 
 @app.post("/next/add")
@@ -318,7 +318,7 @@ def bands(tasks):
 def h0_add():
     fields = task_fields_from_form()
     if fields.get("title"):
-        db.add_task(conn(), fields.pop("title"), ground=1, project_id=None,
+        db.add_task(conn(), fields.pop("title"), today=today(), ground=1, project_id=None,
                     **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
     return redirect(url_for("h0_view"))
 
@@ -337,7 +337,7 @@ def waiting_add():
         fields["ground"] = 0  # H0 tasks are always next actions
         if orphaned(fields.get("project_id"), 0):
             flash("No project, so it went to the inbox to be processed.")
-        db.add_task(conn(), fields.pop("title"), step="waiting", **fields)
+        db.add_task(conn(), fields.pop("title"), today=today(), step="waiting", **fields)
     return redirect(url_for("waiting"))
 
 
@@ -492,7 +492,7 @@ def task_view(id):
             flash("No project and not H0 · ground level, so this went to the inbox to be processed.")
         elif ground and fields.get("step") in ("waiting", "later"):
             flash("H0 tasks are always next actions.")
-        flash_demoted(db.update_task(c, id, **fields))
+        flash_demoted(db.update_task(c, id, today=today(), **fields))
         if request.headers.get("X-Requested-With") == "fetch":  # a field saved in the background: just its messages
             return {"flashes": get_flashed_messages()}
         return redirect(url_for("task_view", id=id))
@@ -538,7 +538,7 @@ def delete(id):
 
 @app.post("/tasks/<int:id>/revive")
 def revive(id):
-    db.revive_task(conn(), id)
+    db.revive_task(conn(), id, today=today())
     flash("Revived.")
     return back()
 
@@ -547,7 +547,7 @@ def revive(id):
 def make_next(id):
     c = conn()
     db.get_task(c, id) or abort(404)
-    flash_demoted(db.update_task(c, id, step="next"))
+    flash_demoted(db.update_task(c, id, today=today(), step="next"))
     return back()
 
 
@@ -661,7 +661,7 @@ def project_add_task(id):
     fields = task_fields_from_form()
     if fields.get("title"):
         fields.setdefault("step", "later")  # "next" is only ever chosen, never a default
-        db.add_task(c, fields.pop("title"), project_id=id, **fields)
+        db.add_task(c, fields.pop("title"), today=today(), project_id=id, **fields)
     return redirect(url_for("project_view", id=id))
 
 
@@ -683,7 +683,7 @@ def task_due(id):
         abort(400)
     if t["state"] != "open":
         abort(400)
-    db.update_task(c, id, due_date=due)
+    db.update_task(c, id, today=today(), due_date=due)
     if request.headers.get("X-Requested-With") == "fetch":
         return "", 204
     return back("calendar_view")
@@ -786,7 +786,7 @@ def timer_start():
     if t:
         tid = t["id"]
     else:
-        tid = db.add_task(c, title)
+        tid = db.add_task(c, title, today=today())
         flash(f"Captured to inbox: {title}")
     db.timer_start(c, tid, now())
     return back("timer_view")
@@ -892,7 +892,7 @@ def snooze(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     if t["state"] == "open":
-        db.update_task(c, id, remind_at=db.iso(now() + SNOOZE))
+        db.update_task(c, id, today=today(), remind_at=db.iso(now() + SNOOZE))
     return "", 204
 
 

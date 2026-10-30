@@ -56,7 +56,7 @@ def seed(c):
                 remind_at="2026-10-22T13:00:00+00:00")
     db.add_task(c, "vacuum", step="next", ground=1, recur="weekly", due_date="2026-10-22")
     db.add_task(c, "bins", step="next", ground=1, recur="every 2 weeks", due_date="2026-11-03")
-    db.add_task(c, "call mum", step="next", ground=1, remind_at="2026-10-23T13:00:00+00:00")
+    db.add_task(c, "call mum", step="next", ground=1, due_date="2026-10-24", remind_at="2026-10-23T13:00:00+00:00")
     db.add_task(c, "parked step", step="next", project_id=waiting)
     db.add_task(c, "dream step", step="later", project_id=someday)
     db.add_task(c, "legacy orphan", step="next")

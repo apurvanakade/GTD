@@ -168,22 +168,24 @@ def _top(c, table, where, arg):
 
 
 @atomic
-def add_task(c, title, **fields):
+def add_task(c, title, today=None, **fields):
+    """`today` dates an H0 task given no due date (_fit_step())."""
     if fields.get("project_id") and "position" not in fields:  # a new step goes to the top, under the next action
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])
-    id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}))
+    id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}, today=today))
     _reopen_project(c, id)
     _one_next(c, id, was_next=False)
     return id
 
 
 @atomic
-def update_task(c, id, **fields):
-    """Returns the titles of project tasks demoted to later because this one became next."""
+def update_task(c, id, today=None, **fields):
+    """Returns the titles of project tasks demoted to later because this one became next.
+    `today` dates an H0 task left without a due date (_fit_step())."""
     current = get_task(c, id)
     if current and fields.get("project_id") and fields["project_id"] != current["project_id"] and "position" not in fields:
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])  # filed: top of its project
-    _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current))
+    _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current, today))
     if current and "remind_at" in fields and fields["remind_at"] != current["remind_at"]:
         c.execute("UPDATE tasks SET reminded_at = NULL WHERE id = ?", (id,))  # a new time is sent again
     _reopen_project(c, id)
@@ -202,12 +204,17 @@ def _reopen_project(c, id):
         _reopen_area(c, p["id"])
 
 
-def _fit_step(fields, current=None):
+def _fit_step(fields, current=None, today=None):
     """Only a project's tasks have a step: a task without one (H0, inbox) drops any step it's given, and one
-    joining a project leaves H0 and becomes a later step unless told otherwise."""
+    joining a project leaves H0 and becomes a later step unless told otherwise. An H0 task is always dated:
+    left without a due date, it's due today (`today`, else the system's date)."""
     project_id = fields["project_id"] if "project_id" in fields else current and current["project_id"]
     if not project_id:
         fields["step"] = None
+        ground = fields["ground"] if "ground" in fields else current and current["ground"]
+        due = fields["due_date"] if "due_date" in fields else current and current["due_date"]
+        if ground and not due:
+            fields["due_date"] = (today or date.today()).isoformat()
         return fields
     if "project_id" in fields:
         fields["ground"] = 0
@@ -258,11 +265,12 @@ def abandon_task(c, id, now=None):
 
 
 @atomic
-def revive_task(c, id):
-    """An abandoned task comes back where it was: a later step of its project, an H0 task, or an inbox item.
-    A done project it belongs to is reopened, since it has an open task again."""
+def revive_task(c, id, today=None):
+    """An abandoned task comes back where it was: a later step of its project, an H0 task (due today if undated),
+    or an inbox item. A done project it belongs to is reopened, since it has an open task again."""
     c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN NULL ELSE 'later' END,
-        completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
+        due_date = CASE WHEN ground AND due_date IS NULL THEN ? ELSE due_date END,
+        completed_at = NULL WHERE id = ? AND state = 'abandoned'""", ((today or date.today()).isoformat(), id))
     _reopen_project(c, id)
 
 
@@ -285,7 +293,7 @@ def complete_task(c, id, today, now=None):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
         next_due = recur.next_due(t["recur"], due, today)
         step = "later" if t["step"] == "next" else t["step"]
-        new_id = add_task(c, t["title"], notes=t["notes"], step=step, project_id=t["project_id"],
+        new_id = add_task(c, t["title"], today=today, notes=t["notes"], step=step, project_id=t["project_id"],
                           ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
     return new_id
 
