@@ -2,8 +2,7 @@
   "permissions": {
     "allow": [
       "ClaudeInChromeDomain(127.0.0.1:5006)",
-      "ClaudeInChromeDomain(127.0.0.1:5005)",
-      "ClaudeInChromeDomain(home.tail10803e.ts.net)"
+      "ClaudeInChromeDomain(127.0.0.1:5005)"
     ]
   },
   "hooks": {

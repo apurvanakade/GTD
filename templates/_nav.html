@@ -1,0 +1,28 @@
+{# The nav, on every page and alone at /nav, which refreshNav() (static/app.js) fetches after a change made in place. #}
+{# A nav count as a dot that grows with it (1–2, 3–5, 6+); the number is in the tooltip. Nothing to count, no dot. #}
+{% macro badge(n, label, cls='') %}{% if n %} <b class="badge s{{ 1 if n < 3 else 2 if n < 6 else 3 }}{{ ' ' ~ cls if cls }}" title="{{ n }} {{ label }}" aria-label="{{ n }}"></b>{% endif %}{% endmacro %}
+<nav>
+  {% set ep = request.endpoint %}
+  {# Three groups: working minute by minute, lists of tasks, lists of projects. #}
+  <span class="group">
+    <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
+    <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
+  </span>
+  <span class="group">
+    <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next{{ badge(counts.next, 'due today or overdue' if counts.next_overdue else 'due today', 'hot' if counts.next_overdue) }}</a>
+    <a href="{{ url_for('h0_view') }}" class="{{ 'on' if ep == 'h0_view' }}">H0{{ badge(counts.h0, 'due today or overdue' if counts.h0_overdue else 'due today', 'hot' if counts.h0_overdue) }}</a>
+    <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{{ badge(counts.waiting, 'waiting') }}</a>
+    <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep == 'inbox' }}">Inbox{{ badge(counts.inbox, 'in the inbox') }}</a>
+  </span>
+  <span class="group">
+    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{{ badge(counts.stalled, 'stalled', 'warn') }}</a>
+    <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
+    <a href="{{ url_for('reference') }}" class="{{ 'on' if ep in ('reference', 'reference_view') }}">Reference</a>
+  </span>
+  {# Weekly-review pages: pushed right and muted, out of the daily tabs' way. #}
+  <span class="aux">
+    <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
+    <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
+    <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}">Done</a>
+  </span>
+</nav>

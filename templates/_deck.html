@@ -1,5 +1,5 @@
 {# A deck shows one card at a time (Review, Horizons). The header's ‹ › and a rail of dots (done, current, to do)
-   move between the cards; ← → follow ‹ › (the JS in base.html). `titles` names each dot; default: its number. #}
+   move between the cards; ← → follow ‹ › (static/app.js). `titles` names each dot; default: its number. #}
 {% macro stepper(endpoint, param, steps, step, done=(), titles={}) %}{% set i = steps.index(step) %}
   {%- if i > 0 %}<a class="button" href="{{ url_for(endpoint, **{param: steps[i - 1]}) }}" rel="prev" title="Previous (left arrow)" aria-label="Previous">‹</a>{% else %}<span class="button slot">‹</span>{% endif %}
   <span class="rail">{% for s in steps %}<a href="{{ url_for(endpoint, **{param: s}) }}" class="dot{{ ' done' if s in done }}{{ ' on' if s == step }}" title="{{ titles.get(s, loop.index) }}" aria-label="{{ titles.get(s, 'Step ' ~ loop.index) }}"></a>{% endfor %}</span>

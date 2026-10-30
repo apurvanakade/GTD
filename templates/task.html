@@ -3,7 +3,7 @@
 {% block title %}{{ t.title }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-{# Title and notes save themselves (autosave.js); every other field saves when it's changed (the JS in base.html). #}
+{# Title and notes save themselves (autosave.js); every other field saves when it's changed (static/app.js). #}
 <form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
   <button hidden>Save</button>{# the default, so Enter in a field saves #}
   {% set running = timer and timer.task_id == t.id %}
@@ -40,7 +40,7 @@
     </label>{% endif %}
   </div>
   <div class="fields">
-    {#- Each .when hint shows how its box reads, as you type (the JS in base.html, /parse/<kind>). #}
+    {#- Each .when hint shows how its box reads, as you type (static/app.js, /parse/<kind>). #}
     <label>Due {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
     <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks after done…">
       <span class="hint when" data-parse="recur"></span></label>

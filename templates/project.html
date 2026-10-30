@@ -8,9 +8,7 @@
   <button hidden>Save</button>{# the default, so Enter in the title saves #}
   <div class="title-line">
     <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
-    {% set warns = (['No next action: pick one with Make next'] if p.status == 'active' and not has_next else [])
-      + (['No area: pick one'] if not p.area_id and p.status not in ('done', 'abandoned') else []) %}
-    {% if warns %}<span class="warn" title="{{ warns|join(' · ') }}">⚠</span>{% endif %}
+    {% if p.status == 'active' and not has_next %}<span class="warn" title="No next action: pick one with Make next">⚠</span>{% endif %}
     <select name="status" data-submit aria-label="Status" title="Status: saves when picked">
       {% for s in ['active', 'waiting', 'someday', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>

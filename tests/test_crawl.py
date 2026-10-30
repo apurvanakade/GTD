@@ -246,10 +246,11 @@ def test_saving_an_edit_page_unchanged_changes_nothing(client, conn):
 
 
 def test_task_rows_match_the_tick_off_script(client, conn):
-    """base.html's script ticks off `form.done` via fetch and expects 204, or a redirect it follows."""
+    """static/app.js ticks off `form.done` via fetch and expects 204, or a redirect it follows."""
     seed(conn)
     base = get(client, "/next").get_data(as_text=True)
-    assert "classList.contains('done')" in base and "'X-Requested-With': 'fetch'" in base
+    js = get(client, "/static/app.js").get_data(as_text=True)
+    assert "/static/app.js" in base and "classList.contains('done')" in js and "'X-Requested-With': 'fetch'" in js
     ticks = [f for f in parse(base).forms if f["action"] and f["action"].endswith("/complete")]
     assert ticks and base.count('class="done"') == len(ticks)
     r = client.post("/tasks/7/complete", headers={"X-Requested-With": "fetch"})  # "call mum", H0

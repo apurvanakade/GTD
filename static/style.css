@@ -258,7 +258,7 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 .task.stalled .title { color: var(--warn); }
 .task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
 .task:hover .grip { opacity: 1; }
-/* A click anywhere on a row opens it, as its title would (base.html's JS). */
+/* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
 .task.gone { opacity: .35; text-decoration: line-through; pointer-events: none; }

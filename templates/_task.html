@@ -29,7 +29,7 @@
 </li>
 {% endmacro %}
 
-{# Next and H0: rows folded into due bands (BANDS in app.py); base.html's JS remembers which are open, per page. #}
+{# Next and H0: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. #}
 {% macro banded(tasks, project=True, empty='') %}
 {% for key, label, is_open, rows in tasks|bands %}
 <details class="band" data-band="{{ key }}"{% if is_open %} open{% endif %}>
@@ -41,7 +41,7 @@
 {% endfor %}
 {% endmacro %}
 
-{# A project row's ▸ and the open steps it folds out (base.html's JS toggles them), read-only: a title opens its task. #}
+{# A project row's ▸ and the open steps it folds out (static/app.js toggles them), read-only: a title opens its task. #}
 {% macro peek_button() %}<button type="button" class="peek" aria-expanded="false" title="Show steps" aria-label="Show steps">▸</button>{% endmacro %}
 {% macro peek_steps(steps) %}
 <ul class="steps">
@@ -54,7 +54,7 @@
 </ul>
 {% endmacro %}
 
-{# Type a date in words, or click 📅 for the browser's picker. base.html's JS copies the pick into the text box.
+{# Type a date in words, or click 📅 for the browser's picker. static/app.js copies the pick into the text box.
    type='datetime-local' picks a time too (the Remind box). #}
 {% macro date_input(value='', placeholder='tomorrow, sat, oct 30…', name='due_date', label='Due date', type='date') %}
 <span class="date-field">
@@ -64,7 +64,7 @@
 </span>
 {% endmacro %}
 
-{# The one project list (db.project_groups(): each open area, then No area, then Done), as the task dropdown here
+{# The one project list (db.project_groups(): each open area, then Done), as the task dropdown here
    and as Inbox's drop panel in project_targets(). Each area starts with its own "＋ New project…" (value
    __new__:<area id>), which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
    task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
@@ -106,7 +106,7 @@
    own area when it's archived, so saving leaves it there. #}
 {% macro area_select(selected=none, required=False, keep=none, submit=False) %}
 <select name="area_id" aria-label="Area"{% if required %} required{% endif %}{% if submit %} data-submit title="Area: saves when picked"{% endif %}>
-  <option value="">area…</option>
+  {% if not selected %}<option value="">area…</option>{% endif %}{# a new project's placeholder; a project has one #}
   {% for a in areas %}<option value="{{ a.id }}"{% if a.id == selected %} selected{% endif %}>{{ a.title }}</option>{% endfor %}
   {% if keep and keep.archived_at %}<option value="{{ keep.id }}" selected>{{ keep.title }} (archived)</option>{% endif %}
 </select>
@@ -125,13 +125,13 @@
 </li>
 {% endmacro %}
 
-{# Projects and Someday: one compact group per area (db.by_area()), "⚠ No area" last. Dragging a project into another
-   group moves it to that area (the reorder JS in base.html); nothing can be dropped into "No area". #}
+{# Projects and Someday: one compact group per area (db.by_area()). Dragging a project into another group moves it to
+   that area (the reorder JS in static/app.js). #}
 {% macro area_groups(groups, steps, status, empty) %}
 {% if groups %}<div class="area-groups">
   {% for area, ps in groups %}<section class="area-group">
-    <h2 class="area-head">{% if area %}<a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>{% else %}<span class="warn">⚠ No area</span>{% endif %}</h2>
-    <ul class="tasks cards" data-reorder="{{ url_for('projects_order', status=status) }}"{% if area %} data-area="{{ area.id }}"{% endif %}>
+    <h2 class="area-head"><a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a></h2>
+    <ul class="tasks cards" data-reorder="{{ url_for('projects_order', status=status) }}" data-area="{{ area.id }}">
       {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
     </ul>
   </section>{% endfor %}

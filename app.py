@@ -53,6 +53,14 @@ def local_now():
     return datetime.combine(today(), now().astimezone().time())
 
 
+@app.before_request
+def same_origin_only():
+    """There's no login, so refuse a write another site's page makes the browser send (CSRF). Browsers say where a
+    request comes from in Sec-Fetch-Site; clients that aren't browsers (the phone's ntfy buttons) don't send it."""
+    if request.method == "POST" and request.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
+        abort(403)
+
+
 @app.context_processor
 def template_globals():
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
@@ -82,12 +90,12 @@ def task_fields_from_form(current=None):
             fields[name] = form_value(name)
     if "notes" in fields:
         fields["notes"] = fields["notes"] or ""
-    if "project_id" in request.form:
+    new_project = form_value("new_project")
+    raw = request.form.get("project_id")
+    if raw is not None and not (raw.startswith(NEW) and not new_project):  # "＋ New project…" with no name: unchanged
         # The picker offers "h0": ground level, a deliberate choice of no project.
-        raw = request.form["project_id"]
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
-    new_project = form_value("new_project")
     if new_project:  # typed into the "new project" box; overrides the dropdown. Its area: the "＋ New…" picked, or area_id
         raw = request.form.get("project_id") or ""
         area_id = area_from(raw.partition(":")[2] if raw.startswith(NEW) else request.form.get("area_id"))
@@ -175,6 +183,12 @@ def back(default="next_view"):
     return redirect(request.referrer or url_for(default))
 
 
+@app.route("/nav")
+def nav():
+    """Just the nav, for refreshing its dots after a change made in place (refreshNav() in static/app.js)."""
+    return render_template("_nav.html")
+
+
 @app.route("/")
 def home():
     return redirect(url_for("next_view"))
@@ -215,11 +229,12 @@ def task_move():
     if not t or t["state"] != "open":  # e.g. a stale tab: it has been finished since
         abort(400)
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
-        db.add_reference(c, t["title"], notes=t["notes"])
-        if db.task_seconds(c, t["id"], now()):
-            db.abandon_task(c, t["id"], now())  # its time is kept
-        else:
-            db.delete_task(c, t["id"])
+        with db.transaction(c):
+            db.add_reference(c, t["title"], notes=t["notes"])
+            if db.task_seconds(c, t["id"], now()):
+                db.abandon_task(c, t["id"], now())  # its time is kept
+            else:
+                db.delete_task(c, t["id"])
         return "", 204
     fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
     if orphaned(fields.get("project_id"), fields.get("ground")):
@@ -414,7 +429,7 @@ def review():
     for d in past:
         by_week.setdefault(date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday()), d)
     weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
-    return render_template("review.html", stalled=db.stalled_projects(c), no_area=db.no_area(c),
+    return render_template("review.html", stalled=db.stalled_projects(c),
                            overdue=db.overdue(c, today()),
                            nexts=nexts,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
@@ -469,9 +484,8 @@ def task_view(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     if request.method == "POST":
-        fields = task_fields_from_form(t)
-        if not fields.get("title"):
-            fields.pop("title", None)
+        # Title and notes are autosave's, with its conflict check: a select posting this stale form leaves them.
+        fields = {k: v for k, v in task_fields_from_form(t).items() if k not in ("title", "notes")}
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
         ground = fields["ground"] if "ground" in fields else t["ground"]
         if orphaned(project_id, ground) and not t["inbox"] and t["state"] == "open":
@@ -584,17 +598,15 @@ def project_view(id):
     c = conn()
     p = db.get_project(c, id) or abort(404)
     if request.method == "POST":
-        fields = {k: form_value(k) for k in ("title", "notes") if k in request.form}
-        if "notes" in fields:
-            fields["notes"] = fields["notes"] or ""
-        fields["title"] = fields.get("title") or p["title"]
+        fields = {}  # title and notes are autosave's, as on the task page
         if area_from(request.form.get("area_id")):  # left blank (a project with none yet): unchanged
             fields["area_id"] = area_from(request.form["area_id"])
         status = request.form.get("status")
         if status == "abandoned" and p["status"] != "abandoned":  # with its open steps; it's on Done, revivable
-            db.update_project(c, id, **fields)
-            db.abandon_project(c, id, now())
-            flash(f"Abandoned “{fields['title']}”: it's on Done.")
+            with db.transaction(c):
+                db.update_project(c, id, **fields)
+                db.abandon_project(c, id, now())
+            flash(f"Abandoned “{p['title']}”: it's on Done.")
             return back()
         if p["status"] == "abandoned" and status in PROJECT_STATUSES:  # revived with its steps, then given the status
             db.revive_project(c, id)
@@ -604,7 +616,7 @@ def project_view(id):
             fields["status"] = status
         db.update_project(c, id, **fields)
         if fields.get("status") == "someday" != p["status"]:
-            flash(f"Moved “{fields['title']}” to someday / maybe.")
+            flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()
     return render_template("project.html", p=p, area=p["area_id"] and db.get_horizon(c, p["area_id"]), tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
                            project_groups=db.project_groups(c),
@@ -972,7 +984,7 @@ def horizon_view(id):
     # An area's page is its hub: its projects by status, and an add line for a new one.
     lists = [(label, db.projects(c, status, area_id=id)) for label, status in AREA_LISTS]
     show = request.args.get("done") == "1"
-    return render_template("horizon.html", h=h, label=HORIZON_TITLES["area"], lists=lists, steps=db.open_steps(c, None),
+    return render_template("horizon.html", h=h, label=HORIZON_TITLES["area"], lists=lists, steps=db.open_steps(c, None, area_id=id),
                            empty=not c.execute("SELECT 1 FROM projects WHERE area_id = ?", (id,)).fetchone(),
                            show_done=show, toggle_url=toggle_url(show),
                            done_projects=db.projects(c, "done", area_id=id) if show else [])

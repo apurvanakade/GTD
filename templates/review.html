@@ -21,9 +21,8 @@
   {% call card('overdue', 'Overdue', 'Do, reschedule or drop.', overdue|length) %}
     {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
-  {% call card('stalled', 'Stalled projects', 'Next action and area for each.', stalled|length + no_area|length) %}
+  {% call card('stalled', 'Stalled projects', 'Pick a next action for each.', stalled|length) %}
     {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>{% endif %}
-    {% if no_area %}<ul class="plain">{% for p in no_area %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a> <span class="hint">no area</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
   {% call card('nexts', 'Scan next actions', 'Tick off done, drop dead.', nexts|length) %}
     {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}

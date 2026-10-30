@@ -1,6 +1,6 @@
 """Drive the real JS in real Chromium. Slow, so excluded from the default run: `uv run pytest -m browser`.
 
-Run these when a change touches templates/, static/ or the JS in base.html. The Stop hook and pre-commit
+Run these when a change touches templates/, static/ or static/app.js. The Stop hook and pre-commit
 hook do that automatically. Everything else in the suite checks only the HTML contract with the JS.
 """
 import threading
@@ -11,7 +11,7 @@ from werkzeug.serving import make_server
 
 import db
 from app import app, local_input
-from conftest import NOW, seed
+from conftest import NOW, add_project, seed
 
 pytestmark = pytest.mark.browser
 sync_api = pytest.importorskip("playwright.sync_api")
@@ -241,7 +241,7 @@ def test_drag_reorders_project_steps(page, live, conn):
 
 def test_drag_reorders_someday_projects(page, live, conn):
     home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
-    db.add_project(conn, "Another dream", status="someday", area_id=home)  # Projects shares the code; this covers both
+    add_project(conn, "Another dream", status="someday", area_id=home)  # Projects shares the code; this covers both
     page.goto(live + "/someday")
     page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
     titles = lambda: page.locator("ul.tasks > li.task > a.title").all_inner_texts()
@@ -257,7 +257,7 @@ def test_drag_reorders_someday_projects(page, live, conn):
 def test_dragging_a_project_into_another_area_changes_its_area(page, live, conn):
     ids = {p["title"]: p["id"] for p in db.projects(conn)}
     work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
-    db.add_task(conn, "pack", project_id=db.add_project(conn, "Office move", area_id=work), step="next")
+    db.add_task(conn, "pack", project_id=add_project(conn, "Office move", area_id=work), step="next")
     page.goto(live + "/projects")
     group = lambda title: page.locator("section.area-group", has=page.locator("h2.area-head", has_text=title)).locator("ul")
     with page.expect_response(lambda r: r.url.endswith("/order/active")) as saved:
@@ -265,11 +265,11 @@ def test_dragging_a_project_into_another_area_changes_its_area(page, live, conn)
     assert saved.value.status == 204
     assert db.get_project(conn, ids["Kitchen"])["area_id"] == work
     assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move"]
-    # A project without an area gets one by the same drag; nothing can be dropped into "No area".
+    # Moving Home's last active project empties its group, which goes.
     with page.expect_response(lambda r: r.url.endswith("/order/active")):
         page.locator("li.task", has_text="Stalled").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 20})
     assert db.get_project(conn, ids["Stalled"])["area_id"] == work
-    assert page.locator(".warn", has_text="No area").count() == 0  # its emptied group is gone
+    assert page.locator("h2.area-head", has_text="Home").count() == 0
     page.reload()
     assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move", "⚠ Stalled"]
 
@@ -292,7 +292,7 @@ def test_slash_on_inbox_focuses_its_add_box(page, live):
 
 def test_task_rows_are_one_height(page, live, conn):
     """A Make next or Activate button mustn't make its row taller than the others."""
-    db.add_project(conn, "Plain dream", status="someday", area_id=next(a["id"] for a in db.areas(conn) if a["title"] == "Home"))
+    add_project(conn, "Plain dream", status="someday", area_id=next(a["id"] for a in db.areas(conn) if a["title"] == "Home"))
     for url, n in (("/projects/1", 3), ("/someday", 2)):  # the someday cards are compact, so compared among themselves
         page.goto(live + url)
         heights = page.locator("ul.tasks > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
@@ -406,7 +406,7 @@ def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
 
 
 def test_project_page_columns_line_up_whatever_the_step_and_date(page, live, conn):
-    pid = db.add_project(conn, "Columns")
+    pid = add_project(conn, "Columns")
     rows = {"n": ("next", "2026-10-20"), "wd": ("waiting", "2026-10-30"), "w": ("waiting", None),
             "ld": ("later", "2026-11-11"), "l": ("later", None)}  # next is overdue, so its date is bold
     for title, (step, due) in rows.items():
@@ -528,7 +528,7 @@ def test_autosave_conflict_keep_mine_and_merge(page, live, conn):
 
 
 def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
-    pid = db.add_project(conn, "Elsewhere", notes="old")
+    pid = add_project(conn, "Elsewhere", notes="old")
     page.goto(live + f"/projects/{pid}")
     db.update_project(conn, pid, notes="new from phone")
     page.evaluate("dispatchEvent(new Event('focus'))")
@@ -598,7 +598,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     panel.wait_for(state="hidden")
     page.locator(".pin-panel").click()
     panel.wait_for(state="visible")
-    assert panel.locator("h3").all_text_contents() == ["Home", "Work", "No area", "Done"]
+    assert panel.locator("h3").all_text_contents() == ["Home", "Work", "Done"]
     drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert panel.is_visible()  # still pinned after the drop
@@ -671,7 +671,7 @@ def test_review_arrow_keys_move_between_steps(page, live):
 
 def test_long_title_wraps_instead_of_pushing_buttons_down(page, live, conn):
     long = "ask AI to download all the mir publication math physics and other science books " * 2
-    tid = db.add_task(conn, long.strip(), step="next", project_id=db.add_project(conn, "Mir publications archive"),
+    tid = db.add_task(conn, long.strip(), step="next", project_id=add_project(conn, "Mir publications archive"),
                       due_date="2026-10-22")  # today, so its band is open
     db.timer_start(conn, tid, NOW)
     page.set_viewport_size({"width": 1000, "height": 800})
@@ -725,7 +725,7 @@ def test_all_clear_lists_show_a_big_check(page, live, conn):
 
 
 def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
-    db.add_project(conn, "Deck", status="waiting")
+    add_project(conn, "Deck", status="waiting")
     page.goto(live + "/next")
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
     assert style(page.locator("li.task").first, "borderBottomWidth") == "0px"
@@ -740,8 +740,8 @@ def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
 def test_projects_and_someday_are_tight_lists(page, live, conn):
     """Projects and Someday: plain rows, like task rows but tighter, no pill boxes."""
     home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
-    db.add_project(conn, "Shed", area_id=home)
-    db.add_project(conn, "Boat", status="someday", area_id=home)
+    add_project(conn, "Shed", area_id=home)
+    add_project(conn, "Boat", status="someday", area_id=home)
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
     for url in ("/projects", "/someday"):
         page.goto(live + url)
@@ -973,3 +973,31 @@ def test_project_time_split_folds_out(page, live):
     assert tally.locator("ul").is_visible()
     assert tally.locator(".split-toggle").evaluate("e => getComputedStyle(e, '::after').content") == '"Hide split"'
     assert page.get_by_text("Show completed").is_visible()  # completed steps start hidden
+
+
+def test_a_select_saves_typed_notes_before_it_submits(page, live, conn):
+    """The server leaves title and notes to autosave, so picking a status mustn't lose what was just typed."""
+    page.goto(live + "/projects/1")
+    page.locator(".md-editor").click()
+    page.keyboard.press("ControlOrMeta+End")
+    page.keyboard.type(" typed")
+    with page.expect_navigation():
+        page.get_by_label("Status").select_option("someday")
+    p = db.get_project(conn, 1)
+    assert (p["status"], p["notes"]) == ("someday", "tiles\nand grout typed")
+
+
+def test_enter_in_the_title_saves_without_reloading(page, live, conn):
+    page.goto(live + "/reference/1")
+    page.evaluate("window.stayed = true")
+    page.locator("form[data-autosave] input[name=title]").fill("Plumber Sam")
+    page.locator("form[data-autosave] input[name=title]").press("Enter")
+    page.wait_for_function("document.querySelector('.autosave').textContent === 'Saved'")
+    assert page.evaluate("window.stayed") and db.get_reference(conn, 1)["title"] == "Plumber Sam"
+
+
+def test_tick_off_refreshes_the_nav_and_keeps_the_tab_lit(page, live):
+    page.goto(live + "/next")
+    with page.expect_response(lambda r: r.url.endswith("/nav")):
+        row(page, "buy tiles").locator("form.done button").click()
+    assert page.locator("nav a.on").get_attribute("href") == "/next"

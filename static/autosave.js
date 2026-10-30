@@ -2,36 +2,50 @@
 // leaving or hiding the page. Each save sends the text the page last saw (base_*) next to the change; if someone
 // else changed that field since, the server answers 409 with its text and you pick: theirs, mine, or a merge
 // (notes get git-style conflict markers, the title stays yours). Coming back to the tab picks up edits made elsewhere.
+// The server leaves title and notes to this: any other submit of the form (a select, ✓, ▶) saves them here first,
+// and Enter in the title just saves.
 document.querySelectorAll("form[data-autosave]").forEach(form => {
   const url = form.dataset.autosave, status = form.querySelector(".autosave");
   const fields = ["title", "notes"].map(n => form.elements[n]).filter(Boolean);
   const norm = s => (s ?? "").replace(/\r\n?/g, "\n").trim();
   const base = Object.fromEntries(fields.map(f => [f.name, f.value]));
-  let timer = null, inflight = false, again = false, conflict = false;
+  let timer = null, inflight = null, again = false, conflict = false;
 
   const dirty = () => fields.filter(f => norm(f.value) !== norm(base[f.name]) && (f.name !== "title" || f.value.trim()));
   const set = (f, v) => (f.setText ? f.setText(v) : (f.value = v));
 
+  // Resolves true once everything typed is saved, false on a conflict or a failure.
   function save(keepalive = false) {
     clearTimeout(timer);
+    if (conflict) return Promise.resolve(false);
+    if (inflight && !keepalive) { again = true; return inflight.then(() => save()); }
     const send = dirty();
-    if (conflict || !send.length) return;
-    if (inflight && !keepalive) { again = true; return; }
-    inflight = true;
+    if (!send.length) return Promise.resolve(true);
     const sent = Object.fromEntries(send.map(f => [f.name, f.value]));
     const body = new URLSearchParams(sent);
     send.forEach(f => body.append("base_" + f.name, base[f.name]));
     status.textContent = "Saving…";
-    fetch(url, { method: "POST", body, keepalive })
+    inflight = fetch(url, { method: "POST", body, keepalive })
       .then(async r => {
-        if (r.status === 409) return showConflict(await r.json());
+        if (r.status === 409) { showConflict(await r.json()); return false; }
         if (!r.ok) throw new Error(r.status);
         Object.assign(base, sent);
         status.textContent = "Saved";
+        return true;
       })
-      .catch(() => { status.textContent = "Not saved · retrying"; timer = setTimeout(save, 3000); })
-      .finally(() => { inflight = false; if (again) { again = false; save(); } });
+      .catch(() => { status.textContent = "Not saved · retrying"; timer = setTimeout(save, 3000); return false; })
+      .finally(() => { inflight = null; if (again) { again = false; save(); } });
+    return inflight;
   }
+
+  form.addEventListener("submit", async e => {
+    if (form.dataset.saved) return;  // saved just now: let it go
+    e.preventDefault();
+    const by = e.submitter;
+    if (!await save() || by?.hidden) return;  // a conflict stops it to be settled first; Enter only meant save
+    form.dataset.saved = "1";
+    setTimeout(() => form.requestSubmit(by));  // a task later: during this submit event a new one is ignored
+  });
 
   function load(theirs) {
     fields.forEach(f => { base[f.name] = theirs[f.name]; set(f, theirs[f.name]); });

@@ -6,14 +6,6 @@
 # Installed as a global command with: ln -s "$PWD/gtd.sh" ~/.local/bin/GTD
 set -eo pipefail
 
-open_url() {
-  if command -v open >/dev/null 2>&1; then
-    open "$1"                          # macOS
-  else
-    xdg-open "$1" >/dev/null 2>&1 &    # Linux
-  fi
-}
-
 if [[ $1 != dev ]]; then
   # GTD_URL overrides; otherwise https://home.<tailnet>.ts.net from Tailscale's MagicDNS suffix.
   url=${GTD_URL:-}
@@ -23,7 +15,7 @@ if [[ $1 != dev ]]; then
     [[ -n $suffix ]] || { echo "GTD: Tailscale isn't running; start it or set GTD_URL." >&2; exit 1; }
     url=https://home.$suffix
   fi
-  open_url "$url"
+  open "$url"
   exit
 fi
 
@@ -70,4 +62,4 @@ if ! running; then
   GTD_DB=$dev_db nohup uv run app.py >> server.log 2>&1 &
   for _ in {1..50}; do running && break; sleep 0.2; done
 fi
-open_url "$url"
+open "$url"
