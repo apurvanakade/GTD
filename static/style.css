@@ -220,6 +220,10 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .edit .fields > label:has(.with-link) { grid-column: span 2; }  /* the project, wider than the step */
 .edit .with-link { display: flex; gap: 6px; align-items: center; }
 .edit .with-link select { flex: 1 1 auto; min-width: 0; }
+/* ↗ to the task's project: a filled accent chip, so it's seen at a glance. */
+.edit .open-project { flex: none; display: inline-grid; place-items: center; width: 2em; height: 2em; border-radius: 8px;
+  font-size: 1.1rem; font-weight: 600; text-decoration: none; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.edit .open-project:hover { background: var(--accent); color: var(--accent-fg); }
 .edit label { display: block; margin: 8px 0; color: var(--muted); font-size: .9rem; }
 .edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }
 .edit label input[name="new_project"] { display: none; }
@@ -261,7 +265,7 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
-.task.gone { opacity: .35; text-decoration: line-through; pointer-events: none; }
+.task.gone { opacity: .35; text-decoration: line-through; }
 .done button {
   width: 18px; height: 18px; padding: 0; border-radius: 50%;
   border: 1.5px solid var(--muted); background: transparent;

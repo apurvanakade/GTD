@@ -2315,3 +2315,9 @@ def test_every_project_needs_an_area(client, conn):
     with pytest.raises(ValueError):
         db.update_project(conn, pid, area_id=None)
     assert db.get_project(conn, pid)["area_id"]
+
+
+def test_the_task_pages_project_link_stands_out(client, conn):
+    pid = add_project(conn, "P")
+    tid = db.add_task(conn, "step", project_id=pid)
+    assert f'class="open-project" href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)

@@ -71,6 +71,16 @@ def test_tick_off_fades_the_row_in_place(page, live, conn):
     assert db.get_task(conn, 5)["state"] == "done"
 
 
+def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
+    page.goto(live + "/horizons?level=ground")
+    row(page, "vacuum").locator("form.done button").click()
+    page.wait_for_selector("li.task.gone")
+    gone = row(page, "vacuum")
+    assert gone.locator("form").count() == 0 and gone.locator(".check").inner_text() == "✓"
+    gone.locator(".meta").click()
+    page.wait_for_url(live + "/tasks/5")
+
+
 def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
     page.goto(live + "/next")
     row(page, "buy tiles").locator("form.done button").click()

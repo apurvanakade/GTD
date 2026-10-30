@@ -260,13 +260,18 @@ document.addEventListener('focusout', e => {
   if (!bad) f.requestSubmit();
 });
 // Tick off a task in place instead of reloading the page; its band's count drops and the nav's dots are refetched.
+// The struck-out row turns into a done row: a ✓ instead of its buttons, so a click opens it and can't finish it twice.
 document.addEventListener('submit', async e => {
   const f = e.target;
   if (!f.classList.contains('done')) return;
   e.preventDefault();
   if (!await post(f.action)) return;
-  f.closest('li').classList.add('gone');
-  const n = f.closest('details.band')?.querySelector('summary b');
+  const li = f.closest('li');
+  li.classList.add('gone');
+  li.draggable = false;
+  f.replaceWith(Object.assign(document.createElement('span'), {className: 'check', title: 'Done', textContent: '✓'}));
+  li.querySelectorAll('form').forEach(x => x.remove());
+  const n = li.closest('details.band')?.querySelector('summary b');
   if (n) n.textContent = Math.max(0, n.textContent - 1);
   refreshNav();
 });
