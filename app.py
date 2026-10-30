@@ -446,9 +446,26 @@ def review():
         by_week.setdefault(date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday()), d)
     weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
     return render_template("review.html", stalled=db.stalled_projects(c),
-                           overdue=db.overdue(c, today()),
+                           overdue=db.overdue(c, today()), someday=db.someday_to_review(c),
                            nexts=nexts,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
+
+
+@app.post("/projects/<int:id>/reviewed")
+def project_reviewed(id):
+    """The review's someday step: this project has been looked at now."""
+    db.get_project(conn(), id) or abort(404)
+    db.mark_reviewed(conn(), id, now())
+    return back("review")
+
+
+@app.template_filter()
+def ago(utc):
+    """How long ago a UTC stamp was, by local date: today, 3d ago, 2w ago, 4mo ago; never without one."""
+    if not utc:
+        return "never"
+    days = (today() - date.fromisoformat(local_date(utc))).days
+    return "today" if days <= 0 else f"{days}d ago" if days < 14 else f"{days // 7}w ago" if days < 60 else f"{days // 30}mo ago"
 
 
 @app.route("/review/<step>", methods=["POST"])

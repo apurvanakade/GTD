@@ -267,6 +267,11 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
+.task .reviewed { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* a someday card */
+.plain.someday-review { list-style: none; padding-left: 0; }
+.someday-review li { display: flex; align-items: center; gap: 8px; }
+.someday-review form { display: contents; }
+.someday-review .date { color: var(--muted); font-size: .85rem; }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
 .task.gone { opacity: .35; text-decoration: line-through; }
 .done button {

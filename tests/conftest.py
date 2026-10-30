@@ -69,6 +69,7 @@ def seed(c):
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
     db.timer_start(c, 7, NOW - timedelta(minutes=10))  # "call mum", still running
+    db.mark_reviewed(c, someday, NOW - timedelta(days=15))  # someday: reviewed 2 weeks ago
     db.mark_reminded(c, 4, NOW)  # "quote from Bob": sent; "call mum" still to come
     db.complete_review(c, TODAY - timedelta(days=7))
     db.toggle_review_step(c, "sweep")  # this week's review under way

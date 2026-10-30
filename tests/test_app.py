@@ -2405,3 +2405,26 @@ def test_several_tasks_move_together(client, conn):
     e, f = db.add_task(conn, "e"), db.add_task(conn, "f")
     assert client.post("/tasks/move", data={"id": [e, f], "project_id": "reference"}, headers=FETCH).status_code == 204
     assert {"e", "f"} <= {r["title"] for r in db.references(conn)} and not db.get_task(conn, e)
+
+
+def test_someday_projects_keep_when_they_were_last_reviewed(client, conn):
+    area = db.add_horizon(conn, "area", "A")
+    old = db.add_project(conn, "old", status="someday", area_id=area)
+    fresh = db.add_project(conn, "fresh", status="someday", area_id=area)
+    never = db.add_project(conn, "never", status="someday", area_id=area)
+    db.mark_reviewed(conn, old, NOW - timedelta(days=40))
+    db.mark_reviewed(conn, fresh, NOW - timedelta(days=3))
+    html = client.get("/review?step=someday").get_data(as_text=True)
+    card = re.search(r'<li id="someday".*?</li>\s*<li id="ahead"', html, re.S).group(0)
+    titles = re.findall(r'href="/projects/\d+">([^<]*)</a>', card)
+    assert titles == ["never", "old", "fresh"]  # never reviewed, then the longest ago
+    assert "never" in card and "5w ago" in card and "3d ago" in card
+    r = client.post(f"/projects/{never}/reviewed", headers={"Referer": "/review?step=someday"})
+    assert r.status_code == 302 and r.location.endswith("/review?step=someday")
+    assert db.get_project(conn, never)["reviewed_at"] == db.iso(NOW)
+    card = re.search(r'<li id="someday".*?</li>\s*<li id="ahead"', client.get("/review?step=someday").get_data(as_text=True), re.S).group(0)
+    assert re.findall(r'href="/projects/\d+">([^<]*)</a>', card) == ["old", "fresh", "never"]
+    someday = client.get("/someday").get_data(as_text=True)
+    assert 'class="reviewed" title="Last reviewed">5w ago<' in someday and ">today<" in someday
+    assert 'class="reviewed"' not in client.get("/projects").get_data(as_text=True)  # someday only
+    assert client.post("/projects/999/reviewed").status_code == 404

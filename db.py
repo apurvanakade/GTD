@@ -77,6 +77,12 @@ CREATE INDEX IF NOT EXISTS time_entries_task ON time_entries(task_id);
 -- Weekly review: the steps ticked so far, and the date of each finished review.
 CREATE TABLE IF NOT EXISTS review_checks (step TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NOT NULL);
+-- When each someday project was last looked at in a weekly review (UTC, iso()). A table of its own, not a column,
+-- so the live DB needs no ALTER.
+CREATE TABLE IF NOT EXISTS project_reviews (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  reviewed_at TEXT NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
 # Stored in the file's user_version once SCHEMA has run on it, so a connection skips it until SCHEMA changes.
@@ -497,16 +503,30 @@ def abandoned_projects(c, limit=100):
                      (limit,)).fetchall()
 
 
+REVIEWED = "(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at"
+
+
 def get_project(c, id):
-    return c.execute("SELECT * FROM projects WHERE id = ?", (id,)).fetchone()
+    return c.execute(f"SELECT p.*, {REVIEWED} FROM projects p WHERE p.id = ?", (id,)).fetchone()
 
 
 def projects(c, status="active", area_id=None):
     """Projects with the given status (and area) in the order dragged, new ones on top."""
-    return c.execute("""SELECT p.*,
+    return c.execute(f"""SELECT p.*, {REVIEWED},
           (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count
         FROM projects p WHERE p.status = ? AND (? IS NULL OR p.area_id = ?)
         ORDER BY p.position, p.id""", (status, area_id, area_id)).fetchall()
+
+
+def someday_to_review(c):
+    """Someday projects for the weekly review: never reviewed first, then the longest ago."""
+    return sorted(projects(c, "someday"), key=lambda p: (p["reviewed_at"] is not None, p["reviewed_at"] or ""))
+
+
+@atomic
+def mark_reviewed(c, id, now):
+    """A someday project looked at in a weekly review, at `now`."""
+    c.execute("INSERT OR REPLACE INTO project_reviews (project_id, reviewed_at) VALUES (?, ?)", (id, iso(now)))
 
 
 def by_area(c, projects):

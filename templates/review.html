@@ -31,8 +31,12 @@
   {% call card('waiting', 'Chase waiting-fors', 'Nudge the overdue.', counts.waiting) %}
     {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
   {% endcall %}
-  {% call card('someday', 'Scan someday / maybe', 'Activate what\'s ready.', counts.someday) %}
-    {% if counts.someday %}<p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
+  {% call card('someday', 'Scan someday / maybe', 'Activate what\'s ready; ✓ each one looked at.', counts.someday) %}
+    {#- Never reviewed first, then the longest ago (db.someday_to_review()). #}
+    {% if someday %}<ul class="plain someday-review">{% for p in someday %}<li>
+      <form method="post" action="{{ url_for('project_reviewed', id=p.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
+      <a href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a> <span class="date" title="Last reviewed">{{ p.reviewed_at|ago }}</span></li>{% endfor %}</ul>
+    <p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
   {% endcall %}
   {% call card('ahead', 'Look ahead', 'What needs prep now?') %}
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
