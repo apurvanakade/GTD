@@ -652,7 +652,7 @@ def project_view(id):
             flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()
     return render_template("project.html", p=p, area=p["area_id"] and db.get_horizon(c, p["area_id"]), tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
-                           project_groups=db.project_groups(c),
+                           project_groups=db.project_groups(c), deletable=db.project_deletable(c, id),
                            times=db.step_totals(c, id, now()), **completed(abandoned=True, project_id=id))
 
 
@@ -672,7 +672,7 @@ def project_delete(id):
     if db.delete_project(c, id):
         flash(f"Deleted “{p['title']}”.")
         return redirect(url_for("projects_view"))
-    flash("Only an empty project can be deleted: finish or delete its tasks first.")
+    flash("Only a project that never had tasks can be deleted: mark it done or abandoned instead.")
     return redirect(url_for("project_view", id=id))
 
 

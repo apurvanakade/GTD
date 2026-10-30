@@ -198,7 +198,7 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
   - A repeat rule without a due date gets today as its due date.
 - **Projects can't be marked done while they have open tasks.** Moving a project out of done clears its `completed_at`.
   - An open task joining a done project (filing, the dropdown, adding, reviving) reopens it as active (`_reopen_project()` in `add_task`/`update_task`/`revive_task`).
-- **Only an empty project can be deleted** (no tasks at all, done ones included). The project page shows the button only then.
+- **Only an empty project can be deleted** (no tasks at all, done and abandoned ones included; `db.project_deletable()`). The project page shows ✕ only then.
 - **Deleting a task abandons it** (`db.abandon_task()`: state `abandoned`, `completed_at` set, its timer stopped, its time kept).
   - Revive (`/tasks/<id>/revive`, `db.revive_task()`) brings it back where it was: a later step of its project (reopening the project if it's done), an H0 task, or the inbox.
   - Deleting an abandoned task is a hard delete (its time too).

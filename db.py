@@ -459,10 +459,14 @@ def update_project(c, id, **fields):
     _reopen_area(c, id)
 
 
+def project_deletable(c, id):
+    """Only an empty project (no tasks at all, done and abandoned ones included) can be deleted."""
+    return not c.execute("SELECT 1 FROM tasks WHERE project_id = ?", (id,)).fetchone()
+
+
 @atomic
 def delete_project(c, id):
-    """Only an empty project (no tasks at all, done ones included) can be deleted."""
-    if c.execute("SELECT 1 FROM tasks WHERE project_id = ?", (id,)).fetchone():
+    if not project_deletable(c, id):
         return False
     c.execute("DELETE FROM projects WHERE id = ?", (id,))
     return True

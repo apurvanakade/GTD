@@ -521,6 +521,9 @@ def test_delete_empty_project_only(client, conn):
     db.add_task(conn, "step", step="next", project_id=full)
     assert "Delete project" in client.get(f"/projects/{empty}").get_data(as_text=True)
     assert "Delete project" not in client.get(f"/projects/{full}").get_data(as_text=True)
+    finished = add_project(conn, "Finished")  # only done steps, no time: still not deletable, so no ✕
+    db.complete_task(conn, db.add_task(conn, "step", step="next", project_id=finished), date(2026, 10, 22))
+    assert "Delete project" not in client.get(f"/projects/{finished}").get_data(as_text=True)
     client.post(f"/projects/{full}/delete")
     assert db.get_project(conn, full) is not None
     r = client.post(f"/projects/{empty}/delete")
