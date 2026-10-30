@@ -652,8 +652,40 @@ def test_timer_starts_from_a_task_and_starting_another_stops_it(client, conn):
     entries = db.time_entries(conn)
     assert [(e["task_id"], e["end_time"] is None) for e in entries] == [(b, True), (a, False)]
     client.post("/timer/stop")
-    assert db.timer_running(conn) is None and 'class="running-timer"' not in client.get("/inbox").get_data(as_text=True)
+    page = client.get("/inbox").get_data(as_text=True)
+    assert db.timer_running(conn) is None and 'class="running-timer"' not in page
+    assert 'class="running-timer stopped"' in page  # it stays a while, to finish the task (below)
     assert client.post("/tasks/999/start").status_code == 404
+
+
+def pill(client):
+    m = re.search(r'<div class="running-timer stopped">(.*?)</div>', client.get("/inbox").get_data(as_text=True), re.S)
+    return m and m.group(1)
+
+
+def test_a_stopped_timer_stays_as_a_pill_to_finish_resume_or_dismiss(client, conn):
+    tid = db.add_task(conn, "write", step="next", ground=1, today=TODAY)
+    db.timer_start(conn, tid, NOW - timedelta(minutes=25))
+    client.post("/timer/stop")
+    p = pill(client)
+    assert f'href="/tasks/{tid}"' in p and "0:25:00" in p
+    assert f'action="/tasks/{tid}/complete"' in p and f'action="/tasks/{tid}/start"' in p and 'action="/timer/dismiss"' in p
+    client.post("/timer/dismiss")
+    assert pill(client) is None
+    db.timer_start(conn, tid, NOW - timedelta(minutes=5))  # a new stretch, stopped: shown again
+    client.post("/timer/stop")
+    assert "0:05:00" in pill(client)
+    client.post(f"/tasks/{tid}/complete")
+    assert pill(client) is None  # finished: nothing left to do with it
+
+
+def test_a_stopped_timer_pill_goes_after_ten_minutes(client, conn):
+    tid = db.add_task(conn, "write", step="next", ground=1, today=TODAY)
+    db.timer_start(conn, tid, NOW - timedelta(minutes=30))
+    db.timer_stop(conn, NOW - timedelta(minutes=9))
+    assert pill(client)
+    db.update_entry(conn, db.time_entries(conn)[0]["id"], end_time=db.iso(NOW - timedelta(minutes=11)))
+    assert pill(client) is None
 
 
 def test_timer_page_start_uses_a_task_or_captures_to_inbox(client, conn):

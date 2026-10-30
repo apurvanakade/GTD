@@ -702,6 +702,11 @@ def timer_running(c):
     return c.execute(f"{ENTRY_SELECT} WHERE e.end_time IS NULL").fetchone()
 
 
+def timer_last(c):
+    """The entry stopped last."""
+    return c.execute(f"{ENTRY_SELECT} WHERE e.end_time IS NOT NULL ORDER BY e.end_time DESC, e.id DESC LIMIT 1").fetchone()
+
+
 def time_entries(c, limit=200):
     """The running entry first, then the rest, newest first."""
     return c.execute(f"{ENTRY_SELECT} ORDER BY e.end_time IS NOT NULL, e.start_time DESC LIMIT ?", (limit,)).fetchall()

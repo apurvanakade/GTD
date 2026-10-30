@@ -167,6 +167,15 @@ def test_running_timer_stays_in_view_and_stops_from_anywhere(page, live, conn):
         page.click(".running-timer button")
     assert db.timer_running(conn) is None
     assert page.url.endswith("/done")
+    stopped = page.locator(".running-timer.stopped")  # stays, to finish the task from it
+    assert stopped.is_visible() and stopped.get_by_role("link").inner_text() == "call mum"
+    shown = stopped.locator(".clock").inner_text()
+    page.wait_for_timeout(1100)
+    assert stopped.locator(".clock").inner_text() == shown  # frozen
+    with page.expect_navigation():
+        stopped.get_by_role("button", name="Mark done").click()
+    assert db.get_task(conn, 7)["state"] == "done" and page.url.endswith("/done")
+    assert page.locator(".running-timer").count() == 0
 
 
 def test_timer_entry_saves_when_focus_leaves_the_row(page, live, conn):

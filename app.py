@@ -8,7 +8,8 @@ import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Flask, abort, flash, g, get_flashed_messages, make_response, redirect, render_template, request, url_for
+from flask import (Flask, abort, flash, g, get_flashed_messages, make_response, redirect, render_template, request,
+                   session, url_for)
 
 import dates
 import db
@@ -63,8 +64,20 @@ def same_origin_only():
 
 @app.context_processor
 def template_globals():
+    timer = db.timer_running(conn())
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
-            "timer": db.timer_running(conn()), "areas": db.areas(conn())}
+            "timer": timer, "stopped": None if timer else stopped_timer(), "areas": db.areas(conn())}
+
+
+STOPPED = timedelta(minutes=10)  # how long a stopped timer's pill stays, to finish its task or start it again
+
+
+def stopped_timer():
+    """The entry just stopped, while its pill stays: its task still open, within STOPPED, and not dismissed (×)."""
+    e = db.timer_last(conn())
+    if (e and e["task_state"] == "open" and now() - datetime.fromisoformat(e["end_time"]) <= STOPPED
+            and session.get("pill_dismissed") != e["id"]):
+        return e
 
 
 NEW = "__new__"  # project_select's "＋ New project…" option, one per area: __new__:<area id> (_task.html)
@@ -803,6 +816,15 @@ def task_start(id):
 @app.post("/timer/stop")
 def timer_stop():
     db.timer_stop(conn(), now())
+    return back("timer_view")
+
+
+@app.post("/timer/dismiss")
+def timer_dismiss():
+    """× on a stopped timer's pill: gone until another stretch is stopped."""
+    e = db.timer_last(conn())
+    if e:
+        session["pill_dismissed"] = e["id"]
     return back("timer_view")
 
 

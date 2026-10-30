@@ -163,7 +163,7 @@ document.querySelector('.theme-toggle').addEventListener('click', () => {
 // The running timer's clocks: the pill's (since the entry started) and a task page's (its total, from the seconds at load).
 const hms = s => `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 const loaded = Date.now();
-const clocks = [...document.querySelectorAll('.running-timer .clock, .task-timer .clock[data-seconds]')];
+const clocks = [...document.querySelectorAll('.running-timer .clock[data-start], .task-timer .clock[data-seconds]')];
 if (clocks.length) setInterval(() => clocks.forEach(c => {
   const s = c.dataset.start ? (Date.now() - c.dataset.start) / 1000 : +c.dataset.seconds + (Date.now() - loaded) / 1000;
   c.textContent = hms(Math.max(0, Math.floor(s)));

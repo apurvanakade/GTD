@@ -26,6 +26,15 @@
   <a href="{{ url_for('task_view', id=timer.task_id) }}">{{ timer.title }}</a>
   <button class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
 </form>
+{% elif stopped %}
+{#- Just stopped: the pill stays a while (STOPPED in app.py) to finish the task, start it again, or dismiss it. #}
+<div class="running-timer stopped">
+  <span class="clock" title="This stretch">{{ ((stopped.end_time|epoch_ms - stopped.start_time|epoch_ms) / 1000)|hms }}</span>
+  <a href="{{ url_for('task_view', id=stopped.task_id) }}">{{ stopped.title }}</a>
+  <form method="post" action="{{ url_for('complete', id=stopped.task_id) }}"><button class="icon" title="Done" aria-label="Mark done">✓</button></form>
+  <form method="post" action="{{ url_for('task_start', id=stopped.task_id) }}"><button class="icon" title="Start the timer again" aria-label="Start the timer again">▶</button></form>
+  <form method="post" action="{{ url_for('timer_dismiss') }}"><button class="icon" title="Dismiss" aria-label="Dismiss">×</button></form>
+</div>
 {% endif %}
 {# One list drives both the key handler and the help overlay. #}
 {% set go_keys = [('t', 'timer_view', 'Timer'), ('c', 'calendar_view', 'Calendar'), ('n', 'next_view', 'Next'), ('h', 'h0_view', 'H0'),

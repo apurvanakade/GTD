@@ -125,6 +125,8 @@ body:has(> .running-timer) { padding-bottom: 88px; }
 @keyframes pulse { 50% { opacity: .25; } }
 .running-timer .clock { font: 600 .95rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--accent); }
 .running-timer a { flex: 1 1 auto; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.running-timer form { display: contents; }
+.running-timer.stopped .clock { color: var(--muted); }
 
 /* Every page: header (back link, heading, actions), add line, list. */
 header.page { margin: 24px 0 14px; }
