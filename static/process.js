@@ -2,7 +2,8 @@
 // flowchart. The item shows as its own task page in a frame (?embed=process), so it can be clarified on the way: its title,
 // notes, due date, repeat and reminder save as on its page, and are saved before it's filed. Picking an answer files
 // nothing: File does, as the drop panel or its page would, in the background; the item leaves the list and the next
-// one follows, until the inbox is empty. y / n answer, Enter files, ‹ goes back a question, Esc stops.
+// one follows, until the inbox is empty; so it does when the item's own page files or finishes it. y / n answer,
+// Enter files, ‹ goes back a question, Esc stops.
 // /inbox?process=1 opens it; so does a click on a row, at that item (⌘/Ctrl-click still opens its page). A row ticked
 // off in place (faded, `.gone`) is done: Process skips it. Stopping (×, Esc) redraws the list if an item was edited.
 (() => {
@@ -68,6 +69,14 @@
     waiting: () => save({project_id: 'h0', step: 'waiting'}),
   };
   fitFrame(frame);  // app.js
+  // Filed, finished or abandoned on its own page (the frame's project select, ✓, ✕): dealt with, so on to the next.
+  frame.addEventListener('load', () => {
+    const form = frame.contentDocument?.querySelector('main form.edit');
+    if (!li || !dialog.open || !form || form.hasAttribute('data-inbox')) return;
+    li.remove();
+    refreshNav();
+    next();
+  });
   // Stopping saves the item's edits first (a conflict keeps it open), and redraws the list if it changed.
   const stop = async () => {
     if (busy) return;

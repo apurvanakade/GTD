@@ -4,15 +4,13 @@
 {% block heading %}{% endblock %}
 {% block body %}
 {# Title and notes save themselves (autosave.js); every other field saves when it's changed (static/app.js). #}
-{#- In its overlay's frame (embed), the form stays in the frame; only ✓→ and delete-for-good leave it, for the page. #}
-<form method="post" class="edit"{% if embed %} target="_self"{% endif %} data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
+{#- In a frame (embed: its overlay, or Process), the form stays in the frame; only ✓→ and delete-for-good leave it, for
+    the page. data-inbox tells Process the item is still to be processed. #}
+<form method="post" class="edit"{% if embed %} target="_self"{% endif %}{% if t.inbox %} data-inbox{% endif %} data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
   <button hidden>Save</button>{# the default, so Enter in a field saves #}
   {% set running = timer and timer.task_id == t.id %}
   <div class="title-line">
     <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
-    {#- Inside Process only the item itself is edited: Process files, times and finishes it. #}
-    {% set process = embed == 'process' %}
-    {% if not process %}
     {# The timer, with the time spent; while running, the total ticks. #}
     {% if running or t.state == 'open' or seconds %}<span class="task-timer{{ ' on' if running }}">
       {% if running %}<button formaction="{{ url_for('timer_stop') }}" title="Stop the timer" aria-label="Stop the timer">■</button>
@@ -28,11 +26,10 @@
     {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" formtarget="_top" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
     <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
     {% endif %}
-    {% endif %}
   </div>
-  <textarea name="notes" rows="{{ 1 if process else 3 }}" placeholder="Notes">{{ t.notes }}</textarea>
+  <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
-  {% if not process %}<div class="fields">
+  <div class="fields">
     <label>Project
       <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
       {%- if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
@@ -44,7 +41,7 @@
         {% for s in (['next', 'waiting', 'later'] if t.project_id else ['next', 'waiting', 'someday']) %}<option{% if s == t.step %} selected{% endif %}>{{ s }}</option>{% endfor %}
       </select>
     </label>{% endif %}
-  </div>{% endif %}
+  </div>
   <div class="fields">
     {#- Each .when hint shows how its box reads, as you type (static/app.js, /parse/<kind>). #}
     {#- A someday task's date is its tickler: out of sight until then, then back in the Inbox. #}

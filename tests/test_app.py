@@ -901,7 +901,7 @@ def test_task_page_timer_sits_on_the_title_line(client, conn):
 
 def test_a_task_opens_only_in_a_frame(client, conn):
     """No task page of its own: /tasks/<id> goes to the task's list with ?task=<id>, whose overlay frames
-    /tasks/<id>?embed=task, the whole page. Process's frame (?embed=process) edits only the item."""
+    /tasks/<id>?embed=task, the whole page; so does Process's (?embed=process)."""
     seed(conn)
     home = lambda tid: client.get(f"/tasks/{tid}").location
     assert home(2) == "/projects/1?task=2"  # a project's step: its project
@@ -920,7 +920,7 @@ def test_a_task_opens_only_in_a_frame(client, conn):
     assert 'name="project_id"' in task and "Start the timer" in task and 'class="task-dialog"' not in task
     tid = db.add_task(conn, "ring Bob")
     page = client.get(f"/tasks/{tid}?embed=process").get_data(as_text=True)
-    assert 'name="recur"' in page and 'name="due_date"' in page and 'name="project_id"' not in page and "Start the timer" not in page
+    assert 'name="project_id"' in page and "Start the timer" in page and 'data-inbox' in page  # the same page
     for mode in ("task", "process"):
         assert client.post(f"/tasks/{tid}?embed={mode}", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed={mode}")
 

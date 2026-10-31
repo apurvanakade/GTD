@@ -1092,7 +1092,10 @@ def test_process_walks_the_inbox_one_question_at_a_time(page, live, conn):
     page.keyboard.press("Escape")
     page.get_by_role("button", name="Process").click()
     item.locator("main input[name=title][value='legacy orphan']").wait_for()  # the top row first
-    assert item.locator("select[name=project_id]").count() == 0 and item.locator("nav").is_hidden()  # Process files it
+    assert item.locator("nav").is_hidden()
+    item.get_by_role("button", name="Start the timer").click()  # the whole task page: timed while it's processed
+    item.get_by_role("button", name="Stop the timer").wait_for()
+    assert db.timer_running(conn)["task_id"] == orphan and dialog.locator(".left").text_content() == "2 left"
     assert dialog.locator("section:not([hidden])").count() == 1  # one question at a time
     dialog.get_by_role("button", name="No").click()
     dialog.get_by_role("button", name="Trash").click()
@@ -1137,8 +1140,9 @@ def test_process_keys_back_and_next_action_with_a_date(page, live, conn):
     item.locator("main input[name=title][value='inbox item']").wait_for()
     t = db.get_task(conn, orphan)
     assert (t["title"], t["recur"], t["ground"], t["step"], t["due_date"]) == ("call the legacy orphan", "weekly", 1, "next", "2026-10-23")
-    page.keyboard.press("Escape")
-    assert dialog.is_hidden() and row(page, "inbox item").count() == 1
+    with page.expect_navigation():  # finished on its own page: Process moves on, here to inbox zero
+        item.get_by_role("button", name="Done").click()
+    assert db.get_task(conn, 1)["state"] == "done" and page.locator("main li.task[data-id]").count() == 0
 
 
 def test_process_skips_ticked_rows_and_reloads_after_an_edit(page, live, conn):
