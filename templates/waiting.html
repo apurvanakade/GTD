@@ -1,25 +1,16 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, project_select, add_form, pin_button, move_panel, project_card with context %}
+{% from "_task.html" import row, date_input, project_select, add_form, pin_button, move_panel, project_list with context %}
 {% block title %}Waiting for{% endblock %}
-{% block actions %}{% if groups|map(attribute=1)|select|list %}<button type="button" class="peek-all">Expand all</button>{% endif %}
-  {%- if groups|map(attribute=2)|select|list %}{{ pin_button() }}{% endif %}{% endblock %}
+{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}
+  {%- if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('waiting_add'), 'Waiting for… (who, what)', marks=True) %}
   {{ project_select() }}
   {{ date_input(placeholder='follow up on…') }}
 {% endcall %}
-{# One group per area, as on Someday: its waiting projects (drag to reorder or into another area), then the waiting
-   steps of its projects; H0's waiting tasks come first. #}
-{% if groups %}<div class="area-groups">
-  {% for area, ps, ts in groups %}<section class="area-group">
-    <h2 class="area-head">{% if area %}<a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a>
-      {%- else %}<a href="{{ url_for('h0_view') }}">H0 · ground level</a>{% endif %}</h2>
-    {% if area %}<ul class="tasks cards" data-reorder="{{ url_for('projects_order', status='waiting') }}" data-area="{{ area.id }}">
-      {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
-    </ul>{% endif %}
-    {% if ts %}<ul class="tasks">{% for t in ts %}{{ row(t) }}{% endfor %}</ul>{% endif %}
-  </section>{% endfor %}
-</div>
-{% else %}<p class="empty clear">Nothing delegated.</p>{% endif %}
-{% if groups|map(attribute=2)|select|list %}{{ move_panel('waiting', reload=True) }}{% endif %}
+{# Waiting projects (drag to reorder), then waiting tasks: H0's first, then project steps. #}
+{% if projects %}{{ project_list(projects, steps, 'waiting', '') }}{% endif %}
+{% if tasks %}<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>{% endif %}
+{% if not (projects or tasks) %}<p class="empty clear">Nothing delegated.</p>{% endif %}
+{% if tasks %}{{ move_panel('waiting', reload=True) }}{% endif %}
 {% endblock %}

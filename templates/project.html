@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form, area_select, tally, pin_button, move_panel, tickler with context %}
+{% from "_task.html" import row, date_input, add_form, tally, pin_button, move_panel, tickler with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-{# The title line: status and area save as soon as they're picked; title and notes save themselves (autosave.js). #}
+{# The title line: status saves as soon as they're picked; title and notes save themselves (autosave.js). #}
 <form method="post" class="project" data-autosave="{{ url_for('autosave', kind='projects', id=p.id) }}">
   <button hidden>Save</button>{# the default, so Enter in the title saves #}
   <div class="title-line">
@@ -12,7 +12,6 @@
     <select name="status" data-submit aria-label="Status" title="Status: saves when picked">
       {% for s in ['active', 'waiting', 'someday', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>
-    {{ area_select(p.area_id, keep=area, submit=True) }}
     {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
     {% if tasks %}{{ pin_button() }}{% endif %}
     {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}

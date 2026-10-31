@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_deck.html" import stepper %}
-{% from "_task.html" import add_form, someday_area_select with context %}
+{% from "_task.html" import add_form, someday_kind_select with context %}
 {% block title %}Weekly review{% endblock %}
 {# One step shows at a time; the rail of dots (ticked, current, to do) switches between them. #}
 {% macro card(key, label, hint, n=none) %}
@@ -15,7 +15,7 @@
 {% block actions %}{{ stepper('review', 'step', steps, step, checked) }}{% endblock %}
 {% block body %}
 {#- New ideas: the page's add line, above the deck as on Horizons. #}
-{% if step == 'creative' %}{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ someday_area_select() }}{% endcall %}{% endif %}
+{% if step == 'creative' %}{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ someday_kind_select() }}{% endcall %}{% endif %}
 <ol class="deck review">
   {#- Get clear #}
   {% call card('collect', 'Collect loose ends', 'Desktop, downloads, email, notes, tabs → Inbox.') %}{% endcall %}

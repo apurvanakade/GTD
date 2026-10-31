@@ -71,7 +71,7 @@
     if (!t || !dragged) return;
     e.preventDefault();
     if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
-    // The panel stays open for the name; Enter moves it into a new project in the target's area, Esc or clicking away cancels.
+    // The panel stays open for the name; Enter moves it into a new project, Esc or clicking away cancels.
     naming = {rows: dragged, target: t};
     body.classList.add('naming');
     t.classList.add('naming');
@@ -83,7 +83,7 @@
       if (e.key === 'Escape') { e.preventDefault(); close(); }
       if (e.key === 'Enter' && name.value.trim()) {
         e.preventDefault();
-        move(naming.rows, {new_project: name.value.trim(), area_id: naming.target.dataset.area});
+        move(naming.rows, {new_project: name.value.trim()});
         close();
       }
     });

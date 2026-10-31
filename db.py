@@ -24,8 +24,7 @@ CREATE TABLE IF NOT EXISTS projects (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done', 'abandoned')),
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  completed_at TEXT,
-  area_id INTEGER REFERENCES horizons(id)
+  completed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY,
@@ -56,8 +55,7 @@ CREATE TABLE IF NOT EXISTS horizons (
   level TEXT NOT NULL CHECK (level IN ('purpose', 'vision', 'goal', 'area')),
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  archived_at TEXT
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT INTO horizons (level, title) SELECT 'purpose', 'Purpose & principles'
   WHERE NOT EXISTS (SELECT 1 FROM horizons WHERE level = 'purpose');
@@ -104,7 +102,7 @@ SCHEMA_VERSION = zlib.crc32(SCHEMA.encode()) & 0x7FFFFFFF
 
 # State changes via complete/abandon/revive. remind_at is a UTC ISO time; reminded_at is set once it has been sent.
 TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground", "position", "remind_at"}
-PROJECT_FIELDS = {"title", "notes", "status", "area_id"}  # area_id: an H2 area (a horizons row), required
+PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
 TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox
@@ -119,7 +117,6 @@ VISIBLE_NEXT = f"{NEXT} AND {READY}"
 DUE_NEXT = f"{NEXT} AND t.due_date <= ?"  # the nav count: due today or overdue only
 H0_NEXT = "t.state = 'open' AND t.ground AND t.step = 'next'"  # the H0 tab; H0's waiting tasks are on Waiting
 VISIBLE_H0 = f"{H0_NEXT} AND t.due_date <= ?"  # the tab's count: due today or overdue only
-OPEN_PROJECT = "('active', 'waiting', 'someday')"  # project statuses still in play; an area holding one is open
 STEP_ORDER = """CASE WHEN t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2
   WHEN t.step = 'someday' THEN 3 ELSE 4 END"""
 
@@ -225,7 +222,6 @@ def _reopen_project(c, id):
         status = "active" if p["status"] == "done" else "someday"
         c.execute("UPDATE projects SET status = ?, completed_at = NULL, position = ? WHERE id = ?",
                   (status, _top(c, "projects", "status = ?", status), p["id"]))
-        _reopen_area(c, p["id"])
 
 
 def _fit_step(fields, current=None, today=None):
@@ -457,31 +453,14 @@ def suggest(c, q, limit=10):
 
 @atomic
 def add_project(c, title, **fields):
-    _check_area(c, {"area_id": None, **fields})
     top = _top(c, "projects", "status = ?", fields.get("status", "active"))  # a new project goes to the top
     id = _insert(c, "projects", PROJECT_FIELDS, {"title": title, **fields})
     c.execute("UPDATE projects SET position = ? WHERE id = ?", (top, id))
-    _reopen_area(c, id)
     return id
-
-
-def _check_area(c, fields):
-    """Every project is in an area: a new one needs one, and one can only move to another."""
-    if "area_id" in fields and not c.execute(
-            "SELECT 1 FROM horizons WHERE id = ? AND level = 'area'", (fields["area_id"],)).fetchone():
-        raise ValueError(f"not an area: {fields['area_id']}")
-
-
-def _reopen_area(c, project_id):
-    """An archived area with an open project in it isn't archived any more, as a done project with an open task
-    isn't done."""
-    c.execute(f"""UPDATE horizons SET archived_at = NULL WHERE archived_at IS NOT NULL AND id =
-        (SELECT area_id FROM projects WHERE id = ? AND status IN {OPEN_PROJECT})""", (project_id,))
 
 
 @atomic
 def update_project(c, id, **fields):
-    _check_area(c, fields)
     if "status" in fields:
         # A project changing lists goes to the top of the new one, rather than to its place in the old one.
         c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END,"
@@ -491,7 +470,6 @@ def update_project(c, id, **fields):
         if fields["status"] != "someday":  # a tickler date is for someday projects only
             set_project_tickle(c, id, None)
     _update(c, "projects", PROJECT_FIELDS, id, fields)
-    _reopen_area(c, id)
 
 
 def project_deletable(c, id):
@@ -534,7 +512,6 @@ def revive_project(c, id):
         WHERE project_id = ? AND state = 'abandoned' AND completed_at = ?""", (id, p["completed_at"]))
     c.execute("""UPDATE projects SET status = 'someday', completed_at = NULL, position = ?
         WHERE id = ?""", (_top(c, "projects", "status = ?", "someday"), id))
-    _reopen_area(c, id)
 
 
 def abandoned_projects(c, limit=100):
@@ -557,10 +534,9 @@ def get_project(c, id):
     return c.execute(f"{PROJECT_SELECT} WHERE p.id = ?", (id,)).fetchone()
 
 
-def projects(c, status="active", area_id=None):
-    """Projects with the given status (and area) in the order dragged, new ones on top."""
-    return c.execute(f"""{PROJECT_SELECT} WHERE p.status = ? AND (? IS NULL OR p.area_id = ?)
-        ORDER BY p.position, p.id""", (status, area_id, area_id)).fetchall()
+def projects(c, status="active"):
+    """Projects with the given status in the order dragged, new ones on top."""
+    return c.execute(f"{PROJECT_SELECT} WHERE p.status = ? ORDER BY p.position, p.id", (status,)).fetchall()
 
 
 def _least_reviewed(rows):
@@ -605,12 +581,6 @@ def set_project_tickle(c, id, tickle_on):
         c.execute("DELETE FROM project_tickles WHERE project_id = ?", (id,))
 
 
-def by_area(c, projects):
-    """[(area, its projects)] in area order, areas without any left out."""
-    groups = [(a, [p for p in projects if p["area_id"] == a["id"]]) for a in areas(c, archived=None)]
-    return [(a, ps) for a, ps in groups if ps]
-
-
 @atomic
 def reorder_projects(c, status, ids):
     """Number the projects with this status in the given order; other projects' ids are ignored."""
@@ -618,13 +588,11 @@ def reorder_projects(c, status, ids):
                   [(n, id, status) for n, id in enumerate(ids)])
 
 
-def open_steps(c, status="active", area_id=None):
-    """{project id: its open steps in project-page order}, for every project with the given status (None: any),
-    optionally only in one area."""
+def open_steps(c, status="active"):
+    """{project id: its open steps in project-page order}, for every project with the given status."""
     steps = {}
-    for t in c.execute(f"""{TASK_SELECT} WHERE (? IS NULL OR p.status = ?) AND (? IS NULL OR p.area_id = ?)
-            AND t.project_id IS NOT NULL AND t.state = 'open' ORDER BY t.position, t.id DESC""",
-            (status, status, area_id, area_id)):
+    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.state = 'open' ORDER BY t.position, t.id DESC""",
+                       (status,)):
         steps.setdefault(t["project_id"], []).append(t)
     return steps
 
@@ -661,27 +629,15 @@ def done_since(c, since):
 
 
 def project_groups(c):
-    """Every project, for pickers (the task dropdown, Inbox's drop panel): (label, projects, area id) for each open
-    area, even an empty one (a new project can start there), then done ones.
-    Within an area active projects come first, then waiting, then someday, each in its list's own order."""
+    """Every project, for pickers (the task dropdown, Inbox's drop panel): [(label, projects, offers "＋ New…")]:
+    the open ones (active, then waiting, then someday, each in its list's own order; even with none, a new project
+    can start there), then done ones if any."""
     rows = c.execute("""SELECT * FROM projects WHERE status != 'abandoned'
         ORDER BY position, id""").fetchall()
     rank = {"active": 0, "waiting": 1, "someday": 2}
     live = sorted((p for p in rows if p["status"] in rank), key=lambda p: rank[p["status"]])  # stable: keeps the drag order
-    groups = [(a["title"], [p for p in live if p["area_id"] == a["id"]], a["id"]) for a in areas(c)]
-    groups.append(("Done", [p for p in rows if p["status"] == "done"], None))
-    return [g for g in groups if g[1] or g[2]]
-
-
-def waiting_groups(c):
-    """The Waiting page: [(area, its waiting projects, the waiting steps of its projects)] in area order, areas with
-    neither left out, after (None, [], H0's waiting tasks) when there are any."""
-    tasks, ps = tasks_with_step(c, "waiting"), projects(c, "waiting")
-    area_of = dict(c.execute("SELECT id, area_id FROM projects").fetchall())
-    groups = [(a, [p for p in ps if p["area_id"] == a["id"]],
-               [t for t in tasks if t["project_id"] and area_of[t["project_id"]] == a["id"]]) for a in areas(c, archived=None)]
-    h0 = [t for t in tasks if t["ground"]]
-    return [(None, [], h0)] * bool(h0) + [g for g in groups if g[1] or g[2]]
+    done = [p for p in rows if p["status"] == "done"]
+    return [("Projects", live, True)] + [("Done", done, False)] * bool(done)
 
 
 def stalled_projects(c):
@@ -696,41 +652,19 @@ def dated_tasks(c, start, end):
         ORDER BY t.due_date, t.created_at DESC, t.id DESC""", (start.isoformat(), end.isoformat())).fetchall()
 
 
-# --- horizons (H5 purpose .. H2 areas) -------------------------------------
+# --- horizons (H5 purpose .. H2 areas: notes of their own, apart from projects) --
 
 HORIZON_FIELDS = {"level", "title", "notes"}
 SINGLE_HORIZONS = ("purpose", "vision")  # exactly one note each; can't be deleted
 
 
 def horizons(c):
-    """{level: rows}, each alphabetical; an area row counts its open projects. Archived areas are left out."""
-    rows = c.execute(f"""SELECT h.*, (SELECT count(*) FROM projects p WHERE p.area_id = h.id AND p.status IN {OPEN_PROJECT})
-        AS project_count FROM horizons h WHERE h.archived_at IS NULL ORDER BY lower(h.title)""").fetchall()
+    """{level: rows}, each alphabetical."""
+    rows = c.execute("SELECT * FROM horizons ORDER BY lower(title)").fetchall()
     out = {level: [] for level in ("purpose", "vision", "goal", "area")}
     for h in rows:
         out[h["level"]].append(h)
     return out
-
-
-def areas(c, archived=False):
-    """Areas, alphabetical: open ones, archived ones (archived=True, newest first), or all (None)."""
-    where = {False: "AND archived_at IS NULL", True: "AND archived_at IS NOT NULL", None: ""}[archived]
-    order = "archived_at DESC, id DESC" if archived else "lower(title), id"
-    return c.execute(f"SELECT * FROM horizons WHERE level = 'area' {where} ORDER BY {order}").fetchall()
-
-
-@atomic
-def archive_area(c, id):
-    """An area is over (a term's course, say) once none of its projects is open; done projects stay in it."""
-    if c.execute(f"SELECT 1 FROM projects WHERE area_id = ? AND status IN {OPEN_PROJECT}", (id,)).fetchone():
-        return False
-    c.execute("UPDATE horizons SET archived_at = datetime('now') WHERE id = ? AND level = 'area'", (id,))
-    return True
-
-
-@atomic
-def unarchive_area(c, id):
-    c.execute("UPDATE horizons SET archived_at = NULL WHERE id = ?", (id,))
 
 
 @atomic
@@ -749,31 +683,22 @@ def get_horizon(c, id):
 
 @atomic
 def delete_horizon(c, id):
-    """Purpose and vision can't be deleted, nor an area any project (done ones too) is in."""
-    if not area_empty(c, id):
-        return False
+    """Purpose and vision can't be deleted."""
     c.execute("DELETE FROM horizons WHERE id = ? AND level NOT IN ('purpose', 'vision')", (id,))
-    return True
-
-
-def area_empty(c, id):
-    """No project (done ones too) is in it."""
-    return not c.execute("SELECT 1 FROM projects WHERE area_id = ?", (id,)).fetchone()
 
 
 # --- tickler ---------------------------------------------------------------
 
 # H0 someday tasks and someday projects whose tickler date (?1, today) has come: back in the Inbox until dealt with.
-TICKLED = f"""SELECT 'task' AS kind, t.id, t.title, t.due_date AS tickle_on, NULL AS area_id FROM tasks t
+TICKLED = f"""SELECT 'task' AS kind, t.id, t.title, t.due_date AS tickle_on FROM tasks t
     WHERE {MAYBE} AND t.due_date <= ?1
-  UNION ALL SELECT 'project', p.id, p.title, k.tickle_on, p.area_id
+  UNION ALL SELECT 'project', p.id, p.title, k.tickle_on
     FROM project_tickles k JOIN projects p ON p.id = k.project_id WHERE p.status = 'someday' AND k.tickle_on <= ?1"""
 
 
 def tickled(c, today):
-    """TICKLED's rows, each with a `kind` ("task" or "project") and a project's area title; soonest date first."""
-    return c.execute(f"""SELECT x.*, h.title AS area_title FROM ({TICKLED}) x LEFT JOIN horizons h ON h.id = x.area_id
-        ORDER BY x.tickle_on, x.title""", (today.isoformat(),)).fetchall()
+    """TICKLED's rows, each with a `kind` ("task" or "project"); soonest date first."""
+    return c.execute(f"SELECT * FROM ({TICKLED}) ORDER BY tickle_on, title", (today.isoformat(),)).fetchall()
 
 
 # --- turning a task into a reference item -----------------------------------
@@ -917,12 +842,11 @@ def step_totals(c, project_id, now):
 
 
 def week_totals(c, since, now):
-    """[(area title, or H0 / inbox, seconds)] for entries started since `since`, most time first."""
-    rows = c.execute(f"""SELECT CASE WHEN p.id IS NOT NULL THEN a.title
+    """[(project title, or H0 / inbox, seconds)] for entries started since `since`, most time first."""
+    rows = c.execute(f"""SELECT CASE WHEN p.id IS NOT NULL THEN p.title
           WHEN t.ground THEN 'H0 · ground level' WHEN t.state = 'open' THEN 'Inbox (unprocessed)' ELSE '(no project)' END
           AS label, sum({SECONDS}) AS secs
         FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id
-          LEFT JOIN horizons a ON a.id = p.area_id
         WHERE e.start_time >= ? GROUP BY label ORDER BY secs DESC""", (iso(now), iso(since))).fetchall()
     return [(r["label"], round(r["secs"])) for r in rows]
 

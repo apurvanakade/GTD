@@ -8,7 +8,7 @@
    date, no date, or let go). They don't drag. #}
 {% if tickled %}<ul class="tasks tickled">{% for x in tickled %}
   <li class="task"><span class="check" title="Back from someday / maybe: its tickler date has come">↩</span><span class="name"><a class="title" href="{{ someday_url(x) }}">{{ x.title }}</a>
-    <span class="proj">{{ x.area_title ~ ' · someday project' if x.kind == 'project' else 'H0 · someday' }}</span></span>
+    <span class="proj">{{ 'someday project' if x.kind == 'project' else 'H0 · someday' }}</span></span>
     <span class="meta"><span class="date" title="Tickler date">{{ x.tickle_on }}</span></span></li>
 {% endfor %}</ul>{% endif %}
 {% if tasks %}

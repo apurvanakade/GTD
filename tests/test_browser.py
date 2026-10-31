@@ -11,7 +11,7 @@ from werkzeug.serving import make_server
 
 import db
 from app import app, local_input
-from conftest import NOW, add_project, seed
+from conftest import NOW, seed
 
 pytestmark = pytest.mark.browser
 sync_api = pytest.importorskip("playwright.sync_api")
@@ -281,8 +281,7 @@ def test_drag_reorders_project_steps(page, live, conn):
 
 
 def test_drag_reorders_someday_projects(page, live, conn):
-    home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
-    add_project(conn, "Another dream", status="someday", area_id=home)  # Projects shares the code; this covers both
+    db.add_project(conn, "Another dream", status="someday")  # Projects shares the code; this covers both
     page.goto(live + "/someday?tickled=1")
     page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
     titles = lambda: page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts()  # not the someday items
@@ -295,35 +294,6 @@ def test_drag_reorders_someday_projects(page, live, conn):
     assert titles() == ["Someday proj", "Another dream"]
 
 
-def test_dragging_a_project_into_another_area_changes_its_area(page, live, conn):
-    ids = {p["title"]: p["id"] for p in db.projects(conn)}
-    work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
-    db.add_task(conn, "pack", project_id=add_project(conn, "Office move", area_id=work), step="next")
-    page.goto(live + "/projects")
-    group = lambda title: page.locator("section.area-group", has=page.locator("h2.area-head", has_text=title)).locator("ul")
-    with page.expect_response(lambda r: r.url.endswith("/order/active")) as saved:
-        row(page, "Kitchen").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 4})
-    assert saved.value.status == 204
-    assert db.get_project(conn, ids["Kitchen"])["area_id"] == work
-    assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move"]
-    # Moving Home's last active project empties its group, which goes.
-    with page.expect_response(lambda r: r.url.endswith("/order/active")):
-        page.locator("li.task", has_text="Stalled").locator(".grip").drag_to(row(page, "Office move"), target_position={"x": 40, "y": 20})
-    assert db.get_project(conn, ids["Stalled"])["area_id"] == work
-    assert page.locator("h2.area-head", has_text="Home").count() == 0
-    page.reload()
-    assert group("Work").locator("li.task > a.title").all_inner_texts() == ["Kitchen", "Office move", "⚠ Stalled"]
-
-
-def test_project_page_area_saves_on_pick(page, live, conn):
-    work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
-    page.goto(live + "/projects/1")
-    with page.expect_navigation():
-        page.get_by_label("Area").select_option(str(work))
-    assert db.get_project(conn, 1)["area_id"] == work
-    assert page.url == live + "/projects/1"
-
-
 def test_slash_on_inbox_focuses_its_add_box(page, live):
     page.goto(live + "/inbox")
     page.keyboard.press("/")
@@ -333,7 +303,7 @@ def test_slash_on_inbox_focuses_its_add_box(page, live):
 
 def test_task_rows_are_one_height(page, live, conn):
     """A Make next or Activate button mustn't make its row taller than the others."""
-    add_project(conn, "Plain dream", status="someday", area_id=next(a["id"] for a in db.areas(conn) if a["title"] == "Home"))
+    db.add_project(conn, "Plain dream", status="someday")
     # The project cards are compact, so compared among themselves (Someday's H0 task rows are task rows).
     for url, n, rows in (("/projects/1", 3, "ul.tasks"), ("/someday?tickled=1", 2, "ul.tasks.cards")):
         page.goto(live + url)
@@ -405,13 +375,12 @@ def test_new_option_reveals_the_name_box(page, live):
     page.goto(live + "/tasks/2")
     box = page.locator("input[name=new_project]")
     assert box.is_hidden()
-    page.select_option("select[name=project_id]", "__new__:4")  # Home's "＋ New project…": no save yet, it needs a name
+    page.select_option("select[name=project_id]", "__new__")  # "＋ New project…": no save yet, it needs a name
     assert box.is_visible()
     page.fill("input[name=new_project]", "Garage")
     with page.expect_navigation():
         page.locator("input[name=new_project]").blur()
     assert page.locator("select[name=project_id] option:checked").inner_text() == "Garage"
-    assert page.locator("select[name=project_id] option:checked").evaluate("o => o.parentElement.label") == "Home"
 
 
 def test_clicking_a_calendar_day_sets_the_add_date(page, live):
@@ -448,7 +417,7 @@ def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
 
 
 def test_project_page_columns_line_up_whatever_the_step_and_date(page, live, conn):
-    pid = add_project(conn, "Columns")
+    pid = db.add_project(conn, "Columns")
     rows = {"n": ("next", "2026-10-20"), "wd": ("waiting", "2026-10-30"), "w": ("waiting", None),
             "ld": ("later", "2026-11-11"), "l": ("later", None)}  # next is overdue, so its date is bold
     for title, (step, due) in rows.items():
@@ -570,7 +539,7 @@ def test_autosave_conflict_keep_mine_and_merge(page, live, conn):
 
 
 def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
-    pid = add_project(conn, "Elsewhere", notes="old")
+    pid = db.add_project(conn, "Elsewhere", notes="old")
     page.goto(live + f"/projects/{pid}")
     db.update_project(conn, pid, notes="new from phone")
     page.evaluate("dispatchEvent(new Event('focus'))")
@@ -639,22 +608,21 @@ def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
 
 def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"][data-area="4"]')
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
     name = page.locator(".drop-panel .naming input[name=new_project]")
     name.wait_for(state="visible")
-    assert page.locator(".drop-panel input[name=new_project]:visible").count() == 1  # only the area dropped on
+    assert page.locator(".drop-panel input[name=new_project]:visible").count() == 1
     assert page.evaluate("document.activeElement.name") == "new_project"
     page.keyboard.type("Dragged")
     page.keyboard.press("Enter")
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
-    p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
-    assert (p["title"], db.get_horizon(conn, p["area_id"])["title"]) == ("Dragged", "Home")
+    assert db.get_project(conn, db.get_task(conn, 1)["project_id"])["title"] == "Dragged"
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
 
 
 def test_escape_cancels_naming_a_new_project(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"][data-area="4"]')
+    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
     page.locator(".drop-panel .naming input[name=new_project]").wait_for(state="visible")
     page.keyboard.press("Escape")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
@@ -667,7 +635,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     panel.wait_for(state="hidden")
     page.locator(".pin-panel").click()
     panel.wait_for(state="visible")
-    assert panel.locator("h3").all_text_contents() == ["Home", "Work", "Done"]
+    assert panel.locator("h3").all_text_contents() == ["Projects", "Done"]
     drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert panel.is_visible()  # still pinned after the drop
@@ -716,20 +684,16 @@ def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
     assert (db.get_task(conn, 4)["project_id"], db.get_task(conn, 4)["step"]) == (2, "waiting")
 
 
-def test_waiting_groups_by_area_and_drags_projects_between_them(page, live, conn):
-    """H0's waiting tasks first, then each area's waiting projects and steps; a project dragged into another area
-    moves there, and the area it left stays while it still holds a waiting step."""
-    work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
-    add_project(conn, "Visa", status="waiting", area_id=work)
+def test_waiting_lists_projects_then_tasks_and_drags_projects(page, live, conn):
+    """Waiting projects (dragged to reorder), then the waiting tasks, H0's first."""
+    db.add_project(conn, "Visa", status="waiting")
     page.goto(live + "/waiting")
-    group = lambda title: page.locator("section.area-group", has=page.locator("h2.area-head", has_text=title))
-    assert page.locator("h2.area-head").all_text_contents() == ["H0 · ground level", "Home", "Work"]
-    assert group("H0").locator("li.task a.title").all_inner_texts() == ["parcel from Ann"]
+    assert page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts() == ["Visa", "Waiting proj"]
+    assert page.locator("main ul.tasks:not([data-reorder]) > li.task a.title").all_inner_texts() == ["parcel from Ann", "quote from Bob"]
     with page.expect_response(lambda r: r.url.endswith("/order/waiting")) as saved:
         row(page, "Waiting proj").locator(".grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
-    assert db.get_project(conn, 3)["area_id"] == work
-    assert group("Home").locator("li.task a.title").all_inner_texts() == ["quote from Bob"]
+    assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj", "Visa"]
     # An H0 waiting task dropped on a project stays waiting.
     drag_to_panel(page, row(page, "parcel from Ann").locator(".title"), '[data-project="2"]')
     page.wait_for_function("document.querySelector('li.task[data-id=\"14\"] .proj')?.textContent === 'Stalled'")
@@ -761,7 +725,7 @@ def test_review_arrow_keys_move_between_steps(page, live):
 
 def test_long_title_wraps_instead_of_pushing_buttons_down(page, live, conn):
     long = "ask AI to download all the mir publication math physics and other science books " * 2
-    tid = db.add_task(conn, long.strip(), step="next", project_id=add_project(conn, "Mir publications archive"),
+    tid = db.add_task(conn, long.strip(), step="next", project_id=db.add_project(conn, "Mir publications archive"),
                       due_date="2026-10-22")  # today, so its band is open
     db.timer_start(conn, tid, NOW)
     page.set_viewport_size({"width": 1000, "height": 800})
@@ -828,15 +792,13 @@ def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
 
 def test_projects_and_someday_are_tight_lists(page, live, conn):
     """Projects, Waiting and Someday: plain rows, like task rows but tighter, no pill boxes."""
-    home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
-    add_project(conn, "Shed", area_id=home)
-    add_project(conn, "Boat", status="someday", area_id=home)
-    add_project(conn, "Deck", status="waiting", area_id=home)
+    db.add_project(conn, "Shed")
+    db.add_project(conn, "Boat", status="someday")
+    db.add_project(conn, "Deck", status="waiting")
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
     for url in ("/projects", "/waiting", "/someday?tickled=1"):
         page.goto(live + url)
-        group = page.locator("section.area-group", has=page.locator("h2.area-head", has_text="Home"))
-        rows = group.locator("ul > li.task")
+        rows = page.locator("ul.cards.plain > li.task")
         assert style(rows.first, "borderTopWidth") == "0px", url
         a, b = rows.nth(0).bounding_box(), rows.nth(1).bounding_box()
         assert a["height"] <= 30 and b["y"] - (a["y"] + a["height"]) <= 1, (url, a, b)

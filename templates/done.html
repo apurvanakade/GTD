@@ -2,12 +2,6 @@
 {% from "_task.html" import row with context %}
 {% block title %}Done{% endblock %}
 {% block body %}
-{% if archived %}
-<h2>Areas</h2>
-<ul class="tasks cards">
-  {% for h in archived %}<li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a><span class="meta">{{ h.archived_at|local_date }}</span></li>{% endfor %}
-</ul>
-{% endif %}
 <h2>Projects</h2>
 <ul class="tasks cards">
   {% for p in projects %}

@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "_task.html" import add_form, area_select, area_groups with context %}
+{% from "_task.html" import add_form, project_list with context %}
 {% block title %}Projects{% endblock %}
-{% block actions %}{% if groups %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
+{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
-{% call add_form(url_for('project_create'), 'New project – describe the outcome') %}{{ area_select(required=True) }}{% endcall %}
-{{ area_groups(groups, steps, 'active', 'No active projects.') }}
+{{ add_form(url_for('project_create'), 'New project – describe the outcome') }}
+{{ project_list(projects, steps, 'active', 'No active projects.') }}
 <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
 {% if show_done %}
 <h2>Completed</h2>

@@ -70,16 +70,16 @@
 <label class="tickler" title="Tickler: out of sight until this date, then back in the Inbox">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
 {% endmacro %}
 
-{# The one project list (db.project_groups(): each open area, then Done), as the task dropdown here
-   and as Inbox's drop panel in project_targets(). Each area starts with its own "＋ New project…" (value
-   __new__:<area id>), which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
+{# The one project list (db.project_groups(): the open projects, then Done), as the task dropdown here
+   and as Inbox's drop panel in project_targets(). The open ones start with "＋ New project…" (value __new__),
+   which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
    task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
 {% macro project_select(selected=none, h0=True, keep=none) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>
   {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
-  {% for label, ps, area in project_groups %}<optgroup label="{{ label }}">
-    {% if area %}<option value="__new__:{{ area }}">＋ New project…</option>{% endif %}
+  {% for label, ps, new in project_groups %}<optgroup label="{{ label }}">
+    {% if new %}<option value="__new__">＋ New project…</option>{% endif %}
     {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{{ ' · ' ~ p.status if p.status in ('waiting', 'someday') }}</option>{% endfor %}
   </optgroup>{% endfor %}
   {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
@@ -93,8 +93,8 @@
 {% if current != 'h0' %}<div class="target" data-project="h0">H0 · ground level (no project)</div>{% endif %}
 {% if current != 'someday' %}<div class="target maybe" data-project="someday" title="Not committed to: an H0 someday task">Someday / maybe</div>{% endif %}
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
-{% for label, ps, area in project_groups %}<section class="group"><h3>{{ label }}</h3>
-  {% if area %}<div class="target new" data-project="__new__" data-area="{{ area }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project in {{ label }}" autocomplete="off"></div>{% endif %}
+{% for label, ps, new in project_groups %}<section class="group"><h3>{{ label }}</h3>
+  {% if new %}<div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>{% endif %}
   {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status in ('waiting', 'someday') %} <span class="meta">{{ p.status }}</span>{% endif %}</div>{% endfor %}</section>{% endfor %}
 {% endmacro %}
 
@@ -109,25 +109,15 @@
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}
 
-{# Someday's add line: no area makes an H0 someday task, an area a someday project there. #}
-{% macro someday_area_select() %}
-<select name="area_id" aria-label="Kind" title="A single item, or a project in an area">
+{# Someday's add line: a single item (an H0 someday task) or a someday project. #}
+{% macro someday_kind_select() %}
+<select name="kind" aria-label="Kind" title="A single item, or a project">
   <option value="">single item</option>
-  <optgroup label="project in">{% for a in areas %}<option value="{{ a.id }}">{{ a.title }}</option>{% endfor %}</optgroup>
+  <option value="project">project</option>
 </select>
 {% endmacro %}
 
-{# The open areas (the context's `areas`), for a new project's add line and a project's page. `keep`: the project's
-   own area when it's archived, so saving leaves it there. #}
-{% macro area_select(selected=none, required=False, keep=none, submit=False) %}
-<select name="area_id" aria-label="Area"{% if required %} required{% endif %}{% if submit %} data-submit title="Area: saves when picked"{% endif %}>
-  {% if not selected %}<option value="">area…</option>{% endif %}{# a new project's placeholder; a project has one #}
-  {% for a in areas %}<option value="{{ a.id }}"{% if a.id == selected %} selected{% endif %}>{{ a.title }}</option>{% endfor %}
-  {% if keep and keep.archived_at %}<option value="{{ keep.id }}" selected>{{ keep.title }} (archived)</option>{% endif %}
-</select>
-{% endmacro %}
-
-{# A project as a card (Projects, Waiting, Someday, an area's page): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
+{# A project as a card (Projects, Waiting, Someday): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
    A someday one shows when the weekly review last looked at it, and offers Activate. #}
 {% macro project_card(p, steps) %}
 {% set stalled = p.stalled %}
@@ -144,17 +134,11 @@
 {# A tickler date still to come: faint, like the last review. #}
 {% macro until(tickle_on) %}{% if tickle_on and tickle_on > today %}<span class="until" title="Out of sight until then">until {{ tickle_on }}</span>{% endif %}{% endmacro %}
 
-{# Projects and Someday: one compact group per area (db.by_area()). Dragging a project into another group moves it to
-   that area (the reorder JS in static/app.js). #}
-{% macro area_groups(groups, steps, status, empty) %}
-{% if groups %}<div class="area-groups">
-  {% for area, ps in groups %}<section class="area-group">
-    <h2 class="area-head"><a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a></h2>
-    <ul class="tasks cards" data-reorder="{{ url_for('projects_order', status=status) }}" data-area="{{ area.id }}">
-      {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
-    </ul>
-  </section>{% endfor %}
-</div>
+{# Projects, Waiting and Someday: one list of tight project rows, dragged to reorder (static/app.js). #}
+{% macro project_list(ps, steps, status, empty) %}
+{% if ps %}<ul class="tasks cards plain" data-reorder="{{ url_for('projects_order', status=status) }}">
+  {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
+</ul>
 {% else %}<ul class="tasks cards"><li class="empty">{{ empty }}</li></ul>{% endif %}
 {% endmacro %}
 

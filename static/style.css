@@ -273,14 +273,10 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
 .task .remind { font-size: .75rem; filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task .proj::before { content: "▸ "; }
-.area-head { margin-bottom: 6px; }
-/* Projects and Someday: tight plain rows (no pill boxes), one group per area. */
-.area-groups .area-head { margin: 14px 0 2px; }
-.area-groups .tasks.cards { gap: 0; }
-.area-groups .tasks.cards > .task { min-height: 0; padding: 2px 6px; gap: 2px 8px; border: 0; border-radius: 6px; background: none; }
-.area-groups .tasks.cards > .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
-.area-head a { color: inherit; text-decoration: none; }
-.area-head a:hover { text-decoration: underline; }
+/* Projects, Waiting and Someday: tight plain rows (no pill boxes). */
+.tasks.cards.plain { gap: 0; }
+.tasks.cards.plain > .task { min-height: 0; padding: 2px 6px; gap: 2px 8px; border: 0; border-radius: 6px; background: none; }
+.tasks.cards.plain > .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
 .task form { margin: 0; }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
 .task.stalled .title { color: var(--warn); }
@@ -418,7 +414,7 @@ a.who:hover { color: var(--fg); }
   grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
 }
 .entry .entry-task { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry .entry-area { color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry .entry-project { color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry input {
   width: auto; padding: 4px 6px; border-color: transparent; background: transparent;
   color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums;
@@ -435,7 +431,7 @@ a.who:hover { color: var(--fg); }
   .history { grid-template-columns: 1fr auto auto; }
   .entry .entry-task { grid-column: 1 / 3; grid-row: 1; }
   .entry .actions { grid-column: 3; grid-row: 1; }
-  .entry .entry-area { grid-column: 1 / -1; grid-row: 2; }
+  .entry .entry-project { grid-column: 1 / -1; grid-row: 2; }
   .entry input[name="start"] { grid-column: 1; grid-row: 3; }
   .entry input[name="end"] { grid-column: 2; grid-row: 3; }
   .entry .dur { grid-column: 3; grid-row: 3; }

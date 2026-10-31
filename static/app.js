@@ -64,7 +64,7 @@ function capture() {
   inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
 }
 document.querySelector('.add-inbox').addEventListener('click', capture);
-// A field marked data-submit (the project page's status, area and tickler date)
+// A field marked data-submit (the project page's status and tickler date)
 // saves its form as soon as it's changed; a text box waits while its 📅 picker is open.
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
 // it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
@@ -175,8 +175,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   const s = c.dataset.start ? (Date.now() - c.dataset.start) / 1000 : +c.dataset.seconds + (Date.now() - loaded) / 1000;
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
-// Drag ⠿ to reorder a project's steps, or the projects on Projects and Someday; the new order is saved in the background.
-// There a project dragged into another area's group (same page, `data-area`) moves to that area.
+// Drag ⠿ to reorder a project's steps, or the projects on Projects, Waiting and Someday; the new order is saved in the background.
 (() => {
   let dragged = null, from = null;
   // Only a list's own rows count, not the steps a project row folds out.
@@ -194,7 +193,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     });
     list.addEventListener('dragover', e => {
       if (!dragged || 'pinned' in dragged.dataset) return;  // the next action only moves out, to another project
-      if (list !== from && !(list.dataset.reorder === from.dataset.reorder && 'area' in list.dataset)) return;
+      if (list !== from) return;
       const over = rows(list).find(li => li.contains(e.target));
       if (!over) return;
       e.preventDefault();
@@ -212,12 +211,6 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     dragged.removeAttribute('draggable');
     if (!list) { dragged = from = null; return; }  // moved out to another project (move.js)
     const body = new URLSearchParams({ids: rows(list).map(li => li.dataset.id).join(',')});
-    if (list !== from) {
-      body.set('moved', dragged.dataset.id);
-      body.set('area_id', list.dataset.area);
-      // The area it left is empty now (no projects or waiting tasks): drop its group.
-      if (!rows(from).length && !from.closest('.area-group')?.querySelector('ul:not([data-reorder]) > li')) (from.closest('.area-group') || from).remove();
-    }
     dragged = from = null;
     post(list.dataset.reorder, body);
   });
