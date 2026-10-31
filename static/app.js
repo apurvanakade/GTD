@@ -215,8 +215,8 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     if (list !== from) {
       body.set('moved', dragged.dataset.id);
       body.set('area_id', list.dataset.area);
-      // The area it left is empty now (no projects, no someday items): drop its group.
-      if (!rows(from).length && !from.closest('.area-group')?.querySelector('.maybes')) (from.closest('.area-group') || from).remove();
+      // The area it left is empty now (no projects, no someday items or waiting tasks): drop its group.
+      if (!rows(from).length && !from.closest('.area-group')?.querySelector('ul:not([data-reorder]) > li')) (from.closest('.area-group') || from).remove();
     }
     dragged = from = null;
     post(list.dataset.reorder, body);

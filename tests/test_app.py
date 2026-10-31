@@ -86,7 +86,9 @@ def test_recurring_waiting_step_and_h0_task_keep_their_place(client, conn):
     h = db.add_task(conn, "stretch", ground=1, recur="daily", due_date="2026-10-22")
     assert db.get_task(conn, db.complete_task(conn, w, TODAY))["step"] == "waiting"
     new = db.get_task(conn, db.complete_task(conn, h, TODAY))
-    assert (new["ground"], new["step"]) == (1, None)
+    assert (new["ground"], new["step"]) == (1, "next")
+    hw = db.add_task(conn, "chase Ann", ground=1, step="waiting", recur="weekly", due_date="2026-10-22")
+    assert db.get_task(conn, db.complete_task(conn, hw, TODAY))["step"] == "waiting"
 
 
 def test_project_cannot_complete_with_open_tasks(client, conn):
@@ -158,17 +160,17 @@ def test_tasks_need_a_project_or_h0(client, conn):
         assert db.get_task(conn, tid)["inbox"]  # repeating doesn't exempt it
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": "h0"})
     t = db.get_task(conn, tid)
-    assert (t["step"], t["ground"], t["project_id"]) == (None, 1, None)
+    assert (t["step"], t["ground"], t["project_id"]) == ("next", 1, None)
     assert t["title"] in client.get("/h0").get_data(as_text=True)
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": str(pid)})
     assert db.get_task(conn, tid)["ground"] == 0  # picking a project clears H0
 
     item = db.add_task(conn, "inbox item")
     client.post(f"/tasks/{item}", data={"title": "inbox item", "project_id": "h0"})
-    assert db.get_task(conn, item)["ground"] and db.get_task(conn, item)["step"] is None
+    assert db.get_task(conn, item)["ground"] and db.get_task(conn, item)["step"] == "next"
     assert [t["id"] for t in db.h0_actions(conn)] == [item]
     assert "inbox item" in client.get("/horizons?level=ground").data.decode()  # H0 tasks
-    assert f'href="/projects/{pid}">P</a>' in client.get("/horizons?level=projects").data.decode()  # H1 projects
+    assert f'href="/projects/{pid}"' in client.get("/horizons?level=projects").data.decode()  # H1 projects
 
     stray = db.add_task(conn, "stray wait", step="waiting")  # no project, not H0: it's an inbox item
     assert db.get_task(conn, stray)["inbox"] and stray not in [t["id"] for t in db.next_list(conn)]
@@ -197,21 +199,65 @@ def test_inbox_is_not_a_status(client, conn):
     assert [x["id"] for x in db.inbox_tasks(conn)] == [t["id"]] and db.counts(conn, TODAY)["inbox"] == 1
 
 
-def test_h0_tasks_have_no_step(client, conn):
-    for step in ("waiting", "later"):
-        assert db.get_task(conn, db.add_task(conn, step, step=step, ground=1))["step"] is None
+def test_h0_tasks_are_next_or_waiting(client, conn):
+    """An H0 task is a next action or waiting; never later. Only H0's next actions are on the H0 tab."""
+    steps = {s: db.get_task(conn, db.add_task(conn, str(s), step=s, ground=1))["step"] for s in (None, "next", "waiting", "later")}
+    assert steps == {None: "next", "next": "next", "waiting": "waiting", "later": "next"}
     pid = add_project(conn, "P")
     tid = db.add_task(conn, "w", step="waiting", project_id=pid)
-    r = client.post(f"/tasks/{tid}", data={"project_id": "h0", "step": "waiting"}, follow_redirects=True)
-    assert db.get_task(conn, tid)["step"] is None and b"always next actions" in r.data
-    assert 'name="step"' not in client.get(f"/tasks/{tid}").get_data(as_text=True)
-    assert 'value="h0"' not in client.get("/waiting").get_data(as_text=True).split("<main>")[1]
+    client.post(f"/tasks/{tid}", data={"project_id": "h0", "step": "waiting"})
+    t = db.get_task(conn, tid)
+    assert (t["ground"], t["step"], t["project_id"]) == (1, "waiting", None)  # moved: still waiting
+    page = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert '<option selected>waiting</option>' in page and "<option>later</option>" not in page
+    client.post(f"/tasks/{tid}", data={"project_id": "h0", "step": "next"})
+    assert db.get_task(conn, tid)["step"] == "next"
     client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
-    assert [t["title"] for t in db.inbox_tasks(conn)] == ["parcel"]
+    parcel = conn.execute("SELECT * FROM tasks WHERE title = 'parcel'").fetchone()
+    assert (parcel["ground"], parcel["step"], parcel["due_date"]) == (1, "waiting", "2026-10-22")  # dated, like all H0
+    h0 = client.get("/h0").get_data(as_text=True)
+    assert ">later<" in h0 and ">waiting<" not in h0 and ">parcel<" not in h0
+    assert len(db.h0_actions(conn)) == 4 and db.counts(conn, TODAY)["waiting"] == 2
+    assert ">parcel<" in client.get("/waiting").get_data(as_text=True)
 
 
-def test_steps_only_exist_inside_projects(conn):
-    """The database refuses a step without a project, a project task without one, and an H0 task in a project."""
+def test_h0_task_moving_into_a_project(client, conn):
+    """Out of H0, a next action becomes a later step (next stays a conscious choice); a waiting one stays waiting."""
+    pid = add_project(conn, "P")
+    nxt = db.add_task(conn, "n", ground=1)
+    wait = db.add_task(conn, "w", ground=1, step="waiting")
+    first = db.add_task(conn, "first", project_id=pid, step="next")
+    client.post(f"/tasks/{nxt}", data={"project_id": str(pid), "step": "next"})  # the step select untouched
+    client.post("/tasks/move", data={"id": wait, "project_id": str(pid)}, headers=FETCH)
+    assert [db.get_task(conn, i)["step"] for i in (nxt, wait, first)] == ["later", "waiting", "next"]
+    back = db.add_task(conn, "back", project_id=pid, step="later")
+    client.post("/tasks/move", data={"id": back, "project_id": "h0"}, headers=FETCH)
+    assert db.get_task(conn, back)["step"] == "next"
+
+
+def test_waiting_groups_by_area(client, conn):
+    home, work = db.add_horizon(conn, "area", "Home"), db.add_horizon(conn, "area", "Work")
+    db.add_horizon(conn, "area", "Idle")
+    wp = db.add_project(conn, "Visa", status="waiting", area_id=work)
+    kitchen = db.add_project(conn, "Kitchen", area_id=home)
+    db.add_task(conn, "quote", project_id=kitchen, step="waiting")
+    db.add_task(conn, "tiles", project_id=kitchen, step="later")
+    db.add_task(conn, "parcel", ground=1, step="waiting")
+    groups = [(a and a["title"], [p["title"] for p in ps], [t["title"] for t in ts]) for a, ps, ts in db.waiting_groups(conn)]
+    assert groups == [(None, [], ["parcel"]), ("Home", [], ["quote"]), ("Work", ["Visa"], [])]
+    html = client.get("/waiting").get_data(as_text=True).split('class="area-groups"')[1].split('class="drop-panel"')[0]
+    assert html.index("H0 · ground level") < html.index("parcel") < html.index("Home") < html.index("quote") \
+        < html.index("Work") < html.index("Visa") and "Idle" not in html
+    assert 'data-reorder="/projects/order/waiting"' in html
+    other = db.add_project(conn, "Passport", status="waiting", area_id=work)
+    client.post("/projects/order/waiting", data={"ids": f"{other},{wp}", "moved": str(other), "area_id": str(home)})
+    assert [p["title"] for p in db.projects(conn, "waiting")] == ["Passport", "Visa"]
+    assert db.get_project(conn, other)["area_id"] == home
+
+
+def test_steps_only_exist_in_projects_and_h0(conn):
+    """The database refuses a step on an inbox item, a project or H0 task without one, a later H0 task, and an H0 task
+    in a project."""
     pid = add_project(conn, "P")
     tid = db.add_task(conn, "x", project_id=pid)
     for sql in ("UPDATE tasks SET project_id = NULL WHERE id = ?", "UPDATE tasks SET step = NULL WHERE id = ?",
@@ -222,6 +268,10 @@ def test_steps_only_exist_inside_projects(conn):
     assert db.get_task(conn, loose)["step"] is None
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE tasks SET step = 'next' WHERE id = ?", (loose,))
+    h0 = db.add_task(conn, "h0", ground=1)
+    for sql in ("UPDATE tasks SET step = NULL WHERE id = ?", "UPDATE tasks SET step = 'later' WHERE id = ?"):
+        with pytest.raises(sqlite3.IntegrityError):  # an H0 task is next or waiting
+            conn.execute(sql, (h0,))
 
 
 # --- calendar + horizons -------------------------------------------------
@@ -987,7 +1037,7 @@ def test_add_h0_task_straight_from_h0_tab(client, conn):
     r = client.post("/h0/add", data={"title": "stretch", "due_date": "", "recur": "daily"})
     assert r.status_code == 302 and r.headers["Location"].endswith("/h0")
     t = conn.execute("SELECT * FROM tasks WHERE title='stretch'").fetchone()
-    assert (t["step"], t["ground"], t["project_id"]) == (None, 1, None)
+    assert (t["step"], t["ground"], t["project_id"]) == ("next", 1, None)
     assert b"stretch" in client.get("/h0").data
     client.post("/h0/add", data={"title": "  "})  # blank title: nothing added
     client.post("/h0/add", data={"title": "taxes", "due_date": "tomorrow", "recur": ""})
@@ -1197,7 +1247,7 @@ def test_add_a_next_action_on_the_next_page(client, conn):
     assert status["second"]["step"] == "later"  # Busy already has its one next action
     assert status["first"]["step"] == "next"
     assert status["loose"]["project_id"] is None and not status["loose"]["ground"]  # an inbox item, to be processed
-    assert status["sweep"]["step"] is None and status["sweep"]["ground"]
+    assert status["sweep"]["step"] == "next" and status["sweep"]["ground"]
 
 
 def test_nav_groups_tabs_by_kind_of_list(client):
@@ -1557,7 +1607,7 @@ def test_dragging_moves_any_open_task_between_projects(client, conn):
     assert move(b_next, str(b)) == 204 and db.get_task(conn, b_next)["step"] == "next"
     # Out to H0 and back into a project.
     assert move(b_next, "h0") == 204
-    assert (db.get_task(conn, b_next)["ground"], db.get_task(conn, b_next)["step"], db.get_task(conn, b_next)["project_id"]) == (1, None, None)
+    assert (db.get_task(conn, b_next)["ground"], db.get_task(conn, b_next)["step"], db.get_task(conn, b_next)["project_id"]) == (1, "next", None)
     assert move(b_next, str(a)) == 204
     assert (db.get_task(conn, b_next)["ground"], db.get_task(conn, b_next)["step"]) == (0, "later")
     # A project step not worth doing is kept as reference.

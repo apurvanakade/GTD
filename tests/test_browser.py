@@ -715,6 +715,27 @@ def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
     assert (db.get_task(conn, 4)["project_id"], db.get_task(conn, 4)["step"]) == (2, "waiting")
 
 
+def test_waiting_groups_by_area_and_drags_projects_between_them(page, live, conn):
+    """H0's waiting tasks first, then each area's waiting projects and steps; a project dragged into another area
+    moves there, and the area it left stays while it still holds a waiting step."""
+    work = next(a["id"] for a in db.areas(conn) if a["title"] == "Work")
+    add_project(conn, "Visa", status="waiting", area_id=work)
+    page.goto(live + "/waiting")
+    group = lambda title: page.locator("section.area-group", has=page.locator("h2.area-head", has_text=title))
+    assert page.locator("h2.area-head").all_text_contents() == ["H0 · ground level", "Home", "Work"]
+    assert group("H0").locator("li.task a.title").all_inner_texts() == ["parcel from Ann"]
+    with page.expect_response(lambda r: r.url.endswith("/order/waiting")) as saved:
+        row(page, "Waiting proj").locator(".grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
+    assert saved.value.status == 204
+    assert db.get_project(conn, 3)["area_id"] == work
+    assert group("Home").locator("li.task a.title").all_inner_texts() == ["quote from Bob"]
+    # An H0 waiting task dropped on a project stays waiting.
+    drag_to_panel(page, row(page, "parcel from Ann").locator(".title"), '[data-project="2"]')
+    page.wait_for_function("document.querySelector('li.task[data-id=\"14\"] .proj')?.textContent === 'Stalled'")
+    t = db.get_task(conn, 14)
+    assert (t["project_id"], t["step"], t["ground"]) == (2, "waiting", 0)
+
+
 def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, live, conn):
     page.goto(live + "/projects/1")
     assert page.locator('.drop-panel [data-project="1"]').count() == 0  # not its own project
@@ -793,11 +814,10 @@ def test_all_clear_lists_show_a_big_check(page, live, conn):
 
 
 def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
-    add_project(conn, "Deck", status="waiting")
     page.goto(live + "/next")
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
     assert style(page.locator("li.task").first, "borderBottomWidth") == "0px"
-    for url in ("/waiting", "/horizons?level=projects"):
+    for url in ("/horizons?level=projects",):
         page.goto(live + url)
         rows = page.locator("ul.cards > li.task")
         assert rows.count() >= 1, url
@@ -806,12 +826,13 @@ def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
 
 
 def test_projects_and_someday_are_tight_lists(page, live, conn):
-    """Projects and Someday: plain rows, like task rows but tighter, no pill boxes."""
+    """Projects, Waiting and Someday: plain rows, like task rows but tighter, no pill boxes."""
     home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
     add_project(conn, "Shed", area_id=home)
     add_project(conn, "Boat", status="someday", area_id=home)
+    add_project(conn, "Deck", status="waiting", area_id=home)
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
-    for url in ("/projects", "/someday"):
+    for url in ("/projects", "/waiting", "/someday"):
         page.goto(live + url)
         group = page.locator("section.area-group", has=page.locator("h2.area-head", has_text="Home"))
         rows = group.locator("ul > li.task")

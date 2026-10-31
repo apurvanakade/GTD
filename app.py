@@ -119,7 +119,7 @@ def task_fields_from_form(current=None):
             fields["ground"] = 0
         else:
             flash(f"A project needs an area: “{new_project}” wasn't created. Pick “＋ New project…” under an area.")
-    if request.form.get("step") in ("next", "waiting", "later"):  # a project's step; H0 and inbox tasks drop it
+    if request.form.get("step") in ("next", "waiting", "later"):  # a project's or H0's step; inbox items drop it
         fields["step"] = request.form["step"]
     for name, parse in (("due_date", parse_due), ("recur", parse_recur)):
         if fields.get(name):
@@ -259,7 +259,7 @@ def inbox():
 def task_move():
     """The drop panel on every task list: move the dropped open tasks (one row, or several shift-selected, in page
     order) to another project (or H0, a new project, Reference, or an area's someday / maybe), all or none. A task lands as a later step, since
-    the project picks its next; a waiting step stays waiting. Dropped where it already is, nothing changes. Called by
+    the project picks its next (in H0, a next action); a waiting task stays waiting. Dropped where it already is, nothing changes. Called by
     fetch, which updates the page itself."""
     c = conn()
     tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
@@ -279,7 +279,7 @@ def task_move():
         for t in reversed(tasks):  # each goes to the top of its project: the last first keeps the page's order
             if fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"]):
                 continue
-            step = {"step": "waiting" if t["step"] == "waiting" else "later"} if fields.get("project_id") else {}
+            step = {"step": "waiting" if t["step"] == "waiting" else "later"} if fields.get("project_id") else {}  # H0: _fit_step()
             db.update_task(c, t["id"], today=today(), **fields, **step)
     return "", 204
 
@@ -362,18 +362,17 @@ def h0_add():
 
 @app.route("/waiting")
 def waiting():
-    return render_template("list.html", title="Waiting for", tasks=db.tasks_with_step(conn(), "waiting"),
-                           projects=db.projects(conn(), "waiting"), empty="Nothing delegated.",
-                           project_groups=db.project_groups(conn()))
+    c = conn()
+    return render_template("waiting.html", groups=db.waiting_groups(c), steps=db.open_steps(c, "waiting"),
+                           project_groups=db.project_groups(c))
 
 
 @app.post("/waiting/add")
 def waiting_add():
     if form_value("title"):
         fields = task_fields_from_form()
-        fields["ground"] = 0  # H0 tasks are always next actions
-        if orphaned(fields.get("project_id"), 0):
-            flash("No project, so it went to the inbox to be processed.")
+        if orphaned(fields.get("project_id"), fields.get("ground")):
+            flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
         db.add_task(conn(), fields.pop("title"), today=today(), step="waiting", **fields)
     return redirect(url_for("waiting"))
 
@@ -580,7 +579,7 @@ def search_suggest():
     for kind, r in db.suggest(conn(), request.args.get("q") or ""):
         if kind == "task":
             out.append({"title": r["title"], "url": url_for("task_view", id=r["id"]),
-                         "kind": r["state"] if r["state"] != "open" else "H0" if r["ground"]
+                         "kind": r["state"] if r["state"] != "open" else "H0" if r["ground"] and r["step"] == "next"
                                  else "inbox" if r["inbox"] else r["step"],
                          "meta": r["project_title"] or ""})
         elif kind == "project":
@@ -615,10 +614,10 @@ def task_view(id):
         fields = {k: v for k, v in task_fields_from_form(t).items() if k not in ("title", "notes")}
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
         ground = fields["ground"] if "ground" in fields else t["ground"]
+        if (project_id, bool(ground)) != (t["project_id"], bool(t["ground"])) and "step" in fields and fields["step"] == t["step"]:
+            fields.pop("step")  # moved, with the step select untouched: it lands as a move does (db._fit_step())
         if orphaned(project_id, ground) and not t["inbox"] and t["state"] == "open":
             flash("No project and not H0 · ground level, so this went to the inbox to be processed.")
-        elif ground and fields.get("step") in ("waiting", "later"):
-            flash("H0 tasks are always next actions.")
         flash_demoted(db.update_task(c, id, today=today(), **fields))
         if request.headers.get("X-Requested-With") == "fetch":  # a field saved in the background: just its messages
             return {"flashes": get_flashed_messages()}
@@ -688,9 +687,9 @@ def projects_view():
                            done_projects=db.projects(conn(), "done") if show else [])
 
 
-@app.post("/projects/order/<any(active, someday):status>")
+@app.post("/projects/order/<any(active, waiting, someday):status>")
 def projects_order(status):
-    """The Projects and Someday pages' drag-and-drop sends the project ids in their new order. A project dragged into
+    """The Projects, Waiting and Someday pages' drag-and-drop sends the project ids in their new order. A project dragged into
     another area's group (`moved`, with that group's `area_id`) changes area."""
     c, area_id, moved = conn(), area_from(request.form.get("area_id")), request.form.get("moved", "")
     p = moved.isdigit() and db.get_project(c, int(moved))

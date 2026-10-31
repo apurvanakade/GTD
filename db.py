@@ -13,8 +13,8 @@ import recur
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
 # Someday and waiting are project statuses (someday / maybe also holds single items, table someday); an abandoned project is given up (on Done, revivable). A task has a state (open, done, or abandoned: deleted but revivable)
-# and, only inside a project, a step: an active project has exactly one "next" step, its other open steps are "waiting"
-# or "later". H0 tasks (ground level) and inbox items (neither a project nor H0) have no step.
+# and, inside a project or H0, a step: an active project has exactly one "next" step, its other open steps are "waiting"
+# or "later"; an H0 task (ground level) is "next" or "waiting". Inbox items (neither a project nor H0) have no step.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY,
@@ -41,8 +41,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   completed_at TEXT,
   remind_at TEXT,
   reminded_at TEXT,
-  CHECK ((step IS NULL) = (project_id IS NULL)),
-  CHECK (NOT (ground AND project_id IS NOT NULL))
+  CHECK ((step IS NULL) = (project_id IS NULL AND NOT ground)),
+  CHECK (NOT (ground AND project_id IS NOT NULL)),
+  CHECK (NOT (ground AND step = 'later'))
 );
 CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state);
 CREATE INDEX IF NOT EXISTS tasks_project ON tasks(project_id);
@@ -118,9 +119,10 @@ NEXT = f"t.state = 'open' AND t.step = 'next' AND {ACTIVE}"
 READY = "(t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
 VISIBLE_NEXT = f"{NEXT} AND {READY}"
 DUE_NEXT = f"{NEXT} AND t.due_date <= ?"  # the nav count: due today or overdue only
-VISIBLE_H0 = "t.state = 'open' AND t.ground AND t.due_date <= ?"  # the tab's count: due today or overdue only
+H0_NEXT = "t.state = 'open' AND t.ground AND t.step = 'next'"  # the H0 tab; H0's waiting tasks are on Waiting
+VISIBLE_H0 = f"{H0_NEXT} AND t.due_date <= ?"  # the tab's count: due today or overdue only
 OPEN_PROJECT = "('active', 'waiting', 'someday')"  # project statuses still in play; an area holding one is open
-STEP_ORDER = "CASE WHEN t.ground OR t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2 ELSE 3 END"
+STEP_ORDER = "CASE WHEN t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2 ELSE 3 END"
 
 
 class Connection(sqlite3.Connection):
@@ -228,18 +230,25 @@ def _reopen_project(c, id):
 
 
 def _fit_step(fields, current=None, today=None):
-    """Only a project's tasks have a step: a task without one (H0, inbox) drops any step it's given, and one
-    joining a project leaves H0 and becomes a later step unless told otherwise. An H0 task is always dated:
-    left without a due date, it's due today (`today`, else the system's date)."""
+    """An inbox item has no step, and drops any it's given. An H0 task is next or waiting: next unless told or
+    already waiting (a later step arriving from a project is next). One joining a project leaves H0 and becomes a
+    later step unless told otherwise, or already waiting. An H0 task is always dated: left without a due date,
+    it's due today (`today`, else the system's date)."""
     project_id = fields["project_id"] if "project_id" in fields else current and current["project_id"]
-    if not project_id:
+    ground = fields["ground"] if "ground" in fields else current and current["ground"]
+    if not project_id and not ground:
         fields["step"] = None
-        ground = fields["ground"] if "ground" in fields else current and current["ground"]
+        return fields
+    step = fields.get("step") or (current and current["step"])
+    if not project_id:
+        fields["step"] = "waiting" if step == "waiting" else "next"
         due = fields["due_date"] if "due_date" in fields else current and current["due_date"]
-        if ground and not due:
+        if not due:
             fields["due_date"] = (today or date.today()).isoformat()
         return fields
     if "project_id" in fields:
+        if current and current["ground"] and not fields.get("step"):  # out of H0: its next isn't the project's
+            fields["step"] = "waiting" if current["step"] == "waiting" else "later"
         fields["ground"] = 0
     if not fields.get("step") and not (current and current["step"]):
         fields["step"] = "later"
@@ -253,7 +262,7 @@ def _one_next(c, id, was_next):
     A task that has just become next moves to the top of its project, the others shifting down.
     Returns the titles it demoted."""
     t = get_task(c, id)
-    if not t or t["state"] != "open" or t["step"] != "next":
+    if not t or t["state"] != "open" or t["step"] != "next" or not t["project_id"]:
         return []
     others = c.execute("SELECT id, title FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open' AND id != ?",
                        (t["project_id"], id)).fetchall()
@@ -289,9 +298,10 @@ def abandon_task(c, id, now=None):
 
 @atomic
 def revive_task(c, id, today=None):
-    """An abandoned task comes back where it was: a later step of its project, an H0 task (due today if undated),
-    or an inbox item. A done project it belongs to is reopened, since it has an open task again."""
-    c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN NULL ELSE 'later' END,
+    """An abandoned task comes back where it was: a later step of its project, an H0 task (next or waiting, as it
+    was; due today if undated), or an inbox item. A done project it belongs to is reopened, since it has an open task
+    again."""
+    c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN step ELSE 'later' END,
         due_date = CASE WHEN ground AND due_date IS NULL THEN ? ELSE due_date END,
         completed_at = NULL WHERE id = ? AND state = 'abandoned'""", ((today or date.today()).isoformat(), id))
     _reopen_project(c, id)
@@ -308,14 +318,15 @@ def complete_task(c, id, today, now=None):
     running = timer_running(c)
     if running and running["task_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
-    if not c.execute("""UPDATE tasks SET state = 'done', completed_at = datetime('now'), ground = ground OR project_id IS NULL
+    if not c.execute("""UPDATE tasks SET state = 'done', completed_at = datetime('now'), ground = ground OR project_id IS NULL,
+            step = CASE WHEN project_id IS NULL THEN coalesce(step, 'next') ELSE step END
             WHERE id = ? AND state = 'open'""", (id,)).rowcount:
         return None  # finished meanwhile (a second tap, the phone's Done button): one next instance only
     new_id = None
     if recur.parse(t["recur"]):
         due = date.fromisoformat(t["due_date"]) if t["due_date"] else None
         next_due = recur.next_due(t["recur"], due, today)
-        step = "later" if t["step"] == "next" else t["step"]
+        step = "later" if t["step"] == "next" and t["project_id"] else t["step"]
         new_id = add_task(c, t["title"], today=today, notes=t["notes"], step=step, project_id=t["project_id"],
                           ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
     return new_id
@@ -333,7 +344,7 @@ def mark_reminded(c, id, now):
 
 
 def tasks_with_step(c, step):
-    """Open project tasks at this step."""
+    """Open tasks at this step (project and H0 tasks; inbox items have none)."""
     return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY t.created_at DESC, t.id DESC", (step,)).fetchall()
 
 
@@ -345,7 +356,7 @@ def next_actions(c, today):
 
 def h0_actions(c):
     """Every H0 next action, repeats not yet due included, soonest due first; undated ones last."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.ground
+    return c.execute(f"""{TASK_SELECT} WHERE {H0_NEXT}
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
 
 
@@ -652,6 +663,17 @@ def project_groups(c):
     groups = [(a["title"], [p for p in live if p["area_id"] == a["id"]], a["id"]) for a in areas(c)]
     groups.append(("Done", [p for p in rows if p["status"] == "done"], None))
     return [g for g in groups if g[1] or g[2]]
+
+
+def waiting_groups(c):
+    """The Waiting page: [(area, its waiting projects, the waiting steps of its projects)] in area order, areas with
+    neither left out, after (None, [], H0's waiting tasks) when there are any."""
+    tasks, ps = tasks_with_step(c, "waiting"), projects(c, "waiting")
+    area_of = dict(c.execute("SELECT id, area_id FROM projects").fetchall())
+    groups = [(a, [p for p in ps if p["area_id"] == a["id"]],
+               [t for t in tasks if t["project_id"] and area_of[t["project_id"]] == a["id"]]) for a in areas(c, archived=None)]
+    h0 = [t for t in tasks if t["ground"]]
+    return [(None, [], h0)] * bool(h0) + [g for g in groups if g[1] or g[2]]
 
 
 def stalled_projects(c):

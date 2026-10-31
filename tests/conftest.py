@@ -81,5 +81,6 @@ def seed(c):
     dropped = db.add_project(c, "Dropped proj", status="someday", area_id=area)
     db.add_task(c, "given-up step", step="next", project_id=dropped)
     db.abandon_project(c, dropped)
+    db.add_task(c, "parcel from Ann", ground=1, step="waiting", due_date="2026-10-27")  # H0, waiting
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
             "dropped": dropped, "area": area, "empty_area": empty, "archived_area": term}

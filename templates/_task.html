@@ -12,7 +12,7 @@
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
-    {% if not project and t.step and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' and not closed %}<span>later</span>{% endif %}
+    {% if not project and t.project_id and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' and not closed %}<span>later</span>{% endif %}
     {# The date and repeat slots are always there, empty when unused, so the columns line up down the list. #}
     {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>
     {% else %}<span class="date">{{ t.due_date if t.due_date and not closed }}</span>{% endif %}
@@ -121,12 +121,12 @@
 </select>
 {% endmacro %}
 
-{# A project as a card (Projects, Someday, an area's page): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
+{# A project as a card (Projects, Waiting, Someday, an area's page): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
    A someday one shows when the weekly review last looked at it, and offers Activate. #}
 {% macro project_card(p, steps) %}
 {% set stalled = p.stalled %}
 <li class="task{{ ' stalled' if stalled }}" data-id="{{ p.id }}"{% if stalled %} title="No next action"{% endif %}>
-  {% if p.status in ('active', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
+  {% if p.status in ('active', 'waiting', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {{ peek_button() }}
   <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if stalled %}⚠ {% endif %}{{ p.title }}</a>
   {% if p.status == 'someday' %}{{ until(p.tickle_on) }}<span class="reviewed" title="Last reviewed">{{ p.reviewed_at|ago }}</span>{% endif %}

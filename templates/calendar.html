@@ -28,7 +28,7 @@
     <td data-date="{{ iso }}" class="{% if not week and d.month != first.month %}out{% endif %}{% if iso == today %} today{% endif %}">
       <button type="button" class="day" data-date="{{ iso }}" data-label="{{ d.strftime('%a %-d %b') }}" title="Add on {{ iso }}">{% if week %}{{ d.strftime('%-d %b') }}{% else %}{{ d.day }}{% endif %}</button>
       {% for t in by_day.get(iso, []) %}
-      {% set kind = 'h0' if t.ground else 'inbox' if t.inbox else 'someday' if t.project_status == 'someday'
+      {% set kind = 'h0' if t.ground and t.step == 'next' else 'inbox' if t.inbox else 'someday' if t.project_status == 'someday'
                     else 'waiting' if 'waiting' in (t.step, t.project_status) else t.step %}
       <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}" draggable="true" data-due="{{ url_for('task_due', id=t.id) }}"
          class="ev k-{{ kind }}{% if iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>

@@ -21,7 +21,7 @@
 {% call add_form(url_for('project_create'), 'New project in ' ~ h.title) %}<input type="hidden" name="area_id" value="{{ h.id }}">{% endcall %}
 {% for label, ps, items in lists if ps or items %}
 <h2 class="area-head">{{ label }}</h2>
-{% if ps %}<ul class="tasks cards"{% if ps[0].status in ('active', 'someday') %} data-reorder="{{ url_for('projects_order', status=ps[0].status) }}"{% endif %}>
+{% if ps %}<ul class="tasks cards"{% if ps[0].status in ('active', 'waiting', 'someday') %} data-reorder="{{ url_for('projects_order', status=ps[0].status) }}"{% endif %}>
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>{% endif %}
 {% if items %}<ul class="tasks cards maybes">{% for s in items %}{{ someday_row(s) }}{% endfor %}</ul>{% endif %}
