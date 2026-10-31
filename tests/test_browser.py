@@ -214,12 +214,6 @@ def test_timer_entry_saves_when_focus_leaves_the_row(page, live, conn):
     assert page.url.endswith("/timer")
 
 
-def test_hidden_buttons_stay_hidden(page, live):
-    page.goto(live + "/timer")
-    assert page.locator("form.entry button[hidden]").count()
-    assert not page.locator("form.entry button[hidden]").first.is_visible()
-
-
 def test_timer_entry_enter_saves_and_unchanged_blur_does_not(page, live, conn):
     page.goto(live + "/timer")
     entry = page.locator("form.entry", has=page.get_by_role("link", name="call mum", exact=True))
@@ -299,15 +293,6 @@ def test_slash_on_inbox_focuses_its_add_box(page, live):
     page.keyboard.press("/")
     assert page.evaluate("document.activeElement.closest('main form.add') !== null")
     assert not page.locator(".capture-dialog").evaluate("d => d.open")
-
-
-def test_task_rows_are_one_height(page, live, conn):
-    """A Make next or Activate button mustn't make its row taller than the others."""
-    db.add_project(conn, "Plain dream", status="someday")
-    for url, n, rows in (("/projects/1", 3, "ul.tasks"), ("/someday?tickled=1", 2, "ul.tasks")):
-        page.goto(live + url)
-        heights = page.locator(f"{rows} > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
-        assert len(heights) >= n and max(heights) - min(heights) < 1, (url, heights)
 
 
 def test_project_row_arrow_folds_out_its_steps(page, live):
@@ -407,26 +392,6 @@ def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, 
     assert target.locator(".ev", has_text="buy tiles").count() == 1
 
 
-def test_row_dates_line_up_with_or_without_a_repeat(page, live, conn):
-    db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-22")
-    page.goto(live + "/h0")
-    edges = {t: row(page, t).locator(".date").evaluate("e => Math.round(e.getBoundingClientRect().right)")
-             for t in ("vacuum", "dentist")}
-    assert edges["vacuum"] == edges["dentist"], edges
-
-
-def test_project_page_columns_line_up_whatever_the_step_and_date(page, live, conn):
-    pid = db.add_project(conn, "Columns")
-    rows = {"n": ("next", "2026-10-20"), "wd": ("waiting", "2026-10-30"), "w": ("waiting", None),
-            "ld": ("later", "2026-11-11"), "l": ("later", None)}  # next is overdue, so its date is bold
-    for title, (step, due) in rows.items():
-        db.add_task(conn, title, step=step, project_id=pid, due_date=due)
-    page.goto(f"{live}/projects/{pid}")
-    for sel, side in ((".step", "left"), (".date", "left"), (".date", "right"), (".recur", "right")):
-        edges = {t: row(page, t).locator(sel).evaluate(f"e => Math.round(e.getBoundingClientRect().{side})") for t in rows}
-        assert len(set(edges.values())) == 1, (sel, side, edges)
-
-
 def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
     page.goto(live + "/next")
     page.keyboard.press("?")
@@ -493,14 +458,6 @@ def test_due_bands_remember_only_clicks(page, live, conn):
     assert page.evaluate("Object.keys(localStorage).filter(k => k.includes('/h0:'))") == []  # defaults aren't frozen
 
 
-def test_row_dates_show_on_hover(page, live, conn):
-    db.add_task(conn, "late", step="next", ground=1, due_date="2026-10-20")
-    page.goto(live + "/h0")
-    opacity = lambda t: row(page, t).locator(".date").evaluate("e => getComputedStyle(e).opacity")
-    page.mouse.move(0, 0)
-    assert opacity("vacuum") == "0" and opacity("late") == "1"  # overdue stays visible
-    row(page, "vacuum").hover()
-    assert opacity("vacuum") == "1"
 def test_title_and_notes_save_themselves(page, live, conn):
     pid = db.add_reference(conn, "Auto", notes="abc")
     page.goto(live + f"/reference/{pid}")
@@ -545,7 +502,6 @@ def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
     page.wait_for_function("document.querySelector('.md-editor').textContent === 'new from phone'")
     assert page.locator(".autosave").text_content() == "Updated from elsewhere"
     assert db.get_project(conn, pid)["notes"] == "new from phone"
-
 
 
 def drag_to_panel(page, source, target):
@@ -646,16 +602,6 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     assert not panel.is_visible()
 
 
-def test_pinned_project_panel_overlaps_the_list(page, live):
-    page.set_viewport_size({"width": 1600, "height": 800})
-    page.goto(live + "/inbox")
-    left = lambda: page.locator("ul.tasks:not(.tickled)").evaluate("e => e.getBoundingClientRect().left")
-    before = left()
-    page.locator(".pin-panel").click()
-    page.locator(".drop-panel").wait_for(state="visible")
-    assert left() == before  # the panel floats over the page; the list stays put
-
-
 def test_dragging_a_next_action_onto_another_project_moves_it(page, live, conn):
     page.goto(live + "/next")
     now = page.locator("details[data-band=now] summary b")
@@ -722,80 +668,6 @@ def test_review_arrow_keys_move_between_steps(page, live):
     page.wait_for_url("**/review?step=nexts")
 
 
-def test_long_title_wraps_instead_of_pushing_buttons_down(page, live, conn):
-    long = "ask AI to download all the mir publication math physics and other science books " * 2
-    tid = db.add_task(conn, long.strip(), step="next", project_id=db.add_project(conn, "Mir publications archive"),
-                      due_date="2026-10-22")  # today, so its band is open
-    db.timer_start(conn, tid, NOW)
-    page.set_viewport_size({"width": 1000, "height": 800})
-    page.goto(live + "/next")
-    r = page.locator("li.task", has=page.locator("form.timing"))
-    mid = lambda sel: r.locator(sel).evaluate("e => { const b = e.getBoundingClientRect(); return b.left + b.width / 2 }")
-    top = lambda sel: r.locator(sel).evaluate("e => e.getBoundingClientRect().top")
-    title = r.locator(".title").evaluate("e => e.getBoundingClientRect()")
-    assert top("form.timing") < title["bottom"]  # ■ sits beside the title, not on a line below it
-    assert mid("form.timing") > title["right"]
-
-
-def test_project_sits_next_to_the_task_title(page, live, conn):
-    page.set_viewport_size({"width": 1000, "height": 800})
-    page.goto(live + "/next")
-    r = row(page, "buy tiles")
-    box = lambda sel: r.locator(sel).evaluate("e => e.getBoundingClientRect().toJSON()")
-    title, proj = box(".title"), box(".proj")
-    assert 0 < proj["left"] - title["right"] < 30 and abs(proj["top"] - title["top"]) < 8, (title, proj)
-    assert r.locator(".meta .proj").count() == 0  # not out in the details column
-
-
-def test_project_steps_are_quiet_until_hover(page, live, conn):
-    page.goto(live + "/projects/1")
-    page.mouse.move(0, 0)
-    opacity = lambda t, sel: row(page, t).locator(sel).evaluate("e => getComputedStyle(e).opacity")
-    assert opacity("lay tiles", ".step") == "0" and opacity("lay tiles", ".make-next button") == "0"
-    row(page, "lay tiles").hover()
-    assert opacity("lay tiles", ".step") == "1" and opacity("lay tiles", ".make-next button") == "1"
-
-
-def test_timer_button_always_shows(page, live):
-    for url in ("/next", "/h0", "/projects/1", "/waiting", "/inbox"):
-        page.goto(live + url)
-        page.mouse.move(0, 0)
-        b = page.locator("li.task form.start button").first
-        assert b.evaluate("e => getComputedStyle(e).opacity") == "1", url
-
-
-def test_all_clear_lists_show_a_big_check(page, live, conn):
-    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks")
-    conn.execute("UPDATE projects SET status = 'active' WHERE status = 'waiting'"); conn.commit()  # nothing waiting either
-    for url in ("/inbox", "/next", "/h0", "/waiting"):
-        page.goto(live + url)
-        e = page.locator(".empty.clear")
-        assert e.count() == 1, url
-        assert e.evaluate("e => getComputedStyle(e, '::before').content") == '"✓"', url
-        assert e.evaluate("e => getComputedStyle(e).fontSize") == "0px", url  # the sentence stays for screen readers only
-    page.goto(live + "/search?q=zzz")
-    assert page.locator(".empty.clear").count() == 0  # "Nothing matches" isn't good news
-
-
-def test_every_list_is_the_same_plain_row(page, live, conn):
-    """Tasks, projects, reference and horizons' lists: one row style, smaller than body text, no boxes or dividers."""
-    db.add_project(conn, "Shed")
-    db.add_project(conn, "Boat", status="someday")
-    db.add_project(conn, "Deck", status="waiting")
-    style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
-    for url in ("/next", "/projects", "/waiting", "/someday?tickled=1", "/reference", "/horizons?level=projects", "/done"):
-        page.goto(live + url)
-        rows = page.locator("ul.tasks > li.task")
-        assert rows.count() >= 1, url
-        assert style(rows.first, "borderTopWidth") == "0px" and style(rows.first, "borderBottomWidth") == "0px", url
-        assert float(style(rows.first, "fontSize")[:-2]) < 16, url
-    for url in ("/projects", "/waiting", "/someday?tickled=1"):
-        page.goto(live + url)
-        rows = page.locator("ul[data-reorder] > li.task")
-        a, b = rows.nth(0).bounding_box(), rows.nth(1).bounding_box()
-        assert a["height"] <= 30 and b["y"] - (a["y"] + a["height"]) <= 1, (url, a, b)
-
-
 # --- review fixes (2026-10-27) ---------------------------------------------
 
 def test_a_failed_tick_off_reloads_instead_of_faking_it(page, live, conn):
@@ -856,28 +728,6 @@ def test_clicking_a_rows_button_does_not_open_it(page, live):
     page.goto(live + "/projects")
     row(page, "Kitchen").locator("button.peek").click()
     assert page.url == live + "/projects"
-
-
-def test_due_today_date_is_not_amber(page, live):
-    """Amber means stalled; only an overdue date gets a color."""
-    page.goto(live + "/waiting")
-    r = row(page, "quote from Bob")
-    style = "e => [getComputedStyle(e).color, getComputedStyle(e).fontWeight]"
-    assert r.locator(".date").evaluate(style) == r.locator(".meta").evaluate(style)
-
-
-def test_help_dialog_uses_the_theme(page, live):
-    page.goto(live + "/next")
-    page.keyboard.press("?")
-    bg = page.locator(".help-dialog").evaluate("e => getComputedStyle(e).backgroundColor")
-    assert bg == page.evaluate("getComputedStyle(document.body).backgroundColor")
-
-
-def test_review_dots_are_easy_to_click(page, live):
-    page.goto(live + "/review")
-    boxes = [d.bounding_box() for d in page.locator(".rail .dot").all()]
-    assert all(b["width"] >= 24 and b["height"] >= 24 for b in boxes)
-    assert all(b2["x"] >= b1["x"] + b1["width"] for b1, b2 in zip(boxes, boxes[1:]))
 
 
 def test_horizons_arrow_keys_move_between_levels(page, live):

@@ -2006,11 +2006,6 @@ def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
     assert "<kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
 
 
-def test_a_greater_than_is_no_longer_a_due_mark(client, conn):
-    client.post("/capture", data={"title": "pay rent >fri"})
-    t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
-    assert (t["title"], t["due_date"]) == ("pay rent >fri", None)
-
 def test_capture_confirms_the_reminder(client, conn):
     html = client.post("/capture", data={"title": "call back !tomorrow 3pm"}, follow_redirects=True).get_data(as_text=True)
     assert "Added to inbox: call back · reminder Fri Oct 23, 15:00" in html
@@ -2295,10 +2290,6 @@ def test_nav_partial_has_the_counts(client, conn):
     seed(conn)
     html = client.get("/nav").get_data(as_text=True)
     assert html.lstrip().startswith("<nav") and "badge" in html and "<main" not in html
-
-
-def test_projects_have_no_updated_at(client, conn):
-    assert "updated_at" not in db.SCHEMA
 
 
 def test_every_project_step_and_listed_project_has_a_position(client, conn):

@@ -9,6 +9,8 @@ import sqlite3
 from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
+import pytest
+
 import db
 from app import app
 from conftest import TODAY, seed
@@ -189,7 +191,11 @@ def copy_db(src, dest):
     d.close()
 
 
-def test_every_form_submits(client, conn, tmp_path):
+SHARDS = 4  # the slowest test, split so pytest-xdist runs the parts side by side
+
+
+@pytest.mark.parametrize("shard", range(SHARDS))
+def test_every_form_submits(client, conn, tmp_path, shard):
     seed(conn)
     template = tmp_path / "seeded.db"
     copy_db(conn, template)
@@ -202,6 +208,8 @@ def test_every_form_submits(client, conn, tmp_path):
                 if key in seen:
                     continue
                 seen.add(key)
+                if len(seen) % SHARDS != shard:
+                    continue
                 fresh = tmp_path / f"fresh{len(seen)}.db"
                 copy_db(template, fresh)
                 app.config["DB_PATH"] = str(fresh)

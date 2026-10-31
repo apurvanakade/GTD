@@ -10,10 +10,9 @@ tree=$({ git rev-parse HEAD; git diff HEAD; git ls-files -o --exclude-standard -
 browser=$([[ -n $(git status --porcelain -- templates static) ]] && echo 1)
 want="$tree ${browser:-0}"
 [[ -f $stamp && $(<"$stamp") == "$want" ]] && exit 0
-out=$(uv run pytest -q -x 2>&1) || fail=1
-if [[ -z $fail && -n $browser ]]; then
-  out=$(uv run pytest -q -x -m browser 2>&1) || fail=1
-fi
+# One parallel run (pytest-xdist, -n auto in pyproject.toml); -m "" adds the browser tests to it.
+marks=(); [[ -n $browser ]] && marks=(-m "")
+out=$(uv run pytest -q -x "${marks[@]}" 2>&1) || fail=1
 [[ -z $fail ]] && { echo "$want" >"$stamp"; exit 0; }
 [[ $active == true ]] && { echo "Tests are still failing — tell the user." >&2; exit 0; }
 printf 'Tests fail. Fix them (or tell the user why not) before finishing:\n%s\n' "$(tail -40 <<<"$out")" >&2

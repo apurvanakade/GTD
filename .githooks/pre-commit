@@ -1,12 +1,13 @@
 #!/bin/sh
 # Refuse to commit while the test suite fails. Enabled with: git config core.hooksPath .githooks
-cd "$(git rev-parse --show-toplevel)" && uv run pytest -q -x || {
+# Browser tests are slow: only when the commit touches templates or static files (where the JS lives).
+# One parallel run (pytest-xdist, -n auto in pyproject.toml); -m "" adds the browser tests to it.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if git diff --cached --name-only | grep -qE '^(templates|static)/'; then
+  uv run pytest -q -x -m ""
+else
+  uv run pytest -q -x
+fi || {
   echo "pre-commit: tests fail, commit refused (git commit --no-verify to override)." >&2
   exit 1
 }
-# Browser tests are slow: only when the commit touches templates or static files (where the JS lives).
-git diff --cached --name-only | grep -qE '^(templates|static)/' && { uv run pytest -q -x -m browser || {
-  echo "pre-commit: browser tests fail, commit refused (git commit --no-verify to override)." >&2
-  exit 1
-}; }
-exit 0

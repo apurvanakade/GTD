@@ -22,10 +22,11 @@ GTD dev                                         # pull a fresh snapshot of live 
 GTD dev --keep                                  # same, reusing the existing dev.db
 git push home main                              # deploy (after tests pass); also push origin
 uv run app.py                                   # bare dev server (GTD_HOST / GTD_PORT to override)
-uv run pytest                                   # all tests
-uv run pytest tests/test_app.py::test_horizons  # one test
-uv run pytest -k calendar                       # by keyword
-uv run pytest -m browser                        # browser tests (real Chromium, ~8s); excluded from the default run
+uv run pytest                                   # all but the browser tests, in parallel (-n auto in pyproject.toml; ~3s)
+uv run pytest -m ""                             # everything, browser tests included (~12s)
+uv run pytest -m browser                        # browser tests only (real Chromium, ~10s)
+uv run pytest -n0 tests/test_app.py::test_horizons  # one test (-n0 skips starting the parallel workers)
+uv run pytest -n0 -k calendar                   # by keyword
 ```
 
 Env vars:
@@ -212,13 +213,20 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 ## Tests
 
 Every change must be verified before it is called done:
-1. Write or extend a test that fails without the change, and watch it fail first.
-2. Run the whole suite (`uv run pytest`, about 2s).
-3. For template or JS changes, also run `uv run pytest -m browser`, and add a browser test for new JS behavior. Click through the real app (`GTD`) for anything visual.
+1. For a change in behavior (a GTD rule, a route, a query, date math, JS behavior), write or extend a test that fails without the change, and watch it fail first.
+2. Run the whole suite (`uv run pytest`; with template or JS changes, `uv run pytest -m ""`).
+3. Click through the real app (`GTD dev`) for anything visual.
+
+Keep the suite from piling up:
+- Prefer extending the existing test for a feature over adding a new one.
+- Looks (CSS, spacing, wording, icons, layout) get checked by eye, not by a new test; the crawl already checks every page renders and keeps the skeleton.
+- A browser test only for JS behavior the Flask client can't see; anything checkable in the HTML goes in `test_app.py` (milliseconds, not a Chromium page).
+- When a feature is removed or changed, delete or rewrite its tests; don't add "X is gone" tests for it.
 
 Enforcement:
-- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail. It also runs the browser tests when `templates/` or `static/` have uncommitted changes. After a green run it stores a fingerprint of the working tree (`.git/tests-green`) and skips the tests on a turn that changed nothing since.
-- `.githooks/pre-commit` refuses commits while tests fail. It also runs the browser tests when the commit touches `templates/` or `static/`. It is enabled per clone with `git config core.hooksPath .githooks`.
+- Tests run in parallel with pytest-xdist (`-n auto` in `pyproject.toml`'s `addopts`): one process per core, each with its own Chromium and live server for the browser tests. `test_every_form_submits`, the slowest, is split into `SHARDS` parts so they run side by side. Tests mustn't share state across files or depend on order.
+- A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail. It also runs the browser tests (in the same run) when `templates/` or `static/` have uncommitted changes. After a green run it stores a fingerprint of the working tree (`.git/tests-green`) and skips the tests on a turn that changed nothing since.
+- `.githooks/pre-commit` refuses commits while tests fail. It also runs the browser tests (in the same run) when the commit touches `templates/` or `static/`. It is enabled per clone with `git config core.hooksPath .githooks`.
 
 Layout (Flask test client, temporary DB):
 - `tests/conftest.py` holds the fixtures:
