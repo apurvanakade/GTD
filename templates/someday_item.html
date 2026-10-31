@@ -10,6 +10,7 @@
   <div class="title-line">
     <input name="title" value="{{ s.title }}" class="big" aria-label="Title" required>
     {{ area_select(s.area_id, submit=True) }}
+    {{ tickler(s.tickle_on) }}
     <select name="activate" data-submit aria-label="Activate" title="Commit to it: opens what it becomes">
       <option value="">activate…</option><option value="project">as a project</option><option value="task">as a task</option>
     </select>
@@ -17,6 +18,5 @@
   </div>
   <textarea name="notes" rows="6" placeholder="Why, what it would take…">{{ s.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
-  {{ tickler(s.tickle_on) }}
 </form>
 {% endblock %}

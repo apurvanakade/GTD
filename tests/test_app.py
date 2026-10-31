@@ -454,8 +454,6 @@ def test_reference(client, conn):
                     headers={"Referer": f"/reference/{rid}"})
     assert r.headers["Location"].endswith(f"/reference/{rid}")  # Save stays on the page
     assert db.get_reference(conn, rid)["notes"].startswith("hunter2")
-    page = client.get(f"/reference/{rid}").get_data(as_text=True)
-    assert '<a href="https://example.com/a?b=1"' in page and '<a href="obsidian://open?vault=j"' in page
     listing = client.get("/reference").get_data(as_text=True)
     assert "Wifi" in listing and "hunter2" in listing  # first line of the notes
     client.post(f"/reference/{rid}", data={"title": "", "notes": ""})
@@ -1323,10 +1321,10 @@ def test_favicon(client):
     assert r.status_code == 200 and b"<svg" in r.data
 
 
-def test_links_filter_skips_markdown_and_trailing_punctuation():
-    from app import links
-    assert links("[site](https://example.com) and obsidian://open?vault=x, or (https://a.b/c).") == \
-        ["https://example.com", "obsidian://open?vault=x", "https://a.b/c"]
+def test_reference_page_shows_a_url_once(client, conn):
+    rid = db.add_reference(conn, title="Site", notes="https://example.com")
+    html = client.get(f"/reference/{rid}").get_data(as_text=True)
+    assert html.count("https://example.com") == 1  # the notes editor shows and opens it; no second list
 
 
 # --- review fixes (2026-10-24) ----------------------------------------------

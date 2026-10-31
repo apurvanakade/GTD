@@ -227,6 +227,14 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .title-line select:hover { border-color: var(--line); color: var(--fg); }
 .title-line > .warn { cursor: help; }
 .title-line form { margin: 0; display: contents; }
+/* A someday tickler date, quiet like the selects beside it: ⏳, the box, 📅; how it reads shows only while editing. */
+.title-line .tickler { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: .875rem; }
+.tickler .date-field { flex: none; }
+.tickler .date-field input[name] { width: 6.5em; padding: 4px 6px; font-size: inherit; color: inherit; background: transparent; border-color: transparent; }
+.tickler .date-field input[name]:hover, .tickler .date-field input[name]:focus { border-color: var(--line); color: var(--fg); }
+.tickler .date-field .pick { padding: 2px; opacity: .6; }
+.tickler .hint { font-size: .8rem; white-space: nowrap; }
+.tickler:not(:focus-within) .hint { display: none; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
 .project textarea, .edit textarea, .project .md-editor, .edit .md-editor { margin-top: 6px; }
@@ -249,8 +257,6 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .edit label input[name="new_project"] { display: none; }
 .edit label select:has(option[value^="__new__"]:checked) + input { display: block; }
 /* Reference page: the URLs in its notes, clickable (a textarea can't be). */
-ul.links { list-style: none; padding: 0; margin: 12px 0; }
-ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 
 /* Rows. */
 .tasks { list-style: none; margin: 0; padding: 0; }

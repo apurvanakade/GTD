@@ -1150,9 +1150,11 @@ def test_dragging_an_inbox_row_onto_an_areas_someday(page, live, conn):
 def test_someday_item_activate_and_tickler(page, live, conn):
     sid = next(s["id"] for s in db.someday_items(conn) if s["title"] == "learn Italian")
     page.goto(live + f"/someday/{sid}")
-    box = page.locator("input[name=tickle_on]")
+    box = page.locator(".title-line input[name=tickle_on]")  # a quiet control on the title line
+    assert not page.locator(".tickler .hint").is_visible()  # its reading shows only while editing
     box.fill("nov 15")
     page.wait_for_function("document.querySelector('.hint.when').textContent === '→ Sun Nov 15'")
+    assert page.locator(".tickler .hint").is_visible()
     with page.expect_navigation():
         box.press("Tab")  # leaving the box saves it
     assert db.get_someday(conn, sid)["tickle_on"] == "2026-11-15"

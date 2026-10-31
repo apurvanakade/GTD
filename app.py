@@ -477,12 +477,6 @@ def reference_delete(id):
     return redirect(url_for("reference"))
 
 
-@app.template_filter()
-def links(text):
-    """Every URL in a note (http, obsidian://, …), for the reference page's clickable links."""
-    return re.findall(r"\b[a-z][a-z0-9+.-]*://[^\s<>\"]*[^\s<>\".,;:!?')\]]", text or "", re.I)
-
-
 @app.route("/done")
 def done():
     return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"),

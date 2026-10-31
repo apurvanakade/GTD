@@ -13,12 +13,12 @@
       {% for s in ['active', 'waiting', 'someday', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>
     {{ area_select(p.area_id, keep=area, submit=True) }}
+    {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
     {% if tasks %}{{ pin_button() }}{% endif %}
     {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
   </div>
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
-  {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
 </form>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step', marks=True) %}
   <select name="step" aria-label="Step">

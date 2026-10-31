@@ -9,8 +9,6 @@
     <input name="title" value="{{ r.title }}" class="big" aria-label="Title" required>
     <button formaction="{{ url_for('reference_delete', id=r.id) }}" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this reference item?')">✕</button>
   </div>
-  {% set urls = r.notes|links %}
-  {% if urls %}<ul class="links">{% for u in urls %}<li><a href="{{ u }}">{{ u }}</a></li>{% endfor %}</ul>{% endif %}
   <textarea name="notes" rows="14" placeholder="Details, links, model numbers…">{{ r.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
 </form>
