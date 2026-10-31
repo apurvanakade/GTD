@@ -297,7 +297,7 @@ def completed(abandoned=False, **filters):
 @app.route("/next")
 def next_view():
     return render_template("next.html", tasks=db.next_list(conn()), project_groups=db.project_groups(conn()),
-                           **completed(ground=0))
+                           **completed())
 
 
 def add_next_action():
@@ -318,11 +318,6 @@ def next_add():
     return back("next_view")
 
 
-@app.route("/h0")
-def h0_view():
-    return render_template("h0.html", tasks=db.h0_actions(conn()), project_groups=db.project_groups(conn()), **completed(ground=1))
-
-
 def soon(due):
     """How soon an ISO due date is: overdue, today, week (≤7 days), month (≤30), later; '' when undated."""
     if not due:
@@ -331,7 +326,7 @@ def soon(due):
     return "overdue" if days < 0 else "today" if days == 0 else "week" if days <= 7 else "month" if days <= 30 else "later"
 
 
-# Next and H0 fold into these bands: (key, label, open by default, the soon() keys in it); undated tasks are "No date".
+# Next folds into these bands: (key, label, open by default, the soon() keys in it); undated tasks are "No date".
 BANDS = [("now", "Now", True, ("overdue", "today")), ("week", "This week", False, ("week",)),
          ("later", "Later", False, ("month", "later")), ("nodate", "No date", False, ("",))]
 
@@ -341,15 +336,6 @@ def bands(tasks):
     """The tasks split into BANDS, as (key, label, open, tasks), leaving out empty bands."""
     out = [(key, label, is_open, [t for t in tasks if soon(t["due_date"]) in keys]) for key, label, is_open, keys in BANDS]
     return [b for b in out if b[3]]
-
-
-@app.post("/h0/add")
-def h0_add():
-    fields = task_fields_from_form()
-    if fields.get("title"):
-        db.add_task(conn(), fields.pop("title"), today=today(), ground=1, project_id=None,
-                    **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
-    return redirect(url_for("h0_view"))
 
 
 @app.route("/waiting")
@@ -536,8 +522,7 @@ def search_suggest():
     for kind, r in db.suggest(conn(), request.args.get("q") or ""):
         if kind == "task":
             out.append({"title": r["title"], "url": url_for("task_view", id=r["id"]),
-                         "kind": r["state"] if r["state"] != "open" else "H0" if r["ground"] and r["step"] == "next"
-                                 else "inbox" if r["inbox"] else r["step"],  # waiting, later, someday
+                         "kind": r["state"] if r["state"] != "open" else "inbox" if r["inbox"] else r["step"],  # next, waiting, later, someday
                          "meta": r["project_title"] or ""})
         elif kind == "project":
             out.append({"title": r["title"], "url": url_for("project_view", id=r["id"]), "kind": "project",

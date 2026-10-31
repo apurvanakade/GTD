@@ -399,7 +399,7 @@ def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
     page.keyboard.press("n")  # ignored while the overlay is open
     page.keyboard.press("Escape")
     assert not page.locator(".help-dialog").evaluate("d => d.open")
-    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("p", "/projects"), ("h", "/h0")):
+    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("p", "/projects"), ("n", "/next")):
         with page.expect_navigation():
             page.keyboard.press(key)
         assert page.url == live + path
@@ -440,22 +440,19 @@ def test_notes_editor_undo(page, live, conn):
 
 def test_due_bands_fold_and_remember(page, live, conn):
     db.add_task(conn, "wk", step="next", ground=1, due_date="2026-10-25")
-    page.goto(live + "/h0")
+    page.goto(live + "/next")
     assert not row(page, "wk").is_visible()  # This week starts folded
     page.locator("details[data-band=week] summary").click()
     assert row(page, "wk").is_visible()
-    page.wait_for_function("localStorage.getItem('fold:/h0:week') === '1'")
+    page.wait_for_function("localStorage.getItem('fold:/next:week') === '1'")
     page.reload()
     assert row(page, "wk").is_visible()  # remembered
-    page.locator("details[data-band=now] summary").click()
-    page.goto(live + "/next")
-    assert page.locator("details[data-band=now]").get_attribute("open") is not None  # per page
 
 
 def test_due_bands_remember_only_clicks(page, live, conn):
-    page.goto(live + "/h0")
+    page.goto(live + "/next")
     page.wait_for_timeout(100)  # any toggle events from parsing have fired
-    assert page.evaluate("Object.keys(localStorage).filter(k => k.includes('/h0:'))") == []  # defaults aren't frozen
+    assert page.evaluate("Object.keys(localStorage).filter(k => k.includes('/next:'))") == []  # defaults aren't frozen
 
 
 def test_title_and_notes_save_themselves(page, live, conn):
@@ -612,14 +609,19 @@ def test_dragging_a_next_action_onto_another_project_moves_it(page, live, conn):
     assert (db.get_task(conn, 2)["project_id"], db.get_task(conn, 2)["step"]) == (2, "later")  # next stays a conscious choice
 
 
-def test_dragging_an_h0_task_files_it_in_a_project(page, live, conn):
-    page.goto(live + "/h0")
+def test_dragging_between_h0_and_a_project_on_next(page, live, conn):
+    """An H0 task filed in a project leaves Next (a later step); a project's next action dropped on H0 stays on it."""
+    page.goto(live + "/next")
     page.locator(".pin-panel").click()
-    assert page.locator('.drop-panel [data-project="h0"]').count() == 0  # it's H0 already
     drag_to_panel(page, row(page, "vacuum").locator(".title"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"5\"]')")
     t = db.get_task(conn, 5)
     assert (t["project_id"], t["step"], t["ground"]) == (1, "later", 0)
+    with page.expect_navigation():  # it stays on Next, now under H0: the page redraws
+        drag_to_panel(page, row(page, "buy tiles").locator(".title"), '[data-project="h0"]')
+    assert row(page, "buy tiles").locator(".proj").inner_text() == "H0"
+    t = db.get_task(conn, 2)
+    assert (t["project_id"], t["step"], t["ground"]) == (None, "next", 1)
 
 
 def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
@@ -691,13 +693,14 @@ def test_a_failed_calendar_drag_reloads(page, live, conn):
 
 
 def test_tick_off_updates_the_band_count_and_nav_dot(page, live):
-    page.goto(live + "/h0")
-    assert page.locator("details[data-band=now] summary b").inner_text() == "1"
-    assert page.locator("nav a", has_text="H0").locator(".badge").count() == 1
+    page.goto(live + "/next")
+    n = int(page.locator("details[data-band=now] summary b").inner_text())
+    badge = page.locator("nav a", has_text="Next").locator(".badge")
+    assert badge.get_attribute("aria-label") == str(n)
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
-    page.wait_for_function("document.querySelector('details[data-band=now] summary b').textContent === '0'")
-    page.wait_for_function("!document.querySelector('nav a[href=\"/h0\"] .badge')")
+    page.wait_for_function(f"document.querySelector('details[data-band=now] summary b').textContent === '{n - 1}'")
+    page.wait_for_function(f"document.querySelector('nav a[href=\"/next\"] .badge')?.ariaLabel === '{n - 1}'")
 
 
 def test_capture_keys_do_nothing_while_help_is_open(page, live):

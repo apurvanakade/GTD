@@ -4,11 +4,11 @@
 {% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('next_add'), 'Add a next action', marks=True) %}
-  {{ project_select() }}
+  {{ project_select('h0') }}
   {{ date_input(placeholder='due: tomorrow, sat…') }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
 {% endcall %}
 {{ banded(tasks, empty='No next actions. Clear the inbox or check stalled projects.') }}
 {% include "_done_toggle.html" %}
-{% if tasks %}{{ move_panel('next') }}{% endif %}
+{% if tasks %}{{ move_panel('next', stays='h0') }}{% endif %}
 {% endblock %}

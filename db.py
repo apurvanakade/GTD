@@ -109,14 +109,13 @@ TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_stat
   FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"""
 # An H0 someday task: a single someday / maybe item. Its due date is its tickler: out of sight until then.
 MAYBE = "t.state = 'open' AND t.step = 'someday'"
-# Next Actions leave out H0 tasks (they have their own tab), recurring tasks until their due day, and tasks of waiting/someday projects.
+# Next Actions: H0's and active projects' next actions; recurring tasks count from their due day.
 ACTIVE = "t.project_id IN (SELECT id FROM projects WHERE status = 'active')"
-NEXT = f"t.state = 'open' AND t.step = 'next' AND {ACTIVE}"
+NEXT = f"t.state = 'open' AND t.step = 'next' AND (t.ground OR {ACTIVE})"
 READY = "(t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
 VISIBLE_NEXT = f"{NEXT} AND {READY}"
 DUE_NEXT = f"{NEXT} AND t.due_date <= ?"  # the nav count: due today or overdue only
-H0_NEXT = "t.state = 'open' AND t.ground AND t.step = 'next'"  # the H0 tab; H0's waiting tasks are on Waiting
-VISIBLE_H0 = f"{H0_NEXT} AND t.due_date <= ?"  # the tab's count: due today or overdue only
+H0_NEXT = "t.state = 'open' AND t.ground AND t.step = 'next'"  # Horizons' ground card; H0's waiting tasks are on Waiting
 STEP_ORDER = """CASE WHEN t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2
   WHEN t.step = 'someday' THEN 3 ELSE 4 END"""
 
@@ -362,8 +361,8 @@ def inbox_tasks(c):
 
 
 def next_list(c):
-    """The Next tab: every next action outside H0 and waiting/someday projects, repeats not yet due included,
-    soonest due first; undated ones last."""
+    """The Next tab: every next action, H0's and active projects', repeats not yet due included, soonest due first;
+    undated ones last."""
     return c.execute(f"""{TASK_SELECT} WHERE {NEXT}
         ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
 
@@ -391,9 +390,7 @@ def counts(c, today):
     return {
         "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + one(f"SELECT count(*) FROM ({TICKLED})", today.isoformat()),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
-        "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
         "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
-        "h0_overdue": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'") + one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),

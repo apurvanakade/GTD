@@ -11,9 +11,9 @@
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
 /* Task kinds: the calendar's colors and legend dots, the only colored stripes in the app. */
-.k-next { --k: #2563eb; } .k-h0 { --k: #16a34a; } .k-later { --k: #a8a29e; }
+.k-next { --k: #2563eb; } .k-later { --k: #a8a29e; }
 .k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
-/* Next and H0 fold into due bands; dates and ↻ show on hover, except an overdue date. */
+/* Next folds into due bands; dates and ↻ show on hover, except an overdue date. */
 .band { margin-top: 14px; }
 .band > summary { font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
 .band > summary::-webkit-details-marker { display: none; }

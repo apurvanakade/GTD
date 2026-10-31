@@ -51,7 +51,7 @@ document.addEventListener('keydown', e => {
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
-// Next and H0's due bands: remember which you opened or folded, per page. Only a click is saved: a band
+// Next's due bands: remember which you opened or folded, per page. Only a click is saved: a band
 // that starts open fires 'toggle' too, which would freeze today's default.
 document.querySelectorAll('details.band').forEach(d => {
   const key = `fold:${location.pathname}:${d.dataset.band}`;

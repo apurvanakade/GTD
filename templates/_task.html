@@ -29,7 +29,7 @@
 </li>
 {% endmacro %}
 
-{# Next and H0: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. #}
+{# Next: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. #}
 {% macro banded(tasks, project=True, empty='') %}
 {% for key, label, is_open, rows in tasks|bands %}
 <details class="band" data-band="{{ key }}"{% if is_open %} open{% endif %}>
@@ -103,8 +103,8 @@
    for remembering the pin; `reload`: the page redraws after a move instead of dropping the row (Waiting, where a
    moved waiting step stays). #}
 {% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the projects open to drop on">Projects</button>{% endmacro %}
-{% macro move_panel(key, current=none, reload=False) %}
-<aside class="drop-panel" data-move="{{ url_for('task_move') }}" data-key="{{ key }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}>
+{% macro move_panel(key, current=none, reload=False, stays=none) %}
+<aside class="drop-panel" data-move="{{ url_for('task_move') }}" data-key="{{ key }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>
   <button type="button" class="unpin" title="Hide the projects" aria-label="Hide the projects">✕</button>{{ project_targets(current) }}</aside>
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}

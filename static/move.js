@@ -33,13 +33,14 @@
     if (naming) { naming.target.classList.remove('naming'); naming.target.querySelector('input').value = ''; }
     naming = null;
   };
-  // Moved rows leave the list, their bands' counts drop and the nav's dots follow. A project's next action, or any
-  // row where the page asks (Waiting: a waiting step stays waiting), redraws the page instead.
+  // Moved rows leave the list, their bands' counts drop and the nav's dots follow. A project's next action, any row
+  // where the page asks (Waiting: a waiting step stays waiting), or a drop on a target whose tasks the page also
+  // lists (`data-stays`: H0 on Next), redraws the page instead.
   const move = async (rows, data) => {
     const form = new URLSearchParams(data);
     rows.forEach(li => form.append('id', li.dataset.id));
     if (!await post(panel.dataset.move, form)) return;
-    if ('reload' in panel.dataset || rows.some(li => 'pinned' in li.dataset)) return location.reload();
+    if ('reload' in panel.dataset || data.project_id === panel.dataset.stays || rows.some(li => 'pinned' in li.dataset)) return location.reload();
     for (const li of rows) {
       const n = li.closest('details.band')?.querySelector('summary b');
       if (n) n.textContent = Math.max(0, n.textContent - 1);

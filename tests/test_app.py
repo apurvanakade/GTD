@@ -128,8 +128,8 @@ def test_done_then_pick_next(client, conn):
     r = client.post(f"/tasks/{a}/done-then-project", headers={"Referer": "http://localhost/next"})
     assert r.status_code == 302 and r.headers["Location"].endswith(f"/projects/{pid}")
     assert db.get_task(conn, a)["state"] == "done"
-    r = client.post(f"/tasks/{h}/done-then-project", headers={"Referer": "http://localhost/h0"})
-    assert r.headers["Location"].endswith("/h0") and db.get_task(conn, h)["state"] == "done"
+    r = client.post(f"/tasks/{h}/done-then-project", headers={"Referer": "http://localhost/next"})
+    assert r.headers["Location"].endswith("/next") and db.get_task(conn, h)["state"] == "done"
 
 
 def test_done_stays_on_the_page(client, conn):
@@ -159,7 +159,7 @@ def test_tasks_need_a_project_or_h0(client, conn):
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": "h0"})
     t = db.get_task(conn, tid)
     assert (t["step"], t["ground"], t["project_id"]) == ("next", 1, None)
-    assert t["title"] in client.get("/h0").get_data(as_text=True)
+    assert t["title"] in client.get("/next").get_data(as_text=True)
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": str(pid)})
     assert db.get_task(conn, tid)["ground"] == 0  # picking a project clears H0
 
@@ -198,7 +198,7 @@ def test_inbox_is_not_a_status(client, conn):
 
 
 def test_h0_tasks_are_next_or_waiting(client, conn):
-    """An H0 task is a next action or waiting; never later. Only H0's next actions are on the H0 tab."""
+    """An H0 task is a next action or waiting; never later. Only H0's next actions are on Next."""
     steps = {s: db.get_task(conn, db.add_task(conn, str(s), step=s, ground=1))["step"] for s in (None, "next", "waiting", "later")}
     assert steps == {None: "next", "next": "next", "waiting": "waiting", "later": "next"}
     pid = db.add_project(conn, "P")
@@ -213,8 +213,8 @@ def test_h0_tasks_are_next_or_waiting(client, conn):
     client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
     parcel = conn.execute("SELECT * FROM tasks WHERE title = 'parcel'").fetchone()
     assert (parcel["ground"], parcel["step"]) == (1, "waiting")
-    h0 = client.get("/h0").get_data(as_text=True)
-    assert ">later<" in h0 and ">waiting<" not in h0 and ">parcel<" not in h0
+    nxt = client.get("/next").get_data(as_text=True)
+    assert ">later<" in nxt and ">parcel<" not in nxt
     assert len(db.h0_actions(conn)) == 4 and db.counts(conn, TODAY)["waiting"] == 2
     assert ">parcel<" in client.get("/waiting").get_data(as_text=True)
 
@@ -340,7 +340,7 @@ def test_no_stripe_colors(client, conn):
     """Colored stripes meant different things on different pages (due soon here, waiting there): only the calendar,
     with its legend, colors tasks (by kind)."""
     seed(conn)
-    for url in ("/next", "/h0", "/projects/1", "/projects", "/waiting", "/inbox", "/horizons", "/search?q=tiles"):
+    for url in ("/next", "/projects/1", "/projects", "/waiting", "/inbox", "/horizons", "/search?q=tiles"):
         html = client.get(url).get_data(as_text=True)
         assert not re.search(r'class="[^"]*\b[sk]-(overdue|today|week|month|later|next|h0|waiting|someday|inbox)\b', html), url
         assert 'class="legend"' not in html, url
@@ -360,7 +360,7 @@ def test_nav_counts_are_dots(client, conn):
         db.add_task(conn, f"h0 {i}", step="next", ground=1, due_date="2026-10-22")
     db.add_task(conn, "wait", step="waiting", project_id=pid)
     assert nav_badges(client.get("/inbox").get_data(as_text=True)) == {
-        "Next": ("s1", "1 due today"), "H0": ("s3 hot", "7 due today or overdue"), "Waiting": ("s1", "1 waiting"),
+        "Next": ("s3 hot", "8 due today or overdue"), "Waiting": ("s1", "1 waiting"),
         "Inbox": ("s2", "4 in the inbox"), "Projects": ("s1 warn", "1 stalled")}
 
 
@@ -372,20 +372,18 @@ def bands(html):
     return out
 
 
-def test_next_and_h0_fold_into_due_bands(client, conn):
+def test_next_folds_into_due_bands(client, conn):
     for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"),
                        ("mo", "2026-11-10"), ("lt", "2027-03-01")]:
         db.add_task(conn, title, step="next", ground=1, due_date=due)
-    html = client.get("/h0").get_data(as_text=True)
+    html = client.get("/next").get_data(as_text=True)
     assert bands(html) == [("now", True, ["od", "td"]), ("week", False, ["wk"]), ("later", False, ["mo", "lt"])]
     assert re.search(r'data-band="week"[^>]*>\s*<summary>This week <b>1</b></summary>', html)
-    assert 'title="Ground level' not in html  # no H0 tag on the H0 page
     assert 'class="legend"' not in html
     pid = db.add_project(conn, "P")
     db.add_task(conn, "loose end", step="next", project_id=pid)
     html = client.get("/next").get_data(as_text=True)
-    assert bands(html) == [("nodate", False, ["loose end"])]  # empty bands aren't shown
-    assert 'class="legend"' not in html
+    assert bands(html)[-1] == ("nodate", False, ["loose end"])  # empty bands aren't shown (no No date above)
 
 
 def test_calendar_colors_tasks_by_kind(client, conn):
@@ -397,7 +395,7 @@ def test_calendar_colors_tasks_by_kind(client, conn):
     db.add_task(conn, "dreamy", step="later", project_id=some, due_date="2026-10-23")
     db.add_task(conn, "waity", step="waiting", project_id=act, due_date="2026-10-23")
     html = client.get("/calendar").data.decode()
-    for kind, title in (("next", "nexty"), ("later", "stepy"), ("h0", "groundy"), ("someday", "dreamy"),
+    for kind, title in (("next", "nexty"), ("later", "stepy"), ("next", "groundy"), ("someday", "dreamy"),
                         ("waiting", "waity")):
         assert re.search(rf'class="ev k-{kind}[^"]*">[^<]*{title}<', html), kind
     assert 'class="legend"' in html
@@ -990,54 +988,28 @@ def test_due_date_box_has_a_calendar_picker(client, conn):
     assert 'name="due_date"' in html and 'class="pick"' in html and 'type="date" class="picker"' in html
 
 
-def test_h0_tasks_stay_off_next_actions(client, conn):
-    gid = db.add_task(conn, "stretch", step="next", ground=1)
-    pid = db.add_project(conn, "Proj")
-    db.add_task(conn, "real step", step="next", project_id=pid)
-    page = client.get("/next").data
-    assert b"real step" in page and b"stretch" not in page
-    assert db.counts(conn, date(2026, 10, 22))["next"] == 0  # undated: not in the count
-    assert gid in [t["id"] for t in db.h0_actions(conn)]
-
-
-def test_h0_tab_lists_every_ground_task_by_due_date(client, conn):
-    db.add_task(conn, "stretch", step="next", ground=1, due_date="2026-12-01")
-    db.add_task(conn, "later bins", step="next", ground=1, recur="weekly", due_date="2026-11-30")
-    db.add_task(conn, "soon", step="next", ground=1, due_date="2026-10-25")
-    page = client.get("/h0").get_data(as_text=True)
-    assert "Upcoming" not in page  # nothing folded away: future repeats are listed too
-    assert page.index("soon") < page.index("later bins") < page.index("stretch")
-    assert "later bins" not in client.get("/next").get_data(as_text=True)
-    # the count is only what is due today or overdue: not undated, not future
-    assert db.counts(conn, date(2026, 10, 24))["h0"] == 0
-    assert db.counts(conn, date(2026, 10, 25))["h0"] == 1
-    assert db.counts(conn, date(2026, 10, 26))["h0"] == 1
-
-
 def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, conn):
     pid, sid = db.add_project(conn, "P"), db.add_project(conn, "S", status="someday")
     db.add_task(conn, "undated", step="next", project_id=pid)
     db.add_task(conn, "weekly far", step="next", recur="weekly", due_date="2026-11-30", project_id=db.add_project(conn, "Q"))
     db.add_task(conn, "overdue one", step="next", due_date="2026-10-20", project_id=db.add_project(conn, "R"))
     db.add_task(conn, "someday step", step="next", project_id=sid)
-    db.add_task(conn, "ground", step="next", ground=1)
+    db.add_task(conn, "ground", step="next", ground=1)  # H0: a next action with no project
+    db.add_task(conn, "ground soon", step="next", ground=1, due_date="2026-10-22")
     html = client.get("/next").get_data(as_text=True)
-    assert "Upcoming" not in html and "someday step" not in html and ">ground<" not in html
-    assert html.index("overdue one") < html.index("weekly far") < html.index("undated")
-    assert db.counts(conn, TODAY)["next"] == 1  # only the overdue one: not undated, not a far repeat
+    assert "Upcoming" not in html and "someday step" not in html
+    assert html.index("overdue one") < html.index("ground soon") < html.index("weekly far") < html.index("undated")
+    assert ">ground<" in html and 'title="Ground level' in html  # H0's tag where a project's would be
+    assert db.counts(conn, TODAY)["next"] == 2  # due today or overdue: not undated, not a far repeat
 
 
-def test_add_h0_task_straight_from_h0_tab(client, conn):
-    page = client.get("/h0").data
-    assert b'action="/h0/add"' in page
-    r = client.post("/h0/add", data={"title": "stretch", "due_date": "", "recur": "daily"})
-    assert r.status_code == 302 and r.headers["Location"].endswith("/h0")
+def test_next_add_line_defaults_to_h0(client, conn):
+    page = client.get("/next").get_data(as_text=True)
+    assert '<option value="h0" selected>' in page.split('action="/next/add"')[1].split("</form>")[0]
+    client.post("/next/add", data={"title": "stretch", "project_id": "h0", "due_date": "", "recur": "daily"})
     t = conn.execute("SELECT * FROM tasks WHERE title='stretch'").fetchone()
     assert (t["step"], t["ground"], t["project_id"]) == ("next", 1, None)
-    assert b"stretch" in client.get("/h0").data
-    client.post("/h0/add", data={"title": "  "})  # blank title: nothing added
-    client.post("/h0/add", data={"title": "taxes", "due_date": "tomorrow", "recur": ""})
-    assert conn.execute("SELECT due_date, ground FROM tasks WHERE title='taxes'").fetchone()[:] == ("2026-10-23", 1)
+    client.post("/next/add", data={"title": "  ", "project_id": "h0"})  # blank title: nothing added
     assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=''").fetchone()[0] == 0
 
 
@@ -1136,11 +1108,11 @@ def test_done_toggle_on_lists(client, conn):
     assert 'href="/next">Hide completed' in page("/next?done=1")
     assert "2026-10-22" in shown and "2026-10-19" in shown  # completion dates are shown
     assert "2026-10-22" in page("/done")
-    assert "swept porch" in page("/h0?done=1") and "swept porch" not in page("/h0")
-    assert "swept porch" not in page("/next?done=1") and "newer step" in page("/next?done=1")
+    assert "swept porch" in page("/next?done=1") and "swept porch" not in page("/next")
+    assert "newer step" in page("/next?done=1")
     assert "Done proj" in page("/projects?done=1") and "Done proj" not in page("/projects")
     # a done row can't be ticked off again (that would re-spawn a repeating task)
-    assert 'class="done"' not in page("/h0?done=1").split("Completed")[-1]
+    assert 'class="done"' not in page("/next?done=1").split("Completed")[-1]
 
 
 def test_top_bar_is_the_same_on_every_page(client, conn):
@@ -1149,7 +1121,7 @@ def test_top_bar_is_the_same_on_every_page(client, conn):
     conn.commit()
     bar = lambda url: re.search(r'<div class="bar">.*?</div>', client.get(url).data.decode(), re.S).group(0)
     first = bar("/inbox")
-    for url in ("/next", "/h0", "/projects", f"/projects/{ids['active']}", "/waiting", "/calendar", "/timer", "/review"):
+    for url in ("/next", "/projects", f"/projects/{ids['active']}", "/waiting", "/calendar", "/timer", "/review"):
         assert bar(url) == first, url
 
 
@@ -1248,7 +1220,7 @@ def test_nav_groups_tabs_by_kind_of_list(client):
     """Working minute by minute, task lists, lists of projects; then the weekly-review pages."""
     nav = client.get("/next").data.decode().split("<nav>")[1].split("</nav>")[0]
     groups = [re.findall(r'<a [^>]*>([A-Za-z0-9]+)', g) for g in re.findall(r'<span class="(?:group|aux)">(.*?)</span>', nav, re.S)]
-    assert groups == [["Timer", "Calendar"], ["Next", "H0", "Waiting", "Inbox"], ["Projects", "Someday", "Reference"],
+    assert groups == [["Timer", "Calendar"], ["Next", "Waiting", "Inbox"], ["Projects", "Someday", "Reference"],
                       ["Review", "Horizons", "Done"]]
 
 
@@ -1400,7 +1372,7 @@ def test_completion_dates_show_in_local_time(client, conn, monkeypatch):
         db.complete_task(conn, t, TODAY)
         conn.execute("UPDATE tasks SET completed_at = '2026-10-23 01:30:00' WHERE id = ?", (t,))  # 21:30 on the 22nd
         conn.commit()
-        html = client.get("/h0?done=1").get_data(as_text=True)
+        html = client.get("/next?done=1").get_data(as_text=True)
         assert "2026-10-22" in html and "2026-10-23" not in html
     finally:
         monkeypatch.undo()
@@ -1608,7 +1580,7 @@ def test_dragging_moves_any_open_task_between_projects(client, conn):
 
 def test_every_task_list_has_the_drop_panel(client, conn):
     ids = seed(conn)
-    for url in ("/inbox", "/next", "/h0", "/waiting", f"/projects/{ids['active']}"):
+    for url in ("/inbox", "/next", "/waiting", f"/projects/{ids['active']}"):
         html = client.get(url).get_data(as_text=True)
         assert 'class="drop-panel"' in html and 'class="pin-panel"' in html, url
     # A project page doesn't offer the project itself.
@@ -1942,7 +1914,7 @@ def test_repeat_preview_reads_the_rule_and_the_next_date(client):  # today is Th
 
 def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):
     seed(conn)
-    html = client.get("/h0").get_data(as_text=True)
+    html = client.get("/next").get_data(as_text=True)
     bell = re.search(r'<li class="task[^>]*data-id="7".*?</li>', html, re.S).group(0)  # "call mum"
     assert '<span class="remind" title="Reminder 2026-10-23' in bell and "🔔" in bell
     sent = re.search(r'<li class="task[^>]*data-id="4".*?</li>', client.get("/waiting").get_data(as_text=True),
@@ -1951,7 +1923,7 @@ def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):
 
 
 @pytest.mark.parametrize("url, data", [
-    ("/capture", {}), ("/next/add", {"project_id": "h0"}), ("/h0/add", {}), ("/waiting/add", {}),
+    ("/capture", {}), ("/next/add", {"project_id": "h0"}), ("/waiting/add", {}),
     ("/calendar", {"due_date": "2026-10-30"}),
 ])
 def test_a_trailing_bang_time_on_an_add_line_sets_a_reminder(client, conn, url, data):
@@ -1979,7 +1951,7 @@ def test_a_bang_that_isnt_a_reminder_stays_in_the_title(client, conn, title, fla
 
 
 @pytest.mark.parametrize("url, data", [
-    ("/capture", {}), ("/next/add", {"project_id": "h0"}), ("/h0/add", {}), ("/waiting/add", {}),
+    ("/capture", {}), ("/next/add", {"project_id": "h0"}), ("/waiting/add", {}),
     ("/calendar", {}),
 ])
 def test_add_lines_take_due_repeat_and_reminder_in_any_order(client, conn, url, data):
@@ -2008,7 +1980,7 @@ def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, fla
 def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
     hint = "@fri due · *weekly repeat · !3pm remind"
     pid = db.add_project(conn, "P")
-    for url in ("/inbox", "/next", "/h0", "/waiting", "/calendar", f"/projects/{pid}"):
+    for url in ("/inbox", "/next", "/waiting", "/calendar", f"/projects/{pid}"):
         assert client.get(url).get_data(as_text=True).count(hint) == 2, url  # its add line, and the capture dialog
     assert client.get("/projects").get_data(as_text=True).count(hint) == 1  # the dialog only
     assert "<kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
@@ -2045,8 +2017,8 @@ def test_new_items_go_to_the_top(client, conn):
     client.post("/next/add", data={"title": "fresh next", "project_id": ids["stalled"]})
     undated = [t["title"] for t in db.next_list(conn) if not t["due_date"]]
     assert undated[0] == "fresh next"
-    client.post("/h0/add", data={"title": "fresh h0"})
-    assert [t["title"] for t in db.h0_actions(conn) if not t["due_date"]][0] == "fresh h0"
+    client.post("/next/add", data={"title": "fresh h0", "project_id": "h0"})
+    assert [t["title"] for t in db.next_list(conn) if not t["due_date"]][0] == "fresh h0"
     steps = lambda: [t["title"] for t in db.project_tasks(conn, ids["active"])]
     db.reorder_project(conn, ids["active"], [t["id"] for t in db.project_tasks(conn, ids["active"])])
     db.add_task(conn, "fresh step", step="later", project_id=ids["active"])
@@ -2315,11 +2287,10 @@ def test_the_task_pages_project_link_stands_out(client, conn):
 
 def test_h0_tasks_need_no_date(client, conn):
     """H0 tasks are dated only when given one: made there, moved there, revived, or their date cleared."""
-    client.post("/h0/add", data={"title": "h0 added"})
     client.post("/capture", data={"title": "captured", "project_id": "h0"})
     client.post("/next/add", data={"title": "next added", "project_id": "h0"})
     client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
-    for title in ("h0 added", "captured", "next added", "parcel"):
+    for title in ("captured", "next added", "parcel"):
         assert conn.execute("SELECT due_date FROM tasks WHERE title = ?", (title,)).fetchone()[0] is None, title
     inbox = db.add_task(conn, "filed")
     client.post("/tasks/move", data={"id": inbox, "project_id": "h0"}, headers={"X-Requested-With": "fetch"})
@@ -2333,7 +2304,7 @@ def test_h0_tasks_need_no_date(client, conn):
     db.abandon_task(conn, dated)
     db.revive_task(conn, dated)
     assert db.get_task(conn, dated)["due_date"] is None
-    assert "No date" in client.get("/h0").get_data(as_text=True)
+    assert "No date" in client.get("/next").get_data(as_text=True)
 
 
 def test_several_tasks_move_together(client, conn):

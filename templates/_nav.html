@@ -10,7 +10,6 @@
   </span>
   <span class="group">
     <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next{{ badge(counts.next, 'due today or overdue' if counts.next_overdue else 'due today', 'hot' if counts.next_overdue) }}</a>
-    <a href="{{ url_for('h0_view') }}" class="{{ 'on' if ep == 'h0_view' }}">H0{{ badge(counts.h0, 'due today or overdue' if counts.h0_overdue else 'due today', 'hot' if counts.h0_overdue) }}</a>
     <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{{ badge(counts.waiting, 'waiting') }}</a>
     <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep == 'inbox' }}">Inbox{{ badge(counts.inbox, 'in the inbox') }}</a>
   </span>
