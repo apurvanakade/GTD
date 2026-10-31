@@ -39,10 +39,8 @@ def test_after_done_counts_from_completion():
 # --- inbox processing ------------------------------------------------------
 
 def test_no_process_page(client, conn):
-    """The Inbox page is where items get dealt with: no second page doing the same."""
-    db.add_task(conn, "x")
+    """The Inbox page is where items get dealt with (its Process overlay too): no second page doing the same."""
     assert client.get("/process").status_code == 404
-    assert "/process" not in client.get("/inbox").get_data(as_text=True)
 
 def test_capture_box_only_on_inbox(client, conn):
     tid = db.add_task(conn, "x")

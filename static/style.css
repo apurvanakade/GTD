@@ -120,10 +120,18 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
 .theme-toggle { flex: none; }
-.capture-dialog, .help-dialog { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
+.capture-dialog, .help-dialog, .process { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
 .capture-dialog { width: min(480px, calc(100vw - 32px)); }
 .help-dialog { max-width: 26rem; }
-:is(.capture-dialog, .help-dialog)::backdrop { background: rgb(0 0 0 / .35); }
+/* Process: the item, then one big question and its answers. */
+.process { width: min(440px, calc(100vw - 32px)); padding: 16px 20px 20px; }
+.process header { display: flex; align-items: baseline; gap: 4px; }
+.process .item { flex: 1; color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.process .left { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; margin-right: 4px; }
+.process .q { font-size: 1.6rem; font-weight: 650; margin: 32px 0 16px; }
+.process .row { margin: 0 0 8px; }
+.process .row button { padding: 8px 16px; }
+:is(.capture-dialog, .help-dialog, .process)::backdrop { background: rgb(0 0 0 / .35); }
 :is(.capture-dialog, .help-dialog) h2 { margin-top: 0; }
 .suggest {
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;

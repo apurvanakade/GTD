@@ -1026,3 +1026,47 @@ def test_notes_editor_edge_cases(page, live, conn):
     page.keyboard.press("Shift+ArrowLeft")  # "bold" selected
     page.keyboard.press("ControlOrMeta+i")  # wraps it in italics; doesn't eat bold's underscore
     assert notes_text(page).endswith("___bold___")
+
+
+def test_process_walks_the_inbox_one_question_at_a_time(page, live, conn):
+    page.goto(live + "/inbox")
+    orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
+    page.get_by_role("button", name="Process").click()
+    dialog = page.locator("dialog.process")
+    assert dialog.locator(".item").inner_text() == "legacy orphan"  # the top row first
+    assert dialog.locator("section:not([hidden])").count() == 1  # one question at a time
+    dialog.get_by_role("button", name="No").click()
+    dialog.get_by_role("button", name="Someday").click()
+    dialog.locator(".item", has_text="inbox item").wait_for()
+    t = db.get_task(conn, orphan)
+    assert (t["ground"], t["step"]) == (1, "someday") and row(page, "legacy orphan").count() == 0
+    dialog.get_by_role("button", name="Yes").click()  # actionable
+    dialog.get_by_role("button", name="Yes").click()  # part of a project
+    dialog.locator("select[name=project_id]").select_option("1")
+    dialog.get_by_role("button", name="File").click()
+    dialog.get_by_role("button", name="No").click()  # not its next action
+    dialog.wait_for(state="hidden")
+    t = db.get_task(conn, 1)
+    assert (t["project_id"], t["step"]) == (1, "later")
+    page.wait_for_load_state()  # inbox zero: the page reloads (the tickled item stays)
+    assert page.locator("main li.task[data-id]").count() == 0 and row(page, "sail").count() == 1
+
+
+def test_process_keys_back_and_next_action_with_a_date(page, live, conn):
+    page.goto(live + "/inbox")
+    orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
+    page.get_by_role("button", name="Process").click()
+    dialog = page.locator("dialog.process")
+    page.keyboard.press("y")  # actionable
+    page.keyboard.press("y")  # part of a project
+    dialog.get_by_role("button", name="Back").click()
+    page.keyboard.press("n")  # a single action
+    page.keyboard.press("n")  # over two minutes
+    page.keyboard.press("y")  # mine to do
+    dialog.locator("input[name=due_date]:visible").fill("fri")
+    page.keyboard.press("Enter")
+    dialog.locator(".item", has_text="inbox item").wait_for()
+    t = db.get_task(conn, orphan)
+    assert (t["ground"], t["step"], t["due_date"]) == (1, "next", "2026-10-23")
+    page.keyboard.press("Escape")
+    assert dialog.is_hidden() and row(page, "inbox item").count() == 1
