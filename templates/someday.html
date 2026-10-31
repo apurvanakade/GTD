@@ -3,6 +3,7 @@
 {% block title %}Someday / maybe{% endblock %}
 {% block actions %}{% if groups %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
-{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ area_select(required=True) }}{% endcall %}
-{{ area_groups(groups, steps, 'someday', 'Nothing parked here.') }}
+{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ area_select(required=True) }}
+  <select name="kind" aria-label="Kind"><option value="">maybe</option><option value="project">project</option></select>{% endcall %}
+{{ area_groups(groups, steps, 'someday', 'Nothing parked here.', items) }}
 {% endblock %}

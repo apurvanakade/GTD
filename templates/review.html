@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_deck.html" import stepper %}
+{% from "_task.html" import add_form, area_select with context %}
 {% block title %}Weekly review{% endblock %}
 {# One step shows at a time; the rail of dots (ticked, current, to do) switches between them. #}
 {% macro card(key, label, hint, n=none) %}
@@ -13,34 +14,52 @@
 {%- endmacro %}
 {% block actions %}{{ stepper('review', 'step', steps, step, checked) }}{% endblock %}
 {% block body %}
+{#- New ideas: the page's add line, above the deck as on Horizons. #}
+{% if step == 'creative' %}{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ area_select(required=True) }}{% endcall %}{% endif %}
 <ol class="deck review">
-  {% call card('sweep', 'Mind sweep', 'Capture every open loop.') %}{% endcall %}
+  {#- Get clear #}
+  {% call card('collect', 'Collect loose ends', 'Desktop, downloads, email, notes, tabs → Inbox.') %}{% endcall %}
   {% call card('inbox', 'Inbox to zero', 'File, do or drop each.', counts.inbox) %}
     {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox') }}">Inbox →</a></p>{% endif %}
   {% endcall %}
+  {% call card('sweep', 'Mind sweep', 'Capture every open loop.') %}{% endcall %}
+  {#- Get current #}
   {% call card('overdue', 'Overdue', 'Do, reschedule or drop.', overdue|length) %}
     {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>{% endif %}
-  {% endcall %}
-  {% call card('stalled', 'Stalled projects', 'Pick a next action for each.', stalled|length) %}
-    {% if stalled %}<ul class="plain">{% for p in stalled %}<li><a href="{{ url_for('project_view', id=p.id) }}">⚠ {{ p.title }}</a></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
   {% call card('nexts', 'Scan next actions', 'Tick off done, drop dead.', nexts|length) %}
     {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}
     <p><a class="button" href="{{ url_for('next_view') }}">Next actions →</a></p>
   {% endcall %}
-  {% call card('waiting', 'Chase waiting-fors', 'Nudge the overdue.', counts.waiting) %}
-    {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
-  {% endcall %}
-  {% call card('someday', 'Scan someday / maybe', 'Activate what\'s ready; ✓ each one looked at.', counts.someday) %}
-    {#- Never reviewed first, then the longest ago (db.someday_to_review()). #}
-    {% if someday %}<ul class="plain someday-review">{% for p in someday %}<li>
-      <form method="post" action="{{ url_for('project_reviewed', id=p.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
-      <a href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a> <span class="date" title="Last reviewed">{{ p.reviewed_at|ago }}</span></li>{% endfor %}</ul>
-    <p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
+  {% call card('past', 'Look back', 'Done these two weeks: anything to follow up?') %}
+    {% if recent %}<ul class="plain">{% for t in recent %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.completed_at|local_date }}</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
   {% call card('ahead', 'Look ahead', 'What needs prep now?') %}
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
   {% endcall %}
+  {% call card('waiting', 'Chase waiting-fors', 'Nudge the overdue.', counts.waiting) %}
+    {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
+  {% endcall %}
+  {% call card('projects', 'Review projects', 'Is the next action right? ✓ each one looked at.', unseen(projects)) %}
+    {#- Stalled first, then never reviewed, then the longest ago (db.projects_to_review()). #}
+    {% if projects %}<ul class="plain someday-review">{% for p in projects %}{% set stalled = p.status == 'active' and not p.next_count %}<li>
+      <form method="post" action="{{ url_for('project_reviewed', id=p.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
+      <a href="{{ url_for('project_view', id=p.id) }}">{% if stalled %}⚠ {% endif %}{{ p.title }}</a>
+      <span class="date">{{ p.next_title or p.status if p.status == 'waiting' or p.next_title else '' }}</span>
+      <span class="date" title="Last reviewed">{{ p.reviewed_at|ago }}</span></li>{% endfor %}</ul>{% endif %}
+  {% endcall %}
+  {% call card('checklists', 'Checklists', 'Run through any that apply.') %}
+    {% if checklists %}<ul class="plain">{% for r in checklists %}<li><a href="{{ url_for('reference_view', id=r.id) }}">{{ r.title }}</a></li>{% endfor %}</ul>{% endif %}
+  {% endcall %}
+  {#- Get creative #}
+  {% call card('someday', 'Scan someday / maybe', 'Activate what\'s ready; ✓ each one looked at.', unseen(someday)) %}
+    {#- Items and projects, never reviewed first, then the longest ago; tickled to later out of sight (db.someday_to_review()). #}
+    {% if someday %}<ul class="plain someday-review">{% for x in someday %}{% set project = x.kind == 'project' %}<li>
+      <form method="post" action="{{ url_for('project_reviewed' if project else 'someday_reviewed', id=x.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
+      <a href="{{ url_for('project_view' if project else 'someday_view', id=x.id) }}">{{ x.title }}</a> <span class="date" title="Last reviewed">{{ x.reviewed_at|ago }}</span></li>{% endfor %}</ul>
+    <p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
+  {% endcall %}
+  {% call card('creative', 'New ideas', 'Anything bold to park? Add it above.') %}{% endcall %}
   {% call card('horizons', 'Check horizons', 'Anything missing?') %}
     <p><a class="button" href="{{ url_for('horizons_view') }}">Horizons →</a></p>
   {% endcall %}

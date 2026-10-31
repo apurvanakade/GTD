@@ -2,6 +2,7 @@
 // Each textarea[name=notes] is hidden and replaced by a contenteditable .md-editor that writes back into it,
 // so the form still submits the textarea. The rendered HTML's textContent must equal the raw text exactly
 // (markup only wraps, never adds or removes characters), because the caret is tracked as plain-text offsets.
+// A toolbar (shown while the editor has focus) adds formatting and checklists; a checklist's boxes tick with a click.
 
 // --- Markdown highlighting ---
 const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
@@ -45,11 +46,26 @@ function markdown(text) {
     if (fence) return `<span class="code-line">${esc(line)}</span>`;
     if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
     if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return mk(line);
-    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)(.*)/))) return mk(m[1]) + inline(m[2]);
+    // A checklist line: its [ ] or [x] drawn as a box (the characters stay, hidden), a ticked one's text struck.
+    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )\[([ xX])\]( )(.*)/))) {
+      const on = m[2] !== " ";
+      return mk(m[1]) + `<span class="box${on ? " on" : ""}">[${m[2]}]</span>${m[3]}` + (on ? `<span class="ticked">${inline(m[4])}</span>` : inline(m[4]));
+    }
+    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )(.*)/))) return mk(m[1]) + inline(m[2]);
     if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
     return inline(line);
   }).join("\n");
 }
+
+// --- The toolbar ---
+const TOOLS = [["bold", "<b>B</b>", "Bold (⌘B)"], ["italic", "<i>I</i>", "Italic (⌘I)"], ["heading", "H", "Heading"],
+               ["bullet", "•", "Bullet list"], ["check", "☐", "Checklist"], ["link", "🔗", "Link"],
+               ["untick", "↺", "Untick all"]];
+const PREFIX = {heading: /^(\s*)#{1,6} /, bullet: /^(\s*)[-*+] (?!\[[ xX]\] )/, check: /^(\s*)[-*+] \[[ xX]\] /};
+const ADD = {heading: "# ", bullet: "- ", check: "- [ ] "};
+const ANY_PREFIX = /^(\s*)(?:#{1,6} |(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)/;
+const TICKED = /^\s*(?:[-*+]|\d+[.)]) \[[xX]\] /m;
+const TICKED_ALL = /^(\s*(?:[-*+]|\d+[.)]) \[)[xX](\] )/gm;
 
 // --- One editor per notes textarea ---
 function editor(ta) {
@@ -62,7 +78,13 @@ function editor(ta) {
   ed.setAttribute("aria-multiline", "true");
   ed.setAttribute("aria-label", ta.getAttribute("aria-label") || "Notes");
   ta.hidden = true;
-  ta.after(ed);
+  const wrap = document.createElement("div"), bar = document.createElement("div");
+  wrap.className = "md-wrap";
+  bar.className = "md-tools";
+  bar.innerHTML = TOOLS.map(([k, label, title]) => `<button type="button" data-tool="${k}" title="${title}" aria-label="${title}">${label}</button>`).join("");
+  ta.after(wrap);
+  wrap.append(ed, bar);
+  const untick = bar.querySelector("[data-tool=untick]");
   const getText = () => ed.textContent;
 
   function offsetOf(node, off) {
@@ -94,6 +116,7 @@ function editor(ta) {
   function paint(text, sel) {
     const html = markdown(text) + "<br>";
     ed.classList.toggle("empty", !text);
+    untick.hidden = !TICKED.test(text);
     // Plain typing usually leaves the DOM already correct (ignoring reveal()'s class).
     if (ed.innerHTML.replace(/ md-on"/g, '"') === html) return;
     ed.innerHTML = html;
@@ -152,6 +175,73 @@ function editor(ta) {
     changed(text);
   }
 
+  // A toolbar edit or a box ticked: its own undo step, written back like typing.
+  function apply(text, sel) {
+    lastEdit = 0;
+    paint(text, sel);
+    record(text, sel);
+    changed(text);
+  }
+  const selection = () => getSel() ?? [getText().length, getText().length];
+  // **bold** or _italic_ around the selection, or off again when it's already wrapped; empty: the pair, caret inside.
+  function wrapWith(mark) {
+    const t = getText(), [a, b] = selection(), n = mark.length;
+    if (t.slice(a - n, a) === mark && t.slice(b, b + n) === mark)
+      return apply(t.slice(0, a - n) + t.slice(a, b) + t.slice(b + n), [a - n, b - n]);
+    apply(t.slice(0, a) + mark + t.slice(a, b) + mark + t.slice(b), [a + n, b + n]);
+  }
+  // A heading, bullet or checklist prefix on every selected line; off again when they all have it already.
+  function prefix(kind) {
+    const t = getText(), [a, b] = selection();
+    const start = t.lastIndexOf("\n", a - 1) + 1, end = t.indexOf("\n", b) < 0 ? t.length : t.indexOf("\n", b);
+    const lines = t.slice(start, end).split("\n");
+    const has = l => PREFIX[kind].test(l), bare = l => l.replace(ANY_PREFIX, "");
+    const off = lines.every(has);
+    const out = lines.map(l => off ? l.replace(PREFIX[kind], "$1") : l.match(/^\s*/)[0] + ADD[kind] + bare(l).trimStart());
+    const block = out.join("\n"), text = t.slice(0, start) + block + t.slice(end);
+    // One line: the caret keeps its place in the text; several: they stay selected.
+    const sel = lines.length === 1 ? [Math.max(start, a + block.length - (end - start)), Math.max(start, b + block.length - (end - start))]
+                                   : [start, start + block.length];
+    apply(text, sel);
+  }
+  function link() {
+    const t = getText(), [a, b] = selection(), label = t.slice(a, b);
+    const caret = label ? a + label.length + 3 : a + 1;  // in the (url) for a selection, else in the [text]
+    apply(t.slice(0, a) + `[${label}]()` + t.slice(b), [caret, caret]);
+  }
+  const TOOL = {bold: () => wrapWith("**"), italic: () => wrapWith("_"), heading: () => prefix("heading"),
+                bullet: () => prefix("bullet"), check: () => prefix("check"), link,
+                untick: () => apply(getText().replace(TICKED_ALL, "$1 $2"), getSel())};
+  bar.addEventListener("mousedown", e => e.preventDefault());  // keeps the caret (and the focus) in the editor
+  bar.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (!getSel()) { ed.focus(); setSel(selection()); }
+    TOOL[b.dataset.tool]();
+  });
+
+  // A click on a checklist box ticks or unticks it, without moving the caret or taking the focus.
+  ed.addEventListener("mousedown", e => { if (e.target.closest(".box")) e.preventDefault(); });
+  ed.addEventListener("click", e => {
+    const box = e.target.closest(".box");
+    if (!box) return;
+    e.preventDefault();
+    const t = getText(), i = offsetOf(box, 0) + 1;
+    apply(t.slice(0, i) + (t[i] === " " ? "x" : " ") + t.slice(i + 1), getSel());
+  });
+
+  // Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list.
+  function newline() {
+    const t = getText(), [a, b] = selection();
+    const start = t.lastIndexOf("\n", a - 1) + 1, line = t.slice(start, a);
+    const m = a === b && line.match(/^(\s*)(?:([-*+])|(\d+)([.)])) (\[[ xX]\] )?/);
+    if (!m) return insert("\n");
+    if (line.length === m[0].length && (t[a] ?? "\n") === "\n")  // nothing after the prefix: the list ends here
+      return apply(t.slice(0, start) + t.slice(a), [start, start]);
+    const next = m[1] + (m[2] ?? `${+m[3] + 1}${m[4]}`) + " " + (m[5] ? "[ ] " : "");
+    insert("\n" + next);
+  }
+
   let composing = false;
   ed.addEventListener("compositionstart", () => { composing = true; });
   ed.addEventListener("compositionend", () => { composing = false; edited(); });
@@ -159,7 +249,8 @@ function editor(ta) {
   ed.addEventListener("beforeinput", e => {
     const t = e.inputType;
     if (t === "historyUndo" || t === "historyRedo") { e.preventDefault(); step(t === "historyUndo" ? -1 : 1); }
-    else if (t === "insertParagraph" || t === "insertLineBreak") { e.preventDefault(); insert("\n"); }
+    else if (t === "insertParagraph") { e.preventDefault(); newline(); }
+    else if (t === "insertLineBreak") { e.preventDefault(); insert("\n"); }
     else if (t === "insertFromPaste" || t === "insertFromDrop") {
       // Paste plain text only; pasted HTML would bring markup the renderer didn't make.
       e.preventDefault();
@@ -170,6 +261,7 @@ function editor(ta) {
     const k = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && k === "z") { e.preventDefault(); step(e.shiftKey ? 1 : -1); }
     else if (e.ctrlKey && k === "y") { e.preventDefault(); step(1); }
+    else if ((e.metaKey || e.ctrlKey) && (k === "b" || k === "i")) { e.preventDefault(); TOOL[k === "b" ? "bold" : "italic"](); }
     else if (e.key === "Escape") ed.blur();
   });
 

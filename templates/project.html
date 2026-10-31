@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form, area_select, tally, pin_button, move_panel with context %}
+{% from "_task.html" import row, date_input, add_form, area_select, tally, pin_button, move_panel, tickler with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -18,6 +18,7 @@
   </div>
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
+  {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
 </form>
 {% call add_form(url_for('project_add_task', id=p.id), 'Add a step', marks=True) %}
   <select name="step" aria-label="Step">

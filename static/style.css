@@ -75,6 +75,24 @@ textarea { resize: vertical; }
 .md-editor code { background: var(--soft); border-radius: 3px; }
 .md-editor a { text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 2px; }
 .mod .md-editor a { cursor: pointer; }
+/* A checklist box: its [ ] / [x] characters stay in the text (the caret counts them), drawn over as a box. */
+.md-editor .box {
+  display: inline-block; position: relative; width: 1.05em; height: 1.05em; margin-right: .1em; vertical-align: -.17em;
+  overflow: hidden; color: transparent; white-space: pre; line-height: 1.05em; cursor: pointer;
+  border: 1.5px solid var(--muted); border-radius: 4px;
+}
+.md-editor .box.on { background: var(--accent); border-color: var(--accent); }
+.md-editor .box.on::after { content: "✓"; position: absolute; inset: 0; color: var(--accent-fg); font-size: .8em; line-height: 1.3em; text-align: center; }
+.md-editor .ticked { color: var(--muted); text-decoration: line-through; }
+/* The toolbar: in the autosave line's place under the notes, right-aligned, only while the editor has focus. */
+.md-wrap { position: relative; }
+.md-tools {
+  position: absolute; top: 100%; right: 0; display: flex; gap: 1px; margin-top: 2px;
+  opacity: 0; pointer-events: none; transition: opacity .12s;
+}
+.md-wrap:focus-within .md-tools { opacity: 1; pointer-events: auto; }
+.md-tools button { padding: 0 6px; min-width: 1.7em; font-size: .85rem; line-height: 1.5; border-radius: 5px; }
+.md-tools button:hover { color: var(--fg); background: var(--soft); }
 [hidden] { display: none !important; }  /* `button`'s display would otherwise show a hidden one */
 button, .button {
   cursor: pointer; display: inline-block; background: transparent; border-color: transparent; color: var(--muted);
@@ -182,7 +200,7 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .drop-panel .group .target { padding: 5px 10px 5px 20px; margin: 1px 0; }
 .drop-panel .target { padding: 8px 10px; margin: 2px 0; border-radius: 8px; border: 1px dashed transparent; }
 .drop-panel .target .meta { color: var(--muted); font-size: .8rem; }
-.drop-panel .target.new, .drop-panel .target[data-project="h0"] { color: var(--muted); }
+.drop-panel .target.new, .drop-panel .target.maybe, .drop-panel .target[data-project="h0"] { color: var(--muted); }
 .drop-panel .new input { display: none; margin-top: 6px; }
 .drop-panel .new.naming input { display: block; }
 .drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
@@ -268,6 +286,8 @@ ul.links li { padding: 3px 0; overflow-wrap: anywhere; }
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
 .task .reviewed { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* a someday card */
+.task .until { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* tickled to later */
+.task .until + .reviewed { margin-left: 0; }
 .plain.someday-review { list-style: none; padding-left: 0; }
 .someday-review li { display: flex; align-items: center; gap: 8px; }
 .someday-review form { display: contents; }
@@ -299,7 +319,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .tasks.by-step > .task :is(.step, .make-next button) { opacity: 0; }
 .tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
 /* Holds Make next's width on rows without it, so a project page's dates line up. */
-.task .make-next.slot { visibility: hidden; }
+.task .make-next.slot, .task .slot { visibility: hidden; }
 
 /* A thin bar: time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }

@@ -29,7 +29,7 @@
   <p class="autosave hint" aria-live="polite"></p>
   <div class="fields">
     <label>Project
-      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
+      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned', someday=t.state == 'open') }}
       {%- if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
     </label>
     {# Only a project's open tasks have a step: an inbox item is waiting to be filed, an H0 task is just to be done. #}

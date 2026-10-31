@@ -285,7 +285,7 @@ def test_drag_reorders_someday_projects(page, live, conn):
     add_project(conn, "Another dream", status="someday", area_id=home)  # Projects shares the code; this covers both
     page.goto(live + "/someday")
     page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
-    titles = lambda: page.locator("ul.tasks > li.task > a.title").all_inner_texts()
+    titles = lambda: page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts()  # not the someday items
     assert titles() == ["Another dream", "Someday proj"]
     with page.expect_response(lambda r: r.url.endswith("/order/someday")) as saved:
         row(page, "Someday proj").locator(".grip").drag_to(row(page, "Another dream"), target_position={"x": 40, "y": 4})
@@ -681,7 +681,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
 def test_pinned_project_panel_overlaps_the_list(page, live):
     page.set_viewport_size({"width": 1600, "height": 800})
     page.goto(live + "/inbox")
-    left = lambda: page.locator("ul.tasks").evaluate("e => e.getBoundingClientRect().left")
+    left = lambda: page.locator("ul.tasks:not(.tickled)").evaluate("e => e.getBoundingClientRect().left")
     before = left()
     page.locator(".pin-panel").click()
     page.locator(".drop-panel").wait_for(state="visible")
@@ -730,11 +730,11 @@ def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, l
 def test_review_arrow_keys_move_between_steps(page, live):
     page.goto(live + "/review?step=overdue")
     page.keyboard.press("ArrowRight")
-    page.wait_for_url("**/review?step=stalled")
+    page.wait_for_url("**/review?step=nexts")
     page.keyboard.press("ArrowLeft")
     page.wait_for_url("**/review?step=overdue")
     page.locator("a[rel=next]").click()
-    page.wait_for_url("**/review?step=stalled")
+    page.wait_for_url("**/review?step=nexts")
 
 
 def test_long_title_wraps_instead_of_pushing_buttons_down(page, live, conn):
@@ -780,7 +780,7 @@ def test_timer_button_always_shows(page, live):
 
 
 def test_all_clear_lists_show_a_big_check(page, live, conn):
-    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks")
+    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks"); conn.execute("DELETE FROM someday")
     conn.execute("UPDATE projects SET status = 'active' WHERE status = 'waiting'"); conn.commit()  # nothing waiting either
     for url in ("/inbox", "/next", "/h0", "/waiting"):
         page.goto(live + url)
@@ -1069,3 +1069,95 @@ def test_tick_off_refreshes_the_nav_and_keeps_the_tab_lit(page, live):
     with page.expect_response(lambda r: r.url.endswith("/nav")):
         row(page, "buy tiles").locator("form.done button").click()
     assert page.locator("nav a.on").get_attribute("href") == "/next"
+
+
+# --- notes toolbar and checklists; someday items --------------------------------------------------------------
+
+def notes_text(page):
+    return page.locator("textarea[name=notes]").input_value().replace("\r\n", "\n")
+
+
+def test_notes_toolbar_shows_while_editing(page, live, conn):
+    pid = db.add_reference(conn, "Tools", notes="abc")
+    page.goto(live + f"/reference/{pid}")
+    tools = page.locator(".md-tools")
+    assert tools.evaluate("e => getComputedStyle(e).opacity") == "0"
+    page.locator(".md-editor").click()
+    page.wait_for_function("getComputedStyle(document.querySelector('.md-tools')).opacity === '1'")
+    assert tools.locator("[data-tool=untick]").is_hidden()  # nothing ticked
+
+
+def test_notes_toolbar_formats(page, live, conn):
+    pid = db.add_reference(conn, "Tools", notes="milk")
+    page.goto(live + f"/reference/{pid}")
+    ed, tool = page.locator(".md-editor"), lambda k: page.locator(f".md-tools [data-tool={k}]").click()
+    ed.click()
+    page.keyboard.press("ControlOrMeta+a")
+    tool("bold")
+    assert notes_text(page) == "**milk**"
+    tool("bold")  # off again
+    assert notes_text(page) == "milk"
+    page.keyboard.press("ControlOrMeta+i")
+    assert notes_text(page) == "_milk_"
+    page.keyboard.press("ControlOrMeta+z")
+    assert notes_text(page) == "milk"
+    tool("check")
+    assert notes_text(page) == "- [ ] milk" and ed.locator(".box").count() == 1
+    tool("bullet")  # a checklist line becomes a plain bullet
+    assert notes_text(page) == "- milk"
+    tool("heading")
+    assert notes_text(page) == "# milk"
+    page.keyboard.press("ControlOrMeta+a")
+    tool("link")
+    assert notes_text(page) == "[# milk]()"
+    page.keyboard.type("https://x.com")
+    assert notes_text(page) == "[# milk](https://x.com)"
+
+
+def test_checklists_tick_continue_and_reset(page, live, conn):
+    pid = db.add_reference(conn, "Packing", notes="- [ ] passport")
+    page.goto(live + f"/reference/{pid}")
+    ed = page.locator(".md-editor")
+    ed.locator(".box").click()  # ticks without focusing the editor
+    assert notes_text(page) == "- [x] passport" and ed.locator(".box.on").count() == 1
+    with page.expect_response(lambda r: "/autosave/" in r.url):
+        page.locator("input.big").focus()
+    assert db.get_reference(conn, pid)["notes"] == "- [x] passport"
+    ed.click()
+    page.keyboard.press("ControlOrMeta+End")
+    page.keyboard.press("Enter")  # a new item, unticked
+    page.keyboard.type("charger")
+    assert notes_text(page) == "- [x] passport\n- [ ] charger"
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")  # Enter on an empty item ends the list
+    assert notes_text(page) == "- [x] passport\n- [ ] charger\n"
+    page.locator(".md-tools [data-tool=untick]").click()
+    assert notes_text(page) == "- [ ] passport\n- [ ] charger\n"
+    assert page.locator(".md-tools [data-tool=untick]").is_hidden()
+
+
+def test_dragging_an_inbox_row_onto_an_areas_someday(page, live, conn):
+    home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
+    page.goto(live + "/inbox")
+    with page.expect_response(lambda r: r.url.endswith("/tasks/move")) as saved:
+        drag_to_panel(page, row(page, "inbox item"), f'[data-project="someday"][data-area="{home}"]')
+    assert saved.value.status == 204
+    page.wait_for_function("![...document.querySelectorAll('li.task a.title')].some(a => a.textContent === 'inbox item')")
+    s = db.someday_items(conn)[0]
+    assert (s["title"], s["notes"], s["area_id"]) == ("inbox item", "from email", home)
+
+
+def test_someday_item_activate_and_tickler(page, live, conn):
+    sid = next(s["id"] for s in db.someday_items(conn) if s["title"] == "learn Italian")
+    page.goto(live + f"/someday/{sid}")
+    box = page.locator("input[name=tickle_on]")
+    box.fill("nov 15")
+    page.wait_for_function("document.querySelector('.hint.when').textContent === '→ Sun Nov 15'")
+    with page.expect_navigation():
+        box.press("Tab")  # leaving the box saves it
+    assert db.get_someday(conn, sid)["tickle_on"] == "2026-11-15"
+    with page.expect_navigation():
+        page.locator("select[name=activate]").select_option("project")
+    p = db.projects(conn)[0]
+    assert p["title"] == "learn Italian" and page.url.endswith(f"/projects/{p['id']}")
+    assert db.get_someday(conn, sid) is None

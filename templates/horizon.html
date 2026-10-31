@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import add_form, project_card, peek_button, peek_steps with context %}
+{% from "_task.html" import add_form, project_card, peek_button, peek_steps, someday_row with context %}
 {% block title %}{{ h.title }}{% endblock %}
 {% block crumb %}<p class="crumb"><a href="{{ url_for('horizons_view', level=h.level) }}">Horizons</a> · {{ label }}{% if h.archived_at %} · archived {{ h.archived_at|local_date }}{% endif %}</p>{% endblock %}
 {% block heading %}{% endblock %}
@@ -19,11 +19,12 @@
 {% if h.level == 'area' %}
 {# An area's hub: a new project starts here, and its projects are listed by status. #}
 {% call add_form(url_for('project_create'), 'New project in ' ~ h.title) %}<input type="hidden" name="area_id" value="{{ h.id }}">{% endcall %}
-{% for label, ps in lists if ps %}
+{% for label, ps, items in lists if ps or items %}
 <h2 class="area-head">{{ label }}</h2>
-<ul class="tasks cards"{% if ps[0].status in ('active', 'someday') %} data-reorder="{{ url_for('projects_order', status=ps[0].status) }}"{% endif %}>
+{% if ps %}<ul class="tasks cards"{% if ps[0].status in ('active', 'someday') %} data-reorder="{{ url_for('projects_order', status=ps[0].status) }}"{% endif %}>
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
-</ul>
+</ul>{% endif %}
+{% if items %}<ul class="tasks cards maybes">{% for s in items %}{{ someday_row(s) }}{% endfor %}</ul>{% endif %}
 {% else %}
 <ul class="tasks cards"><li class="empty">No open projects.</li></ul>
 {% endfor %}

@@ -66,6 +66,11 @@ def seed(c):
     db.abandon_task(c, db.add_task(c, "dropped idea", step="later", project_id=active))
     db.archive_area(c, term)
     db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
+    db.add_reference(c, "Packing", notes="- [ ] passport\n- [x] charger")  # a checklist
+    db.add_someday(c, "learn Italian", notes="evenings", area_id=area)
+    db.add_someday(c, "sail", area_id=area, tickle_on=TODAY.isoformat())  # tickled: back in the Inbox
+    db.add_someday(c, "write a book", area_id=area, tickle_on="2026-12-01")  # out of sight until then
+    db.set_project_tickle(c, someday, "2027-01-01")
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
     db.timer_start(c, 7, NOW - timedelta(minutes=10))  # "call mum", still running

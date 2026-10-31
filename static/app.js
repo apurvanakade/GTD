@@ -64,14 +64,15 @@ function capture() {
   inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
 }
 document.querySelector('.add-inbox').addEventListener('click', capture);
-// A select marked data-submit (the project page's status and area) saves its form as soon as a choice is picked.
+// A field marked data-submit (the project page's status and area, a someday item's area, Activate and tickler date)
+// saves its form as soon as it's changed; a text box waits while its 📅 picker is open.
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
 // it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
 // Title and notes are autosave.js's; "＋ New project…" waits for its name; a box whose 📅 picker is open waits for it.
 document.addEventListener('change', async e => {
   const el = e.target, f = el.form;
   if (!f) return;
-  if (el.matches('select[data-submit]')) return f.requestSubmit();
+  if (el.matches('[data-submit]') && !el.closest('.date-field.picking')) return f.requestSubmit();
   if (!('saveOnChange' in f.dataset) || !el.name || ['title', 'notes'].includes(el.name)) return;
   if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
   if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();
@@ -214,7 +215,8 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     if (list !== from) {
       body.set('moved', dragged.dataset.id);
       body.set('area_id', list.dataset.area);
-      if (!rows(from).length) (from.closest('.area-group') || from).remove();  // the area it left is empty now: drop its group
+      // The area it left is empty now (no projects, no someday items): drop its group.
+      if (!rows(from).length && !from.closest('.area-group')?.querySelector('.maybes')) (from.closest('.area-group') || from).remove();
     }
     dragged = from = null;
     post(list.dataset.reorder, body);

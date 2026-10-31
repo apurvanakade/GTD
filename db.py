@@ -1,5 +1,6 @@
 import functools
 import os
+import re
 import sqlite3
 import zlib
 from contextlib import contextmanager
@@ -11,7 +12,7 @@ import recur
 # On the server GTD_DB points to /var/lib/apps/gtd/gtd.db; locally `GTD dev` points it to dev.db.
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
-# Someday and waiting are project statuses only; an abandoned project is given up (on Done, revivable). A task has a state (open, done, or abandoned: deleted but revivable)
+# Someday and waiting are project statuses (someday / maybe also holds single items, table someday); an abandoned project is given up (on Done, revivable). A task has a state (open, done, or abandoned: deleted but revivable)
 # and, only inside a project, a step: an active project has exactly one "next" step, its other open steps are "waiting"
 # or "later". H0 tasks (ground level) and inbox items (neither a project nor H0) have no step.
 SCHEMA = """
@@ -82,6 +83,22 @@ CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NO
 CREATE TABLE IF NOT EXISTS project_reviews (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   reviewed_at TEXT NOT NULL
+);
+-- Someday / maybe: single ideas, each in an area (H2), not yet committed to. tickle_on (a local date) hides one
+-- from the weekly review until then; from that day on it's back in the Inbox. reviewed_at: UTC, iso().
+CREATE TABLE IF NOT EXISTS someday (
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  area_id INTEGER NOT NULL REFERENCES horizons(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reviewed_at TEXT,
+  tickle_on TEXT
+);
+-- A someday project's tickler date, as for an item. A table of its own, like project_reviews.
+CREATE TABLE IF NOT EXISTS project_tickles (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  tickle_on TEXT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
@@ -364,14 +381,14 @@ def reorder_project(c, project_id, ids):
 def counts(c, today):
     one = lambda sql, *a: c.execute(sql, a).fetchone()[0]
     return {
-        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}"),
+        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + len(tickled(c, today)),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
         "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
         "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "h0_overdue": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
-        "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'"),
+        "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'") + one("SELECT count(*) FROM someday"),
         "stalled": len(stalled_projects(c)),
     }
 
@@ -389,7 +406,7 @@ def _matching(q, cols):
 
 
 def search(c, q):
-    """Tasks (open, then the latest 50 done), projects, horizons and reference whose text contains every word of q."""
+    """Tasks (open, then the latest 50 done), projects, horizons, reference and someday items whose text contains every word of q."""
     where, args = _matching(q, ["t.title", "t.notes"])
     tasks = c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND {where} ORDER BY
         {INBOX} DESC, {STEP_ORDER},
@@ -401,11 +418,13 @@ def search(c, q):
         ORDER BY status IN ('done', 'abandoned'), lower(title)""", args).fetchall()
     horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title)", args).fetchall()
     references = c.execute(f"SELECT * FROM reference WHERE {where} ORDER BY lower(title)", args).fetchall()
-    return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references}
+    maybes = c.execute(f"SELECT * FROM someday WHERE {where} ORDER BY lower(title)", args).fetchall()
+    return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references,
+            "someday": maybes}
 
 
 def suggest(c, q, limit=10):
-    """The best fuzzy title matches among tasks (done ones too), projects, horizons and reference.
+    """The best fuzzy title matches among tasks (done ones too), projects, horizons, reference and someday items.
     Titles containing every query word come first, so scattered-letter matches can't crowd them out;
     then open items before done ones."""
     rows = [("task", r) for r in c.execute(f"""SELECT t.id, t.title, t.state, t.step, t.ground, p.title AS project_title,
@@ -413,6 +432,7 @@ def suggest(c, q, limit=10):
     rows += [("project", r) for r in c.execute("SELECT id, title, status FROM projects")]
     rows += [("horizon", r) for r in c.execute("SELECT id, title, level FROM horizons")]
     rows += [("reference", r) for r in c.execute("SELECT id, title FROM reference")]
+    rows += [("someday", r) for r in c.execute("SELECT id, title FROM someday")]
     hits = [(fuzzy.score(q, r["title"]), kind, r) for kind, r in rows]
     hits = [h for h in hits if h[0] is not None]
     closed = lambda kind, r: (kind == "task" and r["state"] != "open") or (kind == "project" and r["status"] in ("done", "abandoned"))
@@ -455,6 +475,8 @@ def update_project(c, id, **fields):
                   " position = CASE WHEN status = ? THEN position"
                   " ELSE (SELECT coalesce(min(position), 0) - 1 FROM projects WHERE status = ?) END WHERE id = ?",
                   (fields["status"], fields["status"], fields["status"], id))
+        if fields["status"] != "someday":  # a tickler date is for someday projects only
+            set_project_tickle(c, id, None)
     _update(c, "projects", PROJECT_FIELDS, id, fields)
     _reopen_area(c, id)
 
@@ -486,6 +508,7 @@ def abandon_project(c, id, now=None):
     stamp = c.execute("SELECT strftime('%Y-%m-%d %H:%M:%f', 'now')").fetchone()[0]
     c.execute("UPDATE tasks SET state = 'abandoned', completed_at = ? WHERE project_id = ? AND state = 'open'", (stamp, id))
     c.execute("""UPDATE projects SET status = 'abandoned', completed_at = ?, position = NULL WHERE id = ?""", (stamp, id))
+    set_project_tickle(c, id, None)
 
 
 @atomic
@@ -507,7 +530,8 @@ def abandoned_projects(c, limit=100):
                      (limit,)).fetchall()
 
 
-REVIEWED = "(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at"
+REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at,
+  (SELECT k.tickle_on FROM project_tickles k WHERE k.project_id = p.id) AS tickle_on"""
 
 
 def get_project(c, id):
@@ -517,26 +541,52 @@ def get_project(c, id):
 def projects(c, status="active", area_id=None):
     """Projects with the given status (and area) in the order dragged, new ones on top."""
     return c.execute(f"""SELECT p.*, {REVIEWED},
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count
+          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
+          (SELECT t.title FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_title
         FROM projects p WHERE p.status = ? AND (? IS NULL OR p.area_id = ?)
         ORDER BY p.position, p.id""", (status, area_id, area_id)).fetchall()
 
 
-def someday_to_review(c):
-    """Someday projects for the weekly review: never reviewed first, then the longest ago."""
-    return sorted(projects(c, "someday"), key=lambda p: (p["reviewed_at"] is not None, p["reviewed_at"] or ""))
+def _least_reviewed(rows):
+    """Never reviewed first, then the longest ago."""
+    return sorted(rows, key=lambda r: (r["reviewed_at"] is not None, r["reviewed_at"] or ""))
+
+
+def someday_to_review(c, today):
+    """Someday / maybe for the weekly review, items and projects together, least recently reviewed first; one tickled
+    to a later date is out of sight until then. Each row has a `kind`: "item" or "project"."""
+    rows = [{**dict(p), "kind": "project"} for p in projects(c, "someday")]
+    rows += [{**dict(s), "kind": "item"} for s in someday_items(c)]
+    return _least_reviewed(r for r in rows if not (r["tickle_on"] and r["tickle_on"] > today.isoformat()))
+
+
+def projects_to_review(c):
+    """The weekly review's project step: active and waiting projects, stalled ones first, then least recently
+    reviewed first."""
+    rows = _least_reviewed(projects(c) + projects(c, "waiting"))
+    return sorted(rows, key=lambda p: not (p["status"] == "active" and not p["next_count"]))
 
 
 @atomic
 def mark_reviewed(c, id, now):
-    """A someday project looked at in a weekly review, at `now`."""
+    """A project looked at in a weekly review, at `now`."""
     c.execute("INSERT OR REPLACE INTO project_reviews (project_id, reviewed_at) VALUES (?, ?)", (id, iso(now)))
 
 
-def by_area(c, projects):
-    """[(area, its projects)] in area order, areas without any left out."""
+@atomic
+def set_project_tickle(c, id, tickle_on):
+    """A someday project's tickler date (a local ISO date), or None to clear it."""
+    if tickle_on:
+        c.execute("INSERT OR REPLACE INTO project_tickles (project_id, tickle_on) VALUES (?, ?)", (id, tickle_on))
+    else:
+        c.execute("DELETE FROM project_tickles WHERE project_id = ?", (id,))
+
+
+def by_area(c, projects, items=()):
+    """[(area, its projects)] in area order, areas with neither projects nor `items` (someday items) left out."""
     groups = [(a, [p for p in projects if p["area_id"] == a["id"]]) for a in areas(c, archived=None)]
-    return [(a, ps) for a, ps in groups if ps]
+    holding = {i["area_id"] for i in items}
+    return [(a, ps) for a, ps in groups if ps or a["id"] in holding]
 
 
 @atomic
@@ -557,11 +607,14 @@ def open_steps(c, status="active", area_id=None):
     return steps
 
 
-def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
+def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=None):
     """Finished (or, with state="abandoned", abandoned) tasks, newest first; optionally only one project's,
-    or only H0 (ground=1) / non-H0 (ground=0). Without a project, an abandoned project's steps are left out:
-    Done lists the project instead."""
+    or only H0 (ground=1) / non-H0 (ground=0), or only those finished since a UTC datetime('now') stamp. Without a
+    project, an abandoned project's steps are left out: Done lists the project instead."""
     where, args = "t.state = ?", [state]
+    if since:
+        where += " AND t.completed_at >= ?"
+        args.append(since)
     if project_id is None:
         where += " AND coalesce(p.status, '') != 'abandoned'"
     else:
@@ -624,8 +677,10 @@ def areas(c, archived=False):
 
 @atomic
 def archive_area(c, id):
-    """An area is over (a term's course, say) once none of its projects is open; done ones stay in it."""
-    if c.execute(f"SELECT 1 FROM projects WHERE area_id = ? AND status IN {OPEN_PROJECT}", (id,)).fetchone():
+    """An area is over (a term's course, say) once none of its projects is open and it holds no someday item; done
+    projects stay in it."""
+    if (c.execute(f"SELECT 1 FROM projects WHERE area_id = ? AND status IN {OPEN_PROJECT}", (id,)).fetchone()
+            or c.execute("SELECT 1 FROM someday WHERE area_id = ?", (id,)).fetchone()):
         return False
     c.execute("UPDATE horizons SET archived_at = datetime('now') WHERE id = ? AND level = 'area'", (id,))
     return True
@@ -652,11 +707,66 @@ def get_horizon(c, id):
 
 @atomic
 def delete_horizon(c, id):
-    """Purpose and vision can't be deleted, nor an area any project (done ones too) is in."""
-    if c.execute("SELECT 1 FROM projects WHERE area_id = ?", (id,)).fetchone():
+    """Purpose and vision can't be deleted, nor an area any project (done ones too) or someday item is in."""
+    if not area_empty(c, id):
         return False
     c.execute("DELETE FROM horizons WHERE id = ? AND level NOT IN ('purpose', 'vision')", (id,))
     return True
+
+
+def area_empty(c, id):
+    """No project (done ones too) and no someday item is in it."""
+    return not (c.execute("SELECT 1 FROM projects WHERE area_id = ?", (id,)).fetchone()
+                or c.execute("SELECT 1 FROM someday WHERE area_id = ?", (id,)).fetchone())
+
+
+# --- someday / maybe items ---------------------------------------------------
+
+SOMEDAY_FIELDS = {"title", "notes", "area_id", "tickle_on", "reviewed_at"}
+
+
+def someday_items(c, area_id=None):
+    """Someday items (of one area), newest first."""
+    return c.execute("""SELECT * FROM someday WHERE ? IS NULL OR area_id = ?
+        ORDER BY created_at DESC, id DESC""", (area_id, area_id)).fetchall()
+
+
+@atomic
+def add_someday(c, title, **fields):
+    """Every item is in an area, like a project."""
+    _check_area(c, {"area_id": None, **fields})
+    return _insert(c, "someday", SOMEDAY_FIELDS, {"title": title, **fields})
+
+
+@atomic
+def update_someday(c, id, **fields):
+    _check_area(c, fields)
+    _update(c, "someday", SOMEDAY_FIELDS, id, fields)
+
+
+def get_someday(c, id):
+    return c.execute("SELECT * FROM someday WHERE id = ?", (id,)).fetchone()
+
+
+@atomic
+def delete_someday(c, id):
+    c.execute("DELETE FROM someday WHERE id = ?", (id,))
+
+
+@atomic
+def mark_item_reviewed(c, id, now):
+    update_someday(c, id, reviewed_at=iso(now))
+
+
+def tickled(c, today):
+    """Someday items and projects whose tickler date has come: back in the Inbox until dealt with. Each row has a
+    `kind` ("item" or "project") and its area's title."""
+    return c.execute("""SELECT 'item' AS kind, s.id, s.title, s.tickle_on, h.title AS area_title
+          FROM someday s JOIN horizons h ON h.id = s.area_id WHERE s.tickle_on <= ?
+        UNION ALL SELECT 'project', p.id, p.title, k.tickle_on, h.title
+          FROM project_tickles k JOIN projects p ON p.id = k.project_id JOIN horizons h ON h.id = p.area_id
+          WHERE p.status = 'someday' AND k.tickle_on <= ?
+        ORDER BY 4, 3""", (today.isoformat(), today.isoformat())).fetchall()  # tickle_on, title
 
 
 # --- reference -------------------------------------------------------------
@@ -680,6 +790,14 @@ def update_reference(c, id, **fields):
 
 def get_reference(c, id):
     return c.execute("SELECT * FROM reference WHERE id = ?", (id,)).fetchone()
+
+
+CHECKLIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)]) \[[ xX]\] ", re.M)
+
+
+def checklists(c):
+    """Reference items holding a checklist (a `- [ ]` line), alphabetical: the weekly review's checklists step."""
+    return [r for r in references(c) if CHECKLIST_LINE.search(r["notes"])]
 
 
 @atomic
@@ -792,7 +910,8 @@ def open_tasks(c):
 
 # --- autosave --------------------------------------------------------------
 
-TEXT_TABLES = {"tasks": update_task, "projects": update_project, "horizons": update_horizon, "reference": update_reference}
+TEXT_TABLES = {"tasks": update_task, "projects": update_project, "horizons": update_horizon, "reference": update_reference,
+               "someday": update_someday}
 
 
 @atomic

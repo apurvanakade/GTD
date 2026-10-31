@@ -1,5 +1,6 @@
 // The drop panel on every task list (move_panel() in _task.html): it slides in while an open row is dragged, or
-// stays while pinned by the header's Projects button; dropping the row on a project (or H0, Reference, "＋ New…")
+// stays while pinned by the header's Projects button; dropping the row on a project (or H0, Reference, "＋ New…", an
+// area's "Someday / maybe")
 // moves the task there (/tasks/move). Rows are dragged from anywhere, except on a project page, where the ⠿ grip
 // drags them, so the same drag reorders the steps or moves one out. Shift-click selects rows (Esc clears); dragging
 // a selected row moves them all.
@@ -70,7 +71,8 @@
     const t = e.target.closest('.target');
     if (!t || !dragged) return;
     e.preventDefault();
-    if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
+    // An area's "Someday / maybe" target says which area the someday items go to.
+    if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project, ...(t.dataset.area && {area_id: t.dataset.area})});
     // The panel stays open for the name; Enter moves it into a new project in the target's area, Esc or clicking away cancels.
     naming = {rows: dragged, target: t};
     body.classList.add('naming');
