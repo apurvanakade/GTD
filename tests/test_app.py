@@ -2513,6 +2513,17 @@ def test_someday_add_line_makes_a_task_or_a_project(client, conn):
     assert f'href="/tasks/{t["id"]}"' in html and 'class="drop-panel"' in html  # drag one to commit to it
 
 
+@pytest.mark.parametrize("step", ["someday", "waiting"])
+def test_someday_and_waiting_task_pages_disable_repeats_and_keep_the_rule(client, conn, step):
+    t = db.add_task(conn, "idea", ground=1, step=step, recur="weekly", due_date="2026-12-01")
+    recur_box = lambda: re.search(r'<input name="recur"[^>]*>', client.get(f"/tasks/{t}").get_data(as_text=True))[0]
+    assert 'value="weekly"' in recur_box() and " disabled" in recur_box()
+    client.post(f"/tasks/{t}", data={"due_date": "2026-12-01", "step": step, "project_id": "h0"})
+    assert db.get_task(conn, t)["recur"] == "weekly"  # a disabled box isn't posted: the rule stays
+    client.post(f"/tasks/{t}", data={"due_date": "2026-12-01", "step": "next", "project_id": "h0"})
+    assert " disabled" not in recur_box()
+
+
 def test_tasks_move_to_and_from_someday(client, conn):
     p = db.add_project(conn, "Boat")
     a = db.add_task(conn, "a", notes="x", recur="weekly", due_date="2026-12-01")

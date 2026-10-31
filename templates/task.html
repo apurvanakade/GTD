@@ -44,7 +44,10 @@
     {#- Each .when hint shows how its box reads, as you type (static/app.js, /parse/<kind>). #}
     {#- A someday task's date is its tickler: out of sight until then, then back in the Inbox. #}
     <label>{{ 'Tickler' if t.step == 'someday' else 'Due' }} {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
-    <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks after done…">
+    {#- Someday and waiting tasks don't repeat: their date is a tickler or a follow-up. Disabled, the box isn't
+        posted, so the rule is kept for when the task becomes a next action. #}
+    <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks after done…"
+      {%- if t.step in ('someday', 'waiting') %} disabled title="Not while {{ t.step }}"{% endif %}>
       <span class="hint when" data-parse="recur"></span></label>
     <label>Remind {{ date_input(t.remind_at|local_minute, 'tomorrow 9am, fri 14:00…', name='remind_at', label='Remind',
       type='datetime-local') }}
