@@ -256,8 +256,6 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }
 .edit label input[name="new_project"] { display: none; }
 .edit label select:has(option[value^="__new__"]:checked) + input { display: block; }
-/* Reference page: the URLs in its notes, clickable (a textarea can't be). */
-
 /* Rows. */
 .tasks { list-style: none; margin: 0; padding: 0; }
 .task {
@@ -294,10 +292,11 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .reviewed { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* a someday card */
 .task .until { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* tickled to later */
 .task .until + .reviewed { margin-left: 0; }
-.plain.someday-review { list-style: none; padding-left: 0; }
-.someday-review li { display: flex; align-items: center; gap: 8px; }
-.someday-review form { display: contents; }
-.someday-review .date { color: var(--muted); font-size: .85rem; }
+/* The review's projects and someday steps: ✓, title, then faint details. */
+.plain.review-list { list-style: none; padding-left: 0; }
+.review-list li { display: flex; align-items: center; gap: 8px; }
+.review-list form { display: contents; }
+.review-list .date { color: var(--muted); font-size: .85rem; }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
 .task.gone { opacity: .35; text-decoration: line-through; }
 .done button {
@@ -325,7 +324,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .tasks.by-step > .task :is(.step, .make-next button) { opacity: 0; }
 .tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
 /* Holds Make next's width on rows without it, so a project page's dates line up. */
-.task .make-next.slot, .task .slot { visibility: hidden; }
+.task .slot { visibility: hidden; }
 
 /* A thin bar: time per project. */
 .progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }

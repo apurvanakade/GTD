@@ -189,23 +189,23 @@ def split_title(title):
 
 
 def tickle_from_form(fields):
-    """The form's tickler date (`tickle_on`, in words) into fields: blank clears it; unreadable is flashed, left out."""
+    """The form's tickler date (`tickle_on`, in words) into fields: blank clears it; unreadable is flashed, left out;
+    one already come is flashed too, since it's back in the Inbox at once."""
     if "tickle_on" in request.form:
         raw = form_value("tickle_on")
         if not raw:
             fields["tickle_on"] = None
         elif due := parse_due(raw):
             fields["tickle_on"] = due
+            if due <= today().isoformat():
+                flash("Its tickler date has come: it's back in the Inbox.")
     return fields
 
 
-def retire_task(c, t):
-    """A task that became something else (a reference or someday item) goes: deleted, or abandoned when it has time on
-    it, so the time is kept."""
-    if db.task_seconds(c, t["id"], now()):
-        db.abandon_task(c, t["id"], now())
-    else:
-        db.delete_task(c, t["id"])
+@app.template_global()
+def someday_url(x):
+    """A row of db.tickled() or db.someday_to_review(): an item's page or a project's."""
+    return url_for("someday_view" if x["kind"] == "item" else "project_view", id=x["id"])
 
 
 def orphaned(project_id, ground):
@@ -266,17 +266,11 @@ def task_move():
     if not tasks or not all(t and t["state"] == "open" for t in tasks):  # e.g. a stale tab: finished since
         abort(400)
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
-        with db.transaction(c):
-            for t in tasks:
-                db.add_reference(c, t["title"], notes=t["notes"])
-                retire_task(c, t)
+        db.task_to_reference(c, [t["id"] for t in tasks], now())
         return "", 204
     if request.form.get("project_id") == "someday":  # not committed to: a someday item in the area dropped on
         area_id = area_from(request.form.get("area_id")) or abort(400)
-        with db.transaction(c):
-            for t in reversed(tasks):  # newest first there: the last first keeps the page's order
-                db.add_someday(c, t["title"], notes=t["notes"], area_id=area_id)
-                retire_task(c, t)
+        db.task_to_someday(c, [t["id"] for t in tasks], area_id, now())
         return "", 204
     with db.transaction(c):
         fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
@@ -411,23 +405,28 @@ def someday_view(id):
     """A someday item's page. Title and notes are autosave's; the area and tickler date save when changed. Activating
     turns it into an active project in its area, or an inbox task to be filed, and opens that."""
     c = conn()
-    s = db.get_someday(c, id) or abort(404)
+    s = db.get_someday(c, id)
+    if not s:  # activated or let go, say, and reached again with Back
+        flash("That someday item is gone: activated or let go.")
+        return redirect(url_for("someday"))
     if request.method == "POST":
-        how = request.form.get("activate")
-        if how in ("project", "task"):
-            with db.transaction(c):
-                if how == "project":
-                    new = db.add_project(c, s["title"], notes=s["notes"], area_id=s["area_id"])
-                else:
-                    new = db.add_task(c, s["title"], today=today(), notes=s["notes"])
-                db.delete_someday(c, id)
-            return redirect(url_for("project_view" if how == "project" else "task_view", id=new))
+        how = request.form.get("activate") or ""
+        if how == "project":
+            return redirect(url_for("project_view", id=db.activate_someday(c, id, today(), "project")))
+        if how == "task" or how.startswith("step:"):  # an inbox task, or a step of a project in its area
+            into = how.partition(":")[2]
+            try:
+                tid = db.activate_someday(c, id, today(), int(into) if into.isdigit() else None)
+            except ValueError:
+                abort(400)
+            return redirect(url_for("task_view", id=tid))
         fields = tickle_from_form({})
-        if area_from(request.form.get("area_id")):
-            fields["area_id"] = area_from(request.form["area_id"])
+        if area_id := area_from(request.form.get("area_id")):
+            fields["area_id"] = area_id
         db.update_someday(c, id, **fields)
         return back("someday")
-    return render_template("someday_item.html", s=s)
+    projects = next((ps for _, ps, area in db.project_groups(c) if area == s["area_id"]), [])
+    return render_template("someday_item.html", s=s, projects=projects)
 
 
 @app.post("/someday/<int:id>/delete")
@@ -519,7 +518,7 @@ def review():
     since = datetime.combine(today() - LOOK_BACK, datetime.min.time()).astimezone().astimezone(timezone.utc)
     return render_template("review.html", projects=db.projects_to_review(c),
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
-                           nexts=nexts, recent=db.done_tasks(c, since=since.strftime("%Y-%m-%d %H:%M:%S")),
+                           nexts=nexts, recent=db.done_since(c, since.strftime("%Y-%m-%d %H:%M:%S")),
                            checklists=db.checklists(c), unseen=unseen,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 
@@ -599,14 +598,11 @@ def task_view(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     if request.method == "POST" and (request.form.get("project_id") or "").startswith(SOMEDAY):
-        # Not committed to after all: a someday item in the area picked, which opens; the task goes (retire_task()).
+        # Not committed to after all: a someday item in the area picked, which opens; the task goes (db.retire_task()).
         area_id = area_from(request.form["project_id"].partition(":")[2]) or abort(400)
         if t["state"] != "open":
             abort(400)
-        with db.transaction(c):
-            sid = db.add_someday(c, t["title"], notes=t["notes"], area_id=area_id)
-            retire_task(c, t)
-        return redirect(url_for("someday_view", id=sid))
+        return redirect(url_for("someday_view", id=db.task_to_someday(c, [id], area_id, now())))
     if request.method == "POST":
         # Title and notes are autosave's, with its conflict check: a select posting this stale form leaves them.
         fields = {k: v for k, v in task_fields_from_form(t).items() if k not in ("title", "notes")}
@@ -723,8 +719,8 @@ def project_view(id):
     p = db.get_project(c, id) or abort(404)
     if request.method == "POST":
         fields = {}  # title and notes are autosave's, as on the task page
-        if area_from(request.form.get("area_id")):  # left blank (a project with none yet): unchanged
-            fields["area_id"] = area_from(request.form["area_id"])
+        if area_id := area_from(request.form.get("area_id")):  # left blank (a project with none yet): unchanged
+            fields["area_id"] = area_id
         status = request.form.get("status")
         if status == "abandoned" and p["status"] != "abandoned":  # with its open steps; it's on Done, revivable
             with db.transaction(c):

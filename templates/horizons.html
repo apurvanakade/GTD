@@ -53,8 +53,8 @@
     <span class="count">{{ projects|length }}</span>
     <ul class="tasks cards">
       {% for p in projects %}
-      <li class="task{% if not p.next_count %} stalled{% endif %}">
-        <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if not p.next_count %}⚠ {% endif %}{{ p.title }}</a>
+      <li class="task{% if p.stalled %} stalled{% endif %}">
+        <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.stalled %}⚠ {% endif %}{{ p.title }}</a>
       </li>
       {% else %}
       <li class="empty">No active projects.</li>

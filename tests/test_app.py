@@ -2478,7 +2478,7 @@ def test_someday_item_page(client, conn):
     assert db.get_someday(conn, sid)["notes"] == "babbel"
     r = client.post(f"/someday/{sid}/delete")
     assert r.headers["Location"].endswith("/someday") and db.get_someday(conn, sid) is None
-    assert client.get("/someday/999").status_code == 404
+    assert client.get("/someday/999").location.endswith("/someday")  # gone: back to the list
 
 
 def test_activating_a_someday_item(client, conn):
@@ -2618,3 +2618,92 @@ def test_review_look_back_checklists_and_new_ideas(client, conn):
     r = client.post("/someday/add", data={"title": "learn Italian", "area_id": home},
                     headers={"Referer": "/review?step=creative"})
     assert r.location.endswith("/review?step=creative") and db.someday_items(conn)[0]["title"] == "learn Italian"
+
+
+def test_look_back_lists_a_repeat_once(client, conn):
+    t = db.add_task(conn, "Vitamins", recur="daily", due_date="2026-10-20", ground=1)
+    for _ in range(3):
+        t = db.complete_task(conn, t, TODAY)
+    c = card(client.get("/review?step=past").get_data(as_text=True), "past")
+    assert c.count(">Vitamins<") == 1 and "×3" in c
+
+
+def test_a_someday_item_in_an_archived_area_unarchives_it(client, conn):
+    old, home = db.add_horizon(conn, "area", "Old"), db.add_horizon(conn, "area", "Home")
+    db.archive_area(conn, old)
+    db.add_someday(conn, "x", area_id=old)  # e.g. dropped from a stale tab
+    assert db.get_horizon(conn, old)["archived_at"] is None
+    sid = db.add_someday(conn, "y", area_id=home)
+    db.update_someday(conn, db.someday_items(conn, old)[0]["id"], area_id=home)  # empty it, archive, move one back
+    db.archive_area(conn, old)
+    db.update_someday(conn, sid, area_id=old)
+    assert db.get_horizon(conn, old)["archived_at"] is None
+
+
+def test_a_task_becoming_a_someday_item_keeps_what_it_drops_in_its_notes(client, conn):
+    home = db.add_horizon(conn, "area", "Home")
+    p = add_project(conn, "Boat", area_id=home)
+    t = db.add_task(conn, "sand hull", notes="80 grit", project_id=p, due_date="2026-10-30", recur="weekly",
+                    remind_at="2026-10-30T13:00:00+00:00")
+    assert client.post("/tasks/move", data={"id": t, "project_id": "someday", "area_id": home},
+                       headers=FETCH).status_code == 204
+    notes = db.someday_items(conn)[0]["notes"]
+    assert notes.startswith("80 grit\n\n") and "Boat" in notes and "2026-10-30" in notes and "weekly" in notes
+    assert "remind" in notes
+    plain = db.add_task(conn, "plain")  # nothing dropped: notes unchanged
+    client.post("/tasks/move", data={"id": plain, "project_id": "someday", "area_id": home}, headers=FETCH)
+    assert db.someday_items(conn)[0]["notes"] == ""
+
+
+def test_a_tickler_date_already_come_says_so(client, conn):
+    sid = db.add_someday(conn, "x", area_id=db.add_horizon(conn, "area", "Home"))
+    html = client.post(f"/someday/{sid}", data={"tickle_on": "today"}, follow_redirects=True).get_data(as_text=True)
+    assert "back in the Inbox" in html
+    html = client.post(f"/someday/{sid}", data={"tickle_on": "nov 15"}, follow_redirects=True).get_data(as_text=True)
+    assert "back in the Inbox" not in html
+
+
+def test_a_gone_someday_item_goes_back_to_the_list(client, conn):
+    sid = db.add_someday(conn, "x", area_id=db.add_horizon(conn, "area", "Home"))
+    client.post(f"/someday/{sid}", data={"activate": "project"})
+    r = client.get(f"/someday/{sid}")  # Back after activating it
+    assert r.status_code == 302 and r.location.endswith("/someday")
+
+
+def test_activating_a_someday_item_as_a_step(client, conn):
+    home, work = db.add_horizon(conn, "area", "Home"), db.add_horizon(conn, "area", "Work")
+    boat = add_project(conn, "Boat", area_id=home)
+    add_project(conn, "Office", area_id=work)
+    sid = db.add_someday(conn, "new sail", notes="red", area_id=home)
+    html = client.get(f"/someday/{sid}").get_data(as_text=True)
+    assert f'value="step:{boat}"' in html and "Office" not in html
+    r = client.post(f"/someday/{sid}", data={"activate": f"step:{boat}"})
+    t = db.project_tasks(conn, boat)[0]
+    assert (t["title"], t["notes"], t["step"]) == ("new sail", "red", "later")  # next stays a conscious choice
+    assert r.location.endswith(f"/tasks/{t['id']}") and db.get_someday(conn, sid) is None
+    office = db.projects(conn, area_id=work)[0]["id"]
+    sid = db.add_someday(conn, "y", area_id=home)
+    assert client.post(f"/someday/{sid}", data={"activate": f"step:{office}"}).status_code == 400  # another area's
+
+
+def test_a_checklist_line_may_end_at_its_box(conn):
+    db.add_reference(conn, "Bare", notes="- [ ]\n- [x]")
+    assert [r["title"] for r in db.checklists(conn)] == ["Bare"]
+
+
+def test_search_lists_someday_items_without_their_review(client, conn):
+    db.add_someday(conn, "learn Italian", area_id=db.add_horizon(conn, "area", "Home"))
+    html = client.get("/search?q=italian").get_data(as_text=True)
+    assert "learn Italian" in html and "Last reviewed" not in html
+
+
+def test_projects_know_when_they_are_stalled(conn):
+    home = db.add_horizon(conn, "area", "Home")
+    stuck, going = add_project(conn, "stuck", area_id=home), add_project(conn, "going", area_id=home)
+    db.add_task(conn, "paint", step="next", project_id=going)
+    parked = add_project(conn, "parked", status="waiting", area_id=home)
+    rows = {p["title"]: p for p in db.projects(conn) + db.projects(conn, "waiting")}
+    assert (rows["stuck"]["stalled"], rows["going"]["stalled"], rows["parked"]["stalled"]) == (1, 0, 0)
+    assert rows["going"]["next_title"] == "paint"
+    assert [p["id"] for p in db.stalled_projects(conn)] == [stuck]
+    assert db.get_project(conn, parked)["stalled"] == 0

@@ -38,6 +38,8 @@ function inline(s) {
   return out + esc(s.slice(i));
 }
 
+const RULE = /^ {0,3}([-*_])( ?\1){2,}\s*$/;  // a horizontal rule: ---, - - -, ***
+
 function markdown(text) {
   let fence = false;
   return text.split("\n").map(line => {
@@ -45,9 +47,10 @@ function markdown(text) {
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return `<span class="md code-line">${esc(line)}</span>`; }
     if (fence) return `<span class="code-line">${esc(line)}</span>`;
     if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
-    if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return mk(line);
+    if (RULE.test(line)) return mk(line);
     // A checklist line: its [ ] or [x] drawn as a box (the characters stay, hidden), a ticked one's text struck.
-    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )\[([ xX])\]( )(.*)/))) {
+    // The box may end the line ("- [ ]" just typed).
+    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )\[([ xX])\]( |$)(.*)/))) {
       const on = m[2] !== " ";
       return mk(m[1]) + `<span class="box${on ? " on" : ""}">[${m[2]}]</span>${m[3]}` + (on ? `<span class="ticked">${inline(m[4])}</span>` : inline(m[4]));
     }
@@ -61,11 +64,12 @@ function markdown(text) {
 const TOOLS = [["bold", "<b>B</b>", "Bold (⌘B)"], ["italic", "<i>I</i>", "Italic (⌘I)"], ["heading", "H", "Heading"],
                ["bullet", "•", "Bullet list"], ["check", "☐", "Checklist"], ["link", "🔗", "Link"],
                ["untick", "↺", "Untick all"]];
-const PREFIX = {heading: /^(\s*)#{1,6} /, bullet: /^(\s*)[-*+] (?!\[[ xX]\] )/, check: /^(\s*)[-*+] \[[ xX]\] /};
+// A checklist box is "[ ]" or "[x]" followed by a space or the line's end.
+const PREFIX = {heading: /^(\s*)#{1,6} /, bullet: /^(\s*)[-*+] (?!\[[ xX]\](?: |$))/, check: /^(\s*)[-*+] \[[ xX]\](?: |$)/};
 const ADD = {heading: "# ", bullet: "- ", check: "- [ ] "};
-const ANY_PREFIX = /^(\s*)(?:#{1,6} |(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)/;
-const TICKED = /^\s*(?:[-*+]|\d+[.)]) \[[xX]\] /m;
-const TICKED_ALL = /^(\s*(?:[-*+]|\d+[.)]) \[)[xX](\] )/gm;
+const ANY_PREFIX = /^(\s*)(?:#{1,6} |(?:[-*+]|\d+[.)]) (?:\[[ xX]\](?: |$))?)/;
+const TICKED = /^\s*(?:[-*+]|\d+[.)]) \[[xX]\](?: |$)/m;
+const TICKED_ALL = /^(\s*(?:[-*+]|\d+[.)]) \[)[xX](\](?: |$))/gm;
 
 // --- One editor per notes textarea ---
 function editor(ta) {
@@ -184,9 +188,14 @@ function editor(ta) {
   }
   const selection = () => getSel() ?? [getText().length, getText().length];
   // **bold** or _italic_ around the selection, or off again when it's already wrapped; empty: the pair, caret inside.
+  // Wrapped means the same run of the mark's character on both sides, of its own length or bold-italic's 3, so
+  // italic inside __bold__ wraps it again (___x___) rather than eating one of bold's underscores.
   function wrapWith(mark) {
-    const t = getText(), [a, b] = selection(), n = mark.length;
-    if (t.slice(a - n, a) === mark && t.slice(b, b + n) === mark)
+    const t = getText(), [a, b] = selection(), n = mark.length, ch = mark[0];
+    let left = 0, right = 0;
+    while (t[a - left - 1] === ch) left++;
+    while (t[b + right] === ch) right++;
+    if (left === right && (left === n || left === 3))
       return apply(t.slice(0, a - n) + t.slice(a, b) + t.slice(b + n), [a - n, b - n]);
     apply(t.slice(0, a) + mark + t.slice(a, b) + mark + t.slice(b), [a + n, b + n]);
   }
@@ -230,11 +239,12 @@ function editor(ta) {
     apply(t.slice(0, i) + (t[i] === " " ? "x" : " ") + t.slice(i + 1), getSel());
   });
 
-  // Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list.
+  // Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list. A
+  // rule (- - -) isn't a list.
   function newline() {
     const t = getText(), [a, b] = selection();
     const start = t.lastIndexOf("\n", a - 1) + 1, line = t.slice(start, a);
-    const m = a === b && line.match(/^(\s*)(?:([-*+])|(\d+)([.)])) (\[[ xX]\] )?/);
+    const m = a === b && !RULE.test(line) && line.match(/^(\s*)(?:([-*+])|(\d+)([.)])) (\[[ xX]\](?: |$))?/);
     if (!m) return insert("\n");
     if (line.length === m[0].length && (t[a] ?? "\n") === "\n")  // nothing after the prefix: the list ends here
       return apply(t.slice(0, start) + t.slice(a), [start, start]);

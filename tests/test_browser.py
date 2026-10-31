@@ -1163,3 +1163,38 @@ def test_someday_item_activate_and_tickler(page, live, conn):
     p = db.projects(conn)[0]
     assert p["title"] == "learn Italian" and page.url.endswith(f"/projects/{p['id']}")
     assert db.get_someday(conn, sid) is None
+
+
+def test_enter_in_a_tickler_box_saves_once(page, live, conn):
+    sid = next(s["id"] for s in db.someday_items(conn) if s["title"] == "learn Italian")
+    page.goto(live + f"/someday/{sid}")
+    posts = []
+    page.on("request", lambda r: r.method == "POST" and f"/someday/{sid}" in r.url and posts.append(r))
+    page.locator("input[name=tickle_on]").fill("nov 15")
+    with page.expect_navigation():
+        page.locator("input[name=tickle_on]").press("Enter")
+    page.wait_for_timeout(300)
+    assert len(posts) == 1 and db.get_someday(conn, sid)["tickle_on"] == "2026-11-15"
+
+
+def test_notes_editor_edge_cases(page, live, conn):
+    pid = db.add_reference(conn, "Edges", notes="")
+    page.goto(live + f"/reference/{pid}")
+    ed = page.locator(".md-editor")
+    ed.click()
+    page.keyboard.type("- - -")
+    page.keyboard.press("Enter")  # a rule, not a list
+    assert notes_text(page) == "- - -\n"
+    page.keyboard.type("- [ ]")  # a box with nothing after it yet
+    assert ed.locator(".box").count() == 1
+    page.keyboard.press("Enter")
+    page.keyboard.press("Enter")
+    page.keyboard.type("__bold__")
+    for _ in range(2):
+        page.keyboard.press("ArrowLeft")
+    page.keyboard.press("Shift+ArrowLeft")
+    page.keyboard.press("Shift+ArrowLeft")
+    page.keyboard.press("Shift+ArrowLeft")
+    page.keyboard.press("Shift+ArrowLeft")  # "bold" selected
+    page.keyboard.press("ControlOrMeta+i")  # wraps it in italics; doesn't eat bold's underscore
+    assert notes_text(page).endswith("___bold___")

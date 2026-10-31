@@ -381,7 +381,7 @@ def reorder_project(c, project_id, ids):
 def counts(c, today):
     one = lambda sql, *a: c.execute(sql, a).fetchone()[0]
     return {
-        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + len(tickled(c, today)),
+        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + one(f"SELECT count(*) FROM ({TICKLED})", today.isoformat()),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
         "h0": one(f"SELECT count(*) FROM tasks t WHERE {VISIBLE_H0}", today.isoformat()),
         "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
@@ -389,7 +389,7 @@ def counts(c, today):
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'") + one("SELECT count(*) FROM someday"),
-        "stalled": len(stalled_projects(c)),
+        "stalled": one(f"SELECT count(*) FROM ({PROJECT_SELECT} WHERE p.status = 'active') WHERE stalled"),
     }
 
 
@@ -453,7 +453,7 @@ def add_project(c, title, **fields):
 
 
 def _check_area(c, fields):
-    """Every project is in an area: a new one needs one, and one can only move to another."""
+    """Every project and someday item is in an area: a new one needs one, and one can only move to another."""
     if "area_id" in fields and not c.execute(
             "SELECT 1 FROM horizons WHERE id = ? AND level = 'area'", (fields["area_id"],)).fetchone():
         raise ValueError(f"not an area: {fields['area_id']}")
@@ -534,16 +534,19 @@ REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = 
   (SELECT k.tickle_on FROM project_tickles k WHERE k.project_id = p.id) AS tickle_on"""
 
 
+# A project with its last review, tickler date, next action's title, and `stalled` (active with no next action). A
+# project has at most one next action (update_task()), so the join adds no rows.
+PROJECT_SELECT = f"""SELECT p.*, {REVIEWED}, n.title AS next_title, (p.status = 'active' AND n.id IS NULL) AS stalled
+  FROM projects p LEFT JOIN tasks n ON n.project_id = p.id AND n.state = 'open' AND n.step = 'next'"""
+
+
 def get_project(c, id):
-    return c.execute(f"SELECT p.*, {REVIEWED} FROM projects p WHERE p.id = ?", (id,)).fetchone()
+    return c.execute(f"{PROJECT_SELECT} WHERE p.id = ?", (id,)).fetchone()
 
 
 def projects(c, status="active", area_id=None):
     """Projects with the given status (and area) in the order dragged, new ones on top."""
-    return c.execute(f"""SELECT p.*, {REVIEWED},
-          (SELECT count(*) FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_count,
-          (SELECT t.title FROM tasks t WHERE t.project_id = p.id AND t.state = 'open' AND t.step = 'next') AS next_title
-        FROM projects p WHERE p.status = ? AND (? IS NULL OR p.area_id = ?)
+    return c.execute(f"""{PROJECT_SELECT} WHERE p.status = ? AND (? IS NULL OR p.area_id = ?)
         ORDER BY p.position, p.id""", (status, area_id, area_id)).fetchall()
 
 
@@ -564,7 +567,7 @@ def projects_to_review(c):
     """The weekly review's project step: active and waiting projects, stalled ones first, then least recently
     reviewed first."""
     rows = _least_reviewed(projects(c) + projects(c, "waiting"))
-    return sorted(rows, key=lambda p: not (p["status"] == "active" and not p["next_count"]))
+    return sorted(rows, key=lambda p: not p["stalled"])
 
 
 @atomic
@@ -627,6 +630,17 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=N
                      (*args, limit)).fetchall()
 
 
+def done_since(c, since):
+    """Tasks finished since a UTC datetime('now') stamp, newest first, as (task, times): a repeat's instances count
+    as one row, the latest, so a daily task doesn't fill the review's look back."""
+    rows = {}
+    for t in done_tasks(c, limit=-1, since=since):
+        key = (t["title"], t["project_id"], t["ground"], t["recur"]) if t["recur"] else t["id"]
+        task, n = rows.get(key, (t, 0))
+        rows[key] = (task, n + 1)
+    return list(rows.values())
+
+
 def project_groups(c):
     """Every project, for pickers (the task dropdown, Inbox's drop panel): (label, projects, area id) for each open
     area, even an empty one (a new project can start there), then done ones.
@@ -642,7 +656,7 @@ def project_groups(c):
 
 def stalled_projects(c):
     """Active projects with no next action -- the weekly review's main target."""
-    return [p for p in projects(c) if p["next_count"] == 0]
+    return [p for p in projects(c) if p["stalled"]]
 
 
 # --- calendar --------------------------------------------------------------
@@ -735,13 +749,38 @@ def someday_items(c, area_id=None):
 def add_someday(c, title, **fields):
     """Every item is in an area, like a project."""
     _check_area(c, {"area_id": None, **fields})
+    _unarchive(c, fields["area_id"])
     return _insert(c, "someday", SOMEDAY_FIELDS, {"title": title, **fields})
 
 
 @atomic
 def update_someday(c, id, **fields):
     _check_area(c, fields)
+    if "area_id" in fields:
+        _unarchive(c, fields["area_id"])
     _update(c, "someday", SOMEDAY_FIELDS, id, fields)
+
+
+def _unarchive(c, area_id):
+    """An archived area holds no someday item: one landing there (from a stale tab) unarchives it, as an open
+    project does (_reopen_area())."""
+    c.execute("UPDATE horizons SET archived_at = NULL WHERE id = ?", (area_id,))
+
+
+@atomic
+def activate_someday(c, id, today, into=None):
+    """Commit to a someday item: into="project" makes it an active project in its area, a project id a later step
+    of that open project (in its area), None an inbox task. The item goes; returns the new project's or task's id."""
+    s = get_someday(c, id)
+    if into == "project":
+        new = add_project(c, s["title"], notes=s["notes"], area_id=s["area_id"])
+    else:
+        if into is not None and not c.execute(f"""SELECT 1 FROM projects WHERE id = ? AND area_id = ?
+                AND status IN {OPEN_PROJECT}""", (into, s["area_id"])).fetchone():
+            raise ValueError(f"not an open project of its area: {into}")
+        new = add_task(c, s["title"], today=today, notes=s["notes"], project_id=into)
+    delete_someday(c, id)
+    return new
 
 
 def get_someday(c, id):
@@ -758,15 +797,59 @@ def mark_item_reviewed(c, id, now):
     update_someday(c, id, reviewed_at=iso(now))
 
 
+# Someday items and projects whose tickler date (?1, today) has come: back in the Inbox until dealt with.
+TICKLED = """SELECT 'item' AS kind, id, title, tickle_on, area_id FROM someday WHERE tickle_on <= ?1
+  UNION ALL SELECT 'project', p.id, p.title, k.tickle_on, p.area_id
+    FROM project_tickles k JOIN projects p ON p.id = k.project_id WHERE p.status = 'someday' AND k.tickle_on <= ?1"""
+
+
 def tickled(c, today):
-    """Someday items and projects whose tickler date has come: back in the Inbox until dealt with. Each row has a
-    `kind` ("item" or "project") and its area's title."""
-    return c.execute("""SELECT 'item' AS kind, s.id, s.title, s.tickle_on, h.title AS area_title
-          FROM someday s JOIN horizons h ON h.id = s.area_id WHERE s.tickle_on <= ?
-        UNION ALL SELECT 'project', p.id, p.title, k.tickle_on, h.title
-          FROM project_tickles k JOIN projects p ON p.id = k.project_id JOIN horizons h ON h.id = p.area_id
-          WHERE p.status = 'someday' AND k.tickle_on <= ?
-        ORDER BY 4, 3""", (today.isoformat(), today.isoformat())).fetchall()  # tickle_on, title
+    """TICKLED's rows, each with a `kind` ("item" or "project") and its area's title; soonest date first."""
+    return c.execute(f"""SELECT x.*, h.title AS area_title FROM ({TICKLED}) x JOIN horizons h ON h.id = x.area_id
+        ORDER BY x.tickle_on, x.title""", (today.isoformat(),)).fetchall()
+
+
+# --- turning a task into something else -------------------------------------
+
+@atomic
+def retire_task(c, id, now):
+    """A task that became something else (a reference or someday item) goes: deleted, or abandoned when it has time
+    on it, so the time is kept."""
+    if task_seconds(c, id, now):
+        abandon_task(c, id, now)
+    else:
+        delete_task(c, id)
+
+
+@atomic
+def task_to_reference(c, ids, now):
+    """Not actionable after all: each task becomes a reference item (title, notes)."""
+    for id in ids:
+        t = get_task(c, id)
+        add_reference(c, t["title"], notes=t["notes"])
+        retire_task(c, id, now)
+
+
+@atomic
+def task_to_someday(c, ids, area_id, now):
+    """Not committed to after all: each task becomes a someday item in the area. Items list newest first, so the last
+    goes in first and they keep the given order. What an item can't hold (its project or H0, due date, repeat,
+    reminder) is noted at the end of its notes. Returns the last item's id (the first given)."""
+    for id in reversed(ids):
+        t = get_task(c, id)
+        sid = add_someday(c, t["title"], notes=_with_dropped(t), area_id=area_id)
+        retire_task(c, id, now)
+    return sid
+
+
+def _with_dropped(t):
+    """A task's notes, plus a line saying what a someday item drops."""
+    when = t["remind_at"] and datetime.fromisoformat(t["remind_at"]).astimezone().strftime("%Y-%m-%d %H:%M")
+    was = [f"in {t['project_title']}" if t["project_id"] else "H0" if t["ground"] else None,
+           t["due_date"] and f"due {t['due_date']}", t["recur"] and f"repeats {t['recur']}",
+           when and not t["reminded_at"] and f"reminder {when}"]
+    line = "Was: " + " · ".join(w for w in was if w) if any(was) else ""
+    return "\n\n".join(x for x in (t["notes"], line) if x)
 
 
 # --- reference -------------------------------------------------------------
@@ -792,12 +875,14 @@ def get_reference(c, id):
     return c.execute("SELECT * FROM reference WHERE id = ?", (id,)).fetchone()
 
 
-CHECKLIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)]) \[[ xX]\] ", re.M)
+CHECKLIST_LINE = re.compile(r"^\s*(?:[-*+]|\d+[.)]) \[[ xX]\](?: |$)", re.M)
 
 
 def checklists(c):
     """Reference items holding a checklist (a `- [ ]` line), alphabetical: the weekly review's checklists step."""
-    return [r for r in references(c) if CHECKLIST_LINE.search(r["notes"])]
+    rows = c.execute("""SELECT * FROM reference WHERE notes LIKE '%[ ]%' OR notes LIKE '%[x]%'
+        ORDER BY lower(title)""").fetchall()  # LIKE ignores case, so [X] too
+    return [r for r in rows if CHECKLIST_LINE.search(r["notes"])]
 
 
 @atomic

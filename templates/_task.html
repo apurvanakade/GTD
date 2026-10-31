@@ -124,7 +124,7 @@
 {# A project as a card (Projects, Someday, an area's page): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
    A someday one shows when the weekly review last looked at it, and offers Activate. #}
 {% macro project_card(p, steps) %}
-{% set stalled = p.status == 'active' and not p.next_count %}
+{% set stalled = p.stalled %}
 <li class="task{{ ' stalled' if stalled }}" data-id="{{ p.id }}"{% if stalled %} title="No next action"{% endif %}>
   {% if p.status in ('active', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {{ peek_button() }}
@@ -139,12 +139,12 @@
 {% macro until(tickle_on) %}{% if tickle_on and tickle_on > today %}<span class="until" title="Out of sight until then">until {{ tickle_on }}</span>{% endif %}{% endmacro %}
 
 {# A someday item as a row (Someday, an area's page, search). Among project cards (`slots`), empty ⠿ and ▸ slots line
-   its title up with theirs. #}
+   its title up with theirs, and it shows when the review last saw it; in search (no slots) just the title. #}
 {% macro someday_row(s, slots=True) %}
 <li class="task maybe">
   {% if slots %}<span class="grip slot" aria-hidden="true">⠿</span><span class="peek slot" aria-hidden="true"></span>{% endif %}
   <a class="title" href="{{ url_for('someday_view', id=s.id) }}">{{ s.title }}</a>
-  {{ until(s.tickle_on) }}<span class="reviewed" title="Last reviewed">{{ s.reviewed_at|ago }}</span>
+  {{ until(s.tickle_on) }}{% if slots %}<span class="reviewed" title="Last reviewed">{{ s.reviewed_at|ago }}</span>{% endif %}
 </li>
 {% endmacro %}
 

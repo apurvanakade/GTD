@@ -12,7 +12,8 @@
     {{ area_select(s.area_id, submit=True) }}
     {{ tickler(s.tickle_on) }}
     <select name="activate" data-submit aria-label="Activate" title="Commit to it: opens what it becomes">
-      <option value="">activate…</option><option value="project">as a project</option><option value="task">as a task</option>
+      <option value="">activate…</option><option value="project">as a project</option><option value="task">as an inbox task</option>
+      {% if projects %}<optgroup label="as a step of">{% for p in projects %}<option value="step:{{ p.id }}">{{ p.title }}{{ ' · ' ~ p.status if p.status != 'active' }}</option>{% endfor %}</optgroup>{% endif %}
     </select>
     <button formaction="{{ url_for('someday_delete', id=s.id) }}" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Let this one go?')">✕</button>
   </div>
