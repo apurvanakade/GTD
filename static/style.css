@@ -305,7 +305,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 }
 .done button:hover { border-color: var(--accent); background: var(--accent); }
 .task .peek { width: 1.2em; padding: 0; line-height: 20px; color: var(--muted); }
-.peek-all { font-size: .8125rem; }
+.peek-all, .tickled-toggle { font-size: .8125rem; }
 .task .steps { display: none; flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 0 0 0 calc(1.2em + 10px); }
 .task.open .steps { display: block; }
 .task .steps li { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: .9rem; }

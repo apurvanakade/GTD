@@ -286,10 +286,10 @@ def task_move():
 
 # --- lists -----------------------------------------------------------------
 
-def toggle_url(show):
-    """This page's URL with ?done flipped, keeping other query args."""
-    args = {k: v for k, v in request.args.items() if k != "done" and k not in request.view_args}
-    flip = {} if show else {"done": 1}
+def toggle_url(show, arg="done"):
+    """This page's URL with ?done (or another flag) flipped, keeping other query args."""
+    args = {k: v for k, v in request.args.items() if k != arg and k not in request.view_args}
+    flip = {} if show else {arg: 1}
     return url_for(request.endpoint, **request.view_args, **flip, **args)
 
 
@@ -381,9 +381,16 @@ def waiting_add():
 @app.route("/someday")
 def someday():
     c = conn()
-    items = db.someday_items(c)
-    return render_template("someday.html", groups=db.by_area(c, db.projects(c, "someday"), items), items=items,
-                           steps=db.open_steps(c, "someday"))
+    projects, items = db.projects(c, "someday"), db.someday_items(c)
+    # What's tickled to a later date is out of sight until then, unless ?tickled=1 asks for it.
+    later = lambda x: x["tickle_on"] and x["tickle_on"] > today().isoformat()
+    tickled = sum(map(bool, map(later, [*projects, *items])))
+    show = request.args.get("tickled") == "1"
+    if not show:
+        projects, items = [p for p in projects if not later(p)], [i for i in items if not later(i)]
+    return render_template("someday.html", groups=db.by_area(c, projects, items), items=items,
+                           steps=db.open_steps(c, "someday"), tickled=tickled, show_tickled=show,
+                           tickled_url=toggle_url(show, "tickled"))
 
 
 @app.post("/someday/add")

@@ -1645,7 +1645,7 @@ def test_revive_and_activate_buttons_are_not_make_next(client, conn):
     seed(conn)
     done = client.get("/done").get_data(as_text=True)
     assert re.search(r'class="row-btn"><button[^>]*>Revive', done)
-    assert 'class="row-btn"' in client.get("/someday").get_data(as_text=True)
+    assert 'class="row-btn"' in client.get("/someday?tickled=1").get_data(as_text=True)
 
 
 def test_style_has_no_dead_or_undefined_variables():
@@ -2541,7 +2541,7 @@ def test_a_someday_projects_tickler_date(client, conn):
     assert 'name="tickle_on"' in html
     client.post(f"/projects/{p}", data={"status": "someday", "tickle_on": "nov 15"})
     assert db.get_project(conn, p)["tickle_on"] == "2026-11-15"
-    assert "2026-11-15" in client.get("/someday").get_data(as_text=True)
+    assert "2026-11-15" in client.get("/someday?tickled=1").get_data(as_text=True)
     client.post(f"/projects/{p}", data={"status": "someday", "tickle_on": ""})
     assert db.get_project(conn, p)["tickle_on"] is None
     client.post(f"/projects/{p}", data={"status": "active", "tickle_on": "nov 15"})  # active: no tickler
@@ -2707,3 +2707,15 @@ def test_projects_know_when_they_are_stalled(conn):
     assert rows["going"]["next_title"] == "paint"
     assert [p["id"] for p in db.stalled_projects(conn)] == [stuck]
     assert db.get_project(conn, parked)["stalled"] == 0
+
+
+def test_someday_hides_what_is_tickled_to_a_later_date(client, conn):
+    seed(conn)
+    later = add_project(conn, "Sail round the world", status="someday")
+    db.set_project_tickle(conn, later, "2026-11-15")
+    html = client.get("/someday").get_data(as_text=True)
+    assert "write a book" not in html and "Sail round the world" not in html  # out of sight until their date
+    assert ">sail<" in html  # its date has come: shown (and in the Inbox)
+    assert re.search(r'href="/someday\?tickled=1" title="3 [^"]*">Show tickled<', html)
+    shown = client.get("/someday?tickled=1").get_data(as_text=True)
+    assert "write a book" in shown and "until 2026-11-15" in shown and re.search(r'href="/someday"[^>]*>Hide tickled<', shown)

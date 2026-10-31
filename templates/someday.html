@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% from "_task.html" import add_form, area_select, area_groups with context %}
 {% block title %}Someday / maybe{% endblock %}
-{% block actions %}{% if groups %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
+{% block actions %}{% if groups %}<button type="button" class="peek-all">Expand all</button>{% endif %}
+  {%- if tickled %}<a class="tickled-toggle" href="{{ tickled_url }}" title="{{ tickled }} out of sight until their tickler date">{{ 'Hide tickled' if show_tickled else 'Show tickled' }}</a>{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ area_select(required=True) }}
   <select name="kind" aria-label="Kind"><option value="">maybe</option><option value="project">project</option></select>{% endcall %}

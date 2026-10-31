@@ -283,7 +283,7 @@ def test_drag_reorders_project_steps(page, live, conn):
 def test_drag_reorders_someday_projects(page, live, conn):
     home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
     add_project(conn, "Another dream", status="someday", area_id=home)  # Projects shares the code; this covers both
-    page.goto(live + "/someday")
+    page.goto(live + "/someday?tickled=1")
     page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
     titles = lambda: page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts()  # not the someday items
     assert titles() == ["Another dream", "Someday proj"]
@@ -341,7 +341,7 @@ def test_task_rows_are_one_height(page, live, conn):
 
 
 def test_project_row_arrow_folds_out_its_steps(page, live):
-    for url, project, step in (("/projects", "Kitchen", "lay tiles"), ("/someday", "Someday proj", "dream step")):
+    for url, project, step in (("/projects", "Kitchen", "lay tiles"), ("/someday?tickled=1", "Someday proj", "dream step")):
         page.goto(live + url)
         r = row(page, project)
         link = r.get_by_role("link", name=step, exact=True)
@@ -354,7 +354,7 @@ def test_project_row_arrow_folds_out_its_steps(page, live):
 
 
 def test_expand_all_folds_out_every_project(page, live):
-    for url in ("/projects", "/someday"):
+    for url in ("/projects", "/someday?tickled=1"):
         page.goto(live + url)
         steps, toggle = page.locator("ul.steps"), page.locator("button.peek-all")
         assert toggle.inner_text() == "Expand all" and not any(s.is_visible() for s in steps.all())
