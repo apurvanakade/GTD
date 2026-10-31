@@ -20,7 +20,7 @@
   {#- Get clear #}
   {% call card('collect', 'Collect loose ends', 'Desktop, downloads, email, notes, tabs → Inbox.') %}{% endcall %}
   {% call card('inbox', 'Inbox to zero', 'File, do or drop each.', counts.inbox) %}
-    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox') }}">Inbox →</a></p>{% endif %}
+    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox', process=1) }}">Process inbox →</a></p>{% endif %}
   {% endcall %}
   {% call card('sweep', 'Mind sweep', 'Capture every open loop.') %}{% endcall %}
   {#- Get current #}

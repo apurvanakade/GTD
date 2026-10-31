@@ -66,7 +66,8 @@ def same_origin_only():
 def template_globals():
     timer = db.timer_running(conn())
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
-            "timer": timer, "stopped": None if timer else stopped_timer()}
+            "timer": timer, "stopped": None if timer else stopped_timer(),
+            "embed": request.args.get("embed") == "1"}  # a task page inside Process (inbox.html): no chrome
 
 
 STOPPED = timedelta(minutes=10)  # how long a stopped timer's pill stays, to finish its task or start it again
@@ -568,7 +569,7 @@ def task_view(id):
         flash_demoted(db.update_task(c, id, today=today(), **fields))
         if request.headers.get("X-Requested-With") == "fetch":  # a field saved in the background: just its messages
             return {"flashes": get_flashed_messages()}
-        return redirect(url_for("task_view", id=id))
+        return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
     return render_template("task.html", t=t, project_groups=db.project_groups(c), seconds=db.task_seconds(c, id, now()))
 
 

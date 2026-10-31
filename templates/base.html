@@ -7,8 +7,9 @@
 <script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% if embed %}<base target="_top">{% endif %}{# inside Process: links open in the page itself, not the frame #}
 </head>
-<body>
+<body{% if embed %} class="embed"{% endif %}>
 {% include "_nav.html" %}
 {# The bar is identical on every page so switching tabs never moves it. #}
 <div class="bar">

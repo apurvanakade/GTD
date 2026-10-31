@@ -853,6 +853,16 @@ def test_task_page_timer_sits_on_the_title_line(client, conn):
     assert "1h 00m" in line(t) and "Start the timer" not in line(t)  # done: time shown, no ▶
 
 
+def test_task_page_embedded_in_process_edits_only_the_item(client, conn):
+    """?embed=1 (Process's frame): title, notes, due, repeats, remind; no project, step, timer or ✓; links leave it."""
+    tid = db.add_task(conn, "ring Bob")
+    page = client.get(f"/tasks/{tid}?embed=1").get_data(as_text=True)
+    assert 'class="embed"' in page and '<base target="_top">' in page
+    assert 'name="recur"' in page and 'name="due_date"' in page and 'name="project_id"' not in page and "Start the timer" not in page
+    assert 'name="project_id"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert client.post(f"/tasks/{tid}?embed=1", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed=1")
+
+
 def test_new_project_from_task_form(client, conn):
     tid = db.add_task(conn, "ring Bob")
     r = client.post(f"/tasks/{tid}", data={"project_id": "__new__", "new_project": " Garden ", "step": "next"})
@@ -1282,7 +1292,7 @@ def test_review_shows_one_step_at_a_time(client, conn):
     key, card = step_card(client.get("/review?step=projects").get_data(as_text=True), "projects")
     assert "⚠ Stalled" in card  # no next action
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
-    assert 'href="/inbox"' in card and "/process" not in card  # deal with it on the Inbox page
+    assert 'href="/inbox?process=1"' in card  # processed on the Inbox page, its overlay open
     r = client.post("/review/inbox")  # ticking moves on to the next unticked step (sweep is ticked)
     assert r.headers["Location"] == "/review"
     assert step_card(client.get("/review").get_data(as_text=True), "overdue")[0] == "overdue"

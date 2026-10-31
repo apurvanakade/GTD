@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form, pin_button, move_panel, project_select, date_input with context %}
+{% from "_task.html" import row, add_form, pin_button, move_panel, project_select with context %}
 {% block title %}Inbox{% endblock %}
 {% block actions %}{% if tasks %}<button type="button" class="process-start" title="One item at a time, one question at a time">Process</button>{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
@@ -14,37 +14,40 @@
 {% if tasks %}
 <ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
 {{ move_panel('inbox') }}
-{# Process (static/process.js): the top item, one question at a time, after Allen's flowchart. data-go asks the next
-   question; data-do files the item and the next one follows (or, with data-go too, asks that first); data-key answers
-   from the keyboard. #}
+{# Process (static/process.js): the top item's task page (to clarify it: title, notes, repeat…), then one question at
+   a time, after Allen's flowchart. data-go asks the next question; data-choose picks an answer, which File (data-do)
+   then carries out, filing the item, and the next one follows; data-key answers from the keyboard. #}
 <dialog class="process" aria-label="Process the inbox">
-  <form>
+  <form method="dialog">
     <button hidden></button>{# first, so Enter in a box submits (process.js answers it) #}
-    <header><a class="item" href=""></a><span class="left"></span>
+    <header><span class="left"></span>
       <button type="button" class="back icon" title="Back" aria-label="Back">‹</button>
       <button type="button" class="close icon" title="Stop (Esc)" aria-label="Stop">×</button></header>
+    <iframe title="The item" src="about:blank"></iframe>
     <section data-q="actionable"><p class="q">Actionable?</p>
-      <p class="row"><button type="button" class="primary" data-go="project" data-key="y">Yes</button><button type="button" data-go="keep" data-key="n">No</button></p></section>
+      <p class="row"><button type="button" data-go="project" data-key="y">Yes</button><button type="button" data-go="keep" data-key="n">No</button></p></section>
     <section data-q="keep"><p class="q">Keep it?</p>
-      <p class="row"><button type="button" data-do="trash">Trash</button><button type="button" data-do="someday">Someday</button><button type="button" data-do="reference">Reference</button></p></section>
+      <p class="row"><button type="button" data-choose="trash">Trash</button><button type="button" data-choose="someday">Someday</button><button type="button" data-choose="reference">Reference</button></p>
+      <p class="row"><button type="button" class="primary" data-do="chosen" disabled>File</button></p></section>
     <section data-q="project"><p class="q">Part of a project?</p>
-      <p class="row"><button type="button" class="primary" data-go="pick" data-key="y">Yes</button><button type="button" data-go="two" data-key="n">No</button></p></section>
+      <p class="row"><button type="button" data-go="pick" data-key="y">Yes</button><button type="button" data-go="two" data-key="n">No</button></p></section>
     <section data-q="pick"><p class="q">Which one?</p>
-      <p class="row">{{ project_select(h0=False) }}<button type="button" class="primary" data-do="file" data-go="next">File</button></p></section>
+      <p class="row">{{ project_select(h0=False) }}<button type="button" data-go="next" title="Continue" aria-label="Continue">›</button></p></section>
     <section data-q="next"><p class="q">Its next action?</p>
-      <p class="row"><button type="button" class="primary" data-do="make-next" data-key="y">Yes</button><button type="button" data-do="later" data-key="n">No</button></p></section>
+      <p class="row"><button type="button" data-choose="make-next" data-key="y">Yes</button><button type="button" data-choose="later" data-key="n">No</button></p>
+      <p class="row"><button type="button" class="primary" data-do="project" disabled>File</button></p></section>
     <section data-q="two"><p class="q">Under two minutes?</p>
-      <p class="row"><button type="button" class="primary" data-go="now" data-key="y">Yes</button><button type="button" data-go="who" data-key="n">No</button></p></section>
+      <p class="row"><button type="button" data-go="now" data-key="y">Yes</button><button type="button" data-go="who" data-key="n">No</button></p></section>
     <section data-q="now"><p class="q">Do it now.</p>
       <p class="row"><button type="button" class="primary" data-do="done">✓ Done</button></p></section>
     <section data-q="who"><p class="q">Yours to do?</p>
-      <p class="row"><button type="button" class="primary" data-go="when" data-key="y">Yes</button><button type="button" data-go="follow" data-key="n">Delegate</button></p></section>
+      <p class="row"><button type="button" data-go="when" data-key="y">Yes</button><button type="button" data-go="follow" data-key="n">Delegate</button></p></section>
     <section data-q="when"><p class="q">When?</p>
-      <label class="row">{{ date_input(placeholder='any time', label='Due date') }}<span class="hint when" data-parse="due"></span></label>
-      <p class="row"><button type="button" class="primary" data-do="h0">Next action</button></p></section>
+      <p class="hint">Due date above, if any.</p>
+      <p class="row"><button type="button" class="primary" data-do="h0" title="As an H0 next action">File</button></p></section>
     <section data-q="follow"><p class="q">Follow up when?</p>
-      <label class="row">{{ date_input(placeholder='any time', label='Follow-up date') }}<span class="hint when" data-parse="due"></span></label>
-      <p class="row"><button type="button" class="primary" data-do="waiting">Waiting</button></p></section>
+      <p class="hint">Follow-up date above, if any.</p>
+      <p class="row"><button type="button" class="primary" data-do="waiting" title="As H0 waiting">File</button></p></section>
   </form>
 </dialog>
 <script src="{{ url_for('static', filename='process.js') }}"></script>

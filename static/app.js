@@ -27,7 +27,7 @@ async function post(url, body) {
 // however short the page; a reload or Back keeps the browser's own scroll.
 (() => {
   const big = document.querySelector('main .big'), main = document.querySelector('main');
-  if (!big) return;
+  if (!big || document.body.matches('.embed')) return;  // inside Process the frame fits the page
   main.style.paddingTop = '1px';  // measured with some padding, which stops the header's margins collapsing through main
   const top = el => el.getBoundingClientRect().top + scrollY, start = top(big);
   const end = Math.max(...[...main.children].filter(el => el.tagName !== 'SCRIPT' && getComputedStyle(el).position !== 'fixed')
@@ -41,7 +41,7 @@ async function post(url, body) {
 })();
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (document.querySelector('dialog[open]')) return;  // Esc closes it natively
+  if (document.querySelector('dialog[open]') || document.body.matches('.embed')) return;  // Esc closes a dialog natively; Process's frame goes nowhere
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
   if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
@@ -69,7 +69,8 @@ document.querySelector('.add-inbox').addEventListener('click', capture);
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
 // it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
 // Title and notes are autosave.js's; "＋ New project…" waits for its name; a box whose 📅 picker is open waits for it.
-document.addEventListener('change', async e => {
+let fieldsSaved = Promise.resolve();  // the latest such background save; autosaved() (autosave.js) waits for it
+document.addEventListener('change', e => {
   const el = e.target, f = el.form;
   if (!f) return;
   if (el.matches('[data-submit]') && !el.closest('.date-field.picking')) return f.requestSubmit();
@@ -78,11 +79,13 @@ document.addEventListener('change', async e => {
   if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();
   const body = new URLSearchParams();
   for (const name of ['due_date', 'recur', 'remind_at']) body.set(name, f.elements[name].value);
-  try {
-    const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-    if (r.ok) return toast((await r.json()).flashes);
-  } catch {}
-  location.reload();
+  fieldsSaved = (async () => {
+    try {
+      const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
+      if (r.ok) return toast((await r.json()).flashes);
+    } catch {}
+    location.reload();
+  })();
 });
 document.addEventListener('keydown', e => {  // Enter in such a box saves it the same way, without a reload
   const el = e.target;

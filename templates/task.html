@@ -9,6 +9,8 @@
   {% set running = timer and timer.task_id == t.id %}
   <div class="title-line">
     <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
+    {#- Inside Process (embed) only the item itself is edited: Process files, times and finishes it. #}
+    {% if not embed %}
     {# The timer, with the time spent; while running, the total ticks. #}
     {% if running or t.state == 'open' or seconds %}<span class="task-timer{{ ' on' if running }}">
       {% if running %}<button formaction="{{ url_for('timer_stop') }}" title="Stop the timer" aria-label="Stop the timer">■</button>
@@ -24,10 +26,11 @@
     {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
     <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
     {% endif %}
+    {% endif %}
   </div>
-  <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
+  <textarea name="notes" rows="{{ 1 if embed else 3 }}" placeholder="Notes">{{ t.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
-  <div class="fields">
+  {% if not embed %}<div class="fields">
     <label>Project
       <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
       {%- if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
@@ -39,7 +42,7 @@
         {% for s in (['next', 'waiting', 'later'] if t.project_id else ['next', 'waiting', 'someday']) %}<option{% if s == t.step %} selected{% endif %}>{{ s }}</option>{% endfor %}
       </select>
     </label>{% endif %}
-  </div>
+  </div>{% endif %}
   <div class="fields">
     {#- Each .when hint shows how its box reads, as you type (static/app.js, /parse/<kind>). #}
     {#- A someday task's date is its tickler: out of sight until then, then back in the Inbox. #}

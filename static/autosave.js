@@ -4,6 +4,10 @@
 // (notes get git-style conflict markers, the title stays yours). Coming back to the tab picks up edits made elsewhere.
 // The server leaves title and notes to this: any other submit of the form (a select, ✓, ▶) saves them here first,
 // and Enter in the title just saves.
+// autosaved() saves every form's now (Process calls it in its frame before filing the item) and waits for the other
+// fields' background save (app.js): true once all is saved.
+const savers = [];
+function autosaved() { return Promise.all([fieldsSaved, ...savers.map(s => s())]).then(([, ...ok]) => ok.every(Boolean)); }
 document.querySelectorAll("form[data-autosave]").forEach(form => {
   const url = form.dataset.autosave, status = form.querySelector(".autosave");
   const fields = ["title", "notes"].map(n => form.elements[n]).filter(Boolean);
@@ -37,6 +41,8 @@ document.querySelectorAll("form[data-autosave]").forEach(form => {
       .finally(() => { inflight = null; if (again) { again = false; save(); } });
     return inflight;
   }
+
+  savers.push(() => save());
 
   form.addEventListener("submit", async e => {
     if (form.dataset.saved) return;  // saved just now: let it go

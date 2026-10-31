@@ -1031,20 +1031,32 @@ def test_notes_editor_edge_cases(page, live, conn):
 def test_process_walks_the_inbox_one_question_at_a_time(page, live, conn):
     page.goto(live + "/inbox")
     orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
-    page.get_by_role("button", name="Process").click()
     dialog = page.locator("dialog.process")
-    assert dialog.locator(".item").inner_text() == "legacy orphan"  # the top row first
+    item = page.frame_locator("dialog.process iframe")  # the item's own task page
+    row(page, "inbox item").locator(".title").click()  # a row opens Process at that item, not its page
+    item.locator("main input[name=title][value='inbox item']").wait_for()
+    assert page.url == live + "/inbox"
+    page.keyboard.press("Escape")
+    page.get_by_role("button", name="Process").click()
+    item.locator("main input[name=title][value='legacy orphan']").wait_for()  # the top row first
+    assert item.locator("select[name=project_id]").count() == 0 and item.locator("nav").is_hidden()  # Process files it
     assert dialog.locator("section:not([hidden])").count() == 1  # one question at a time
     dialog.get_by_role("button", name="No").click()
-    dialog.get_by_role("button", name="Someday").click()
-    dialog.locator(".item", has_text="inbox item").wait_for()
+    dialog.get_by_role("button", name="Trash").click()
+    dialog.get_by_role("button", name="Someday").click()  # picking files nothing; the last pick counts
+    assert db.get_task(conn, orphan)["state"] == "open" and dialog.get_by_role("button", name="Someday", pressed=True).count() == 1
+    dialog.get_by_role("button", name="File").click()
+    item.locator("main input[name=title][value='inbox item']").wait_for()
     t = db.get_task(conn, orphan)
     assert (t["ground"], t["step"]) == (1, "someday") and row(page, "legacy orphan").count() == 0
     dialog.get_by_role("button", name="Yes").click()  # actionable
     dialog.get_by_role("button", name="Yes").click()  # part of a project
     dialog.locator("select[name=project_id]").select_option("1")
-    dialog.get_by_role("button", name="File").click()
-    dialog.get_by_role("button", name="No").click()  # not its next action
+    dialog.get_by_role("button", name="Continue").click()
+    assert dialog.get_by_role("button", name="File").is_disabled()  # nothing picked yet
+    page.keyboard.press("n")  # not its next action
+    assert db.get_task(conn, 1)["project_id"] is None  # not filed until File
+    page.keyboard.press("Enter")  # File
     dialog.wait_for(state="hidden")
     t = db.get_task(conn, 1)
     assert (t["project_id"], t["step"]) == (1, "later")
@@ -1053,20 +1065,24 @@ def test_process_walks_the_inbox_one_question_at_a_time(page, live, conn):
 
 
 def test_process_keys_back_and_next_action_with_a_date(page, live, conn):
-    page.goto(live + "/inbox")
+    page.goto(live + "/inbox?process=1")  # the weekly review's link opens it straight away
     orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
-    page.get_by_role("button", name="Process").click()
     dialog = page.locator("dialog.process")
+    dialog.wait_for()
+    assert page.url == live + "/inbox"  # so a reload doesn't reopen it
     page.keyboard.press("y")  # actionable
     page.keyboard.press("y")  # part of a project
     dialog.get_by_role("button", name="Back").click()
     page.keyboard.press("n")  # a single action
     page.keyboard.press("n")  # over two minutes
-    page.keyboard.press("y")  # mine to do
-    dialog.locator("input[name=due_date]:visible").fill("fri")
-    page.keyboard.press("Enter")
-    dialog.locator(".item", has_text="inbox item").wait_for()
+    item = page.frame_locator("dialog.process iframe")
+    item.locator("main input[name=title]").fill("call the legacy orphan")  # clarified on the way
+    item.locator("main input[name=recur]").fill("weekly")
+    dialog.get_by_role("button", name="Yes").click()  # mine to do
+    item.locator("main input[name=due_date]").fill("fri")  # When? is answered in the item's own Due box
+    dialog.get_by_role("button", name="File").click()
+    item.locator("main input[name=title][value='inbox item']").wait_for()
     t = db.get_task(conn, orphan)
-    assert (t["ground"], t["step"], t["due_date"]) == (1, "next", "2026-10-23")
+    assert (t["title"], t["recur"], t["ground"], t["step"], t["due_date"]) == ("call the legacy orphan", "weekly", 1, "next", "2026-10-23")
     page.keyboard.press("Escape")
     assert dialog.is_hidden() and row(page, "inbox item").count() == 1

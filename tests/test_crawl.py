@@ -78,6 +78,8 @@ def parse(html):
 
 def submissions(page_url, form):
     """Every (method, url, data) a person could send with this form: each submit button, each select option."""
+    if form["method"] == "dialog":  # sends nothing anywhere (Process's overlay: its JS posts each answer)
+        return []
     base = {}
     for f in form["fields"]:
         if not f.get("name"):
