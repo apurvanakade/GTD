@@ -1114,7 +1114,7 @@ def test_process_walks_the_inbox_one_question_at_a_time(page, live, conn):
     assert (t["ground"], t["step"]) == (1, "someday") and row(page, "legacy orphan").count() == 0
     dialog.get_by_role("button", name="Yes").click()  # actionable
     dialog.get_by_role("button", name="Yes").click()  # part of a project
-    dialog.locator("select[name=project_id]").select_option("1")
+    dialog.get_by_label("Project", exact=True).select_option("1")
     dialog.get_by_role("button", name="Continue").click()
     assert dialog.get_by_role("button", name="File").is_disabled()  # nothing picked yet
     page.keyboard.press("n")  # not its next action
@@ -1165,6 +1165,20 @@ def test_process_skips_ticked_rows_and_reloads_after_an_edit(page, live, conn):
     with page.expect_navigation():  # closing after an edit redraws the list under it
         dialog.get_by_role("button", name="Stop").click()
     assert row(page, "inbox item, clarified").count() == 1
+    # Already knowing where it goes: "file to…" skips the questions, here into a new project named on the spot.
+    page.get_by_role("button", name="Process").click()
+    item.locator("main input[name=title][value='inbox item, clarified']").wait_for()
+    page.keyboard.press("f")
+    quick = dialog.locator("select.quick")
+    assert quick.evaluate("el => el === document.activeElement")
+    quick.select_option("__new__")
+    box = dialog.locator(".quick + input[name=new_project]")
+    assert box.input_value() == "inbox item, clarified"  # named after the item, like Which one?'s
+    box.fill("garden")
+    with page.expect_navigation():  # inbox zero
+        box.press("Enter")
+    t = db.get_task(conn, 1)
+    assert (db.get_project(conn, t["project_id"])["title"], t["step"]) == ("garden", "later")
 
 
 def test_a_disabled_repeat_box_isnt_saved_with_the_other_fields(page, live, conn):

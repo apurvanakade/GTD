@@ -16,7 +16,8 @@
 {{ move_panel('inbox') }}
 {# Process (static/process.js): the top item's task page (to clarify it: title, notes, repeat…), then one question at
    a time, after Allen's flowchart. data-go asks the next question; data-choose picks an answer, which File (data-do)
-   then carries out, filing the item, and the next one follows; data-key answers from the keyboard. #}
+   then carries out, filing the item, and the next one follows; data-key answers from the keyboard. "file to…"
+   (f) skips the questions. #}
 <dialog class="process" aria-label="Process the inbox">
   <form method="dialog">
     <button hidden></button>{# first, so Enter in a box submits (process.js answers it) #}
@@ -25,7 +26,9 @@
       <button type="button" class="close icon" title="Stop (Esc)" aria-label="Stop">×</button></header>
     <iframe title="The item" src="about:blank"></iframe>
     <section data-q="actionable"><p class="q">Actionable?</p>
-      <p class="row"><button type="button" data-go="project" data-key="y">Yes</button><button type="button" data-go="keep" data-key="n">No</button></p></section>
+      <p class="row"><button type="button" data-go="project" data-key="y">Yes</button><button type="button" data-go="keep" data-key="n">No</button></p>
+      {#- Already knowing where it goes: picking one files it at once, as a drop on the drop panel would. #}
+      <p class="row quick">{{ project_select(targets=True) }}</p></section>
     <section data-q="keep"><p class="q">Keep it?</p>
       <p class="row"><button type="button" data-choose="trash">Trash</button><button type="button" data-choose="someday">Someday</button><button type="button" data-choose="reference">Reference</button></p>
       <p class="row"><button type="button" class="primary" data-do="chosen" disabled>File</button></p></section>

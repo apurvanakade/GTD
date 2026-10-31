@@ -81,10 +81,12 @@
    and as Inbox's drop panel in project_targets(). The open ones start with "＋ New project…" (value __new__),
    which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
    task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
-{% macro project_select(selected=none, h0=True, keep=none) %}
-<select name="project_id" aria-label="Project">
-  <option value="">project…</option>
+{% macro project_select(selected=none, h0=True, keep=none, targets=False) %}
+{#- targets: the drop panel's whole list (Process's "file to…"): H0's someday / maybe and Reference too. #}
+<select name="project_id" aria-label="{{ 'File to' if targets else 'Project' }}"{% if targets %} class="quick" title="File it now (f)"{% endif %}>
+  <option value="">{{ 'file to…' if targets else 'project…' }}</option>
   {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
+  {% if targets %}<option value="someday">Someday / maybe</option><option value="reference">Reference</option>{% endif %}
   {% for label, ps, new in project_groups %}<optgroup label="{{ label }}">
     {% if new %}<option value="__new__">＋ New project…</option>{% endif %}
     {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{{ ' · ' ~ p.status if p.status in ('waiting', 'someday') }}</option>{% endfor %}

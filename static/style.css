@@ -139,6 +139,9 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .process .q { margin: 0; font-weight: 600; }
 .process .row { margin: 0; gap: 2px; }
 .process .row:has([data-do]) { margin-left: auto; }
+/* "file to…": quiet at the right until wanted, no box until hovered or focused */
+.process .quick { margin-left: auto; }
+.process select.quick:not(:hover, :focus) { border-color: transparent; color: var(--muted); }
 .process .hint { margin: 0; font-size: var(--fs-s); }
 .process select { width: auto; max-width: 20rem; background: transparent; }
 .process [aria-pressed=true] { background: var(--soft); color: var(--fg); }  /* the picked answer, until File */

@@ -3,14 +3,16 @@
 // notes, due date, repeat and reminder save as on its page, and are saved before it's filed. Picking an answer files
 // nothing: File does, as the drop panel or its page would, in the background; the item leaves the list and the next
 // one follows, until the inbox is empty; so it does when the item's own page files or finishes it. y / n answer,
-// Enter files, ‹ goes back a question, Esc stops.
+// Enter files, ‹ goes back a question, Esc stops. Already knowing where it goes, "file to…" (f) on the first question
+// skips the rest: picking a target files it at once, as a drop on the drop panel would (a new project: once named).
 // /inbox?process=1 opens it; so does a click on a row, at that item (⌘/Ctrl-click still opens its page). A row ticked
 // off in place (faded, `.gone`) is done: Process skips it. Stopping (×, Esc) redraws the list if an item was edited.
 (() => {
   const dialog = document.querySelector('dialog.process');
   const frame = dialog.querySelector('iframe'), left = dialog.querySelector('.left'), back = dialog.querySelector('.back');
-  const sections = [...dialog.querySelectorAll('section')], select = dialog.querySelector('select[name=project_id]');
-  const name = dialog.querySelector('input[name=new_project]');
+  const sections = [...dialog.querySelectorAll('section')], select = dialog.querySelector('[data-q=pick] select');
+  const name = dialog.querySelector('[data-q=pick] input[name=new_project]');
+  const quick = dialog.querySelector('select.quick'), quickName = quick.nextElementSibling;
   let li = null, trail = [], busy = false;
   const ROW = 'main ul.tasks:not(.tickled) > li.task[data-id]:not(.gone)';
   const rows = () => [...document.querySelectorAll(ROW)];
@@ -22,7 +24,7 @@
     back.hidden = trail.length < 2;
     choose(null);  // asked again (‹), nothing is picked yet
     if (q === 'pick') name.value = field('title')?.value || name.value;  // a new project is named after the item
-    (shown().querySelector('input[name], select') || shown().querySelector('button')).focus();
+    (shown().querySelector(':is(input[name], select):not(.quick *)') || shown().querySelector('button')).focus();
   };
   const next = (at = rows()[0]) => {
     li = at;
@@ -31,8 +33,8 @@
     delete frame.dataset.changed;  // edits to an item filed away don't need the list redrawn
     frame.src = `/tasks/${li.dataset.id}?embed=process`;
     left.textContent = `${rows().length} left`;
-    select.selectedIndex = 0;
-    name.value = title;
+    select.selectedIndex = quick.selectedIndex = 0;
+    name.value = quickName.value = title;
     trail = [];
     ask('actionable');
   };
@@ -97,29 +99,39 @@
       const fresh = select.value.startsWith('__new__');
       if (!select.value || (fresh && !name.value.trim())) return (fresh ? name : select).focus();
     }
-    if (b.dataset.do) {
-      if (busy) return;
-      busy = true;
-      const ok = await frameSaved(frame) && await actions[b.dataset.do]();
-      busy = false;
-      if (!ok) return;
-      li.remove();
-      refreshNav();
-      return next();
-    }
+    if (b.dataset.do) return file(actions[b.dataset.do]);
     if (b.dataset.go) ask(b.dataset.go);
   };
+  // Saves the item's edits, files it, and on to the next.
+  const file = async action => {
+    if (busy) return;
+    busy = true;
+    const ok = await frameSaved(frame) && await action();
+    busy = false;
+    if (!ok) return;
+    li.remove();
+    refreshNav();
+    next();
+  };
+  const fileQuick = () => {
+    const v = quick.value, fresh = v.startsWith('__new__');
+    if (!v || (fresh && !quickName.value.trim())) return (fresh ? quickName : quick).focus();
+    file(() => post('/tasks/move', new URLSearchParams({id: id(), project_id: v, ...fresh && {new_project: quickName.value.trim()}})));
+  };
+  quick.addEventListener('change', () => quick.value.startsWith('__new__') ? quickName.select() : fileQuick());
   dialog.addEventListener('click', e => {
     const b = e.target.closest('button:not(.pick)');
     if (b) press(b);
   });
   dialog.querySelector('form').addEventListener('submit', e => {  // Enter in a box answers with its question's main button
     e.preventDefault();
+    if (document.activeElement === quickName) return fileQuick();
     const b = shown().querySelector('button.primary, button[data-go=next]');
     if (b) press(b);
   });
   dialog.addEventListener('keydown', e => {
     if (e.target.matches('input, select') || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'f' && !quick.closest('[hidden]')) { e.preventDefault(); return quick.focus(); }
     const b = shown().querySelector(`button[data-key="${e.key}"]`);
     if (b) { e.preventDefault(); press(b); }
   });
