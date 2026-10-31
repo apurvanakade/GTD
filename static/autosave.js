@@ -34,6 +34,7 @@ document.querySelectorAll("form[data-autosave]").forEach(form => {
         if (r.status === 409) { showConflict(await r.json()); return false; }
         if (!r.ok) throw new Error(r.status);
         Object.assign(base, sent);
+        changed();  // app.js: in a task's overlay, the page under it reloads on closing
         status.textContent = "Saved";
         return true;
       })

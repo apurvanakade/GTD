@@ -7,7 +7,7 @@
 <script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-{% if embed %}<base target="_top">{% endif %}{# inside Process: links open in the page itself, not the frame #}
+{% if embed %}<base target="_top">{% endif %}{# in a task's frame: links open in the page itself #}
 </head>
 <body{% if embed %} class="embed"{% endif %}>
 {% include "_nav.html" %}
@@ -62,6 +62,13 @@
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
+{% if not embed %}
+{#- Every task opens here, over the page it was clicked on (static/app.js); ?task=<id> opens with it. #}
+<dialog class="task-dialog" aria-label="Task">
+  <button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button>
+  <iframe title="The task" src="{{ url_for('task_view', id=open_task, embed='task') if open_task else 'about:blank' }}"></iframe>
+</dialog>
+{% endif %}
 {# Messages float over the page and fade, so a record page opened on its title (below) still shows them. #}
 {% with flashes = get_flashed_messages() %}{% if flashes %}<div class="flashes" role="status">{% for m in flashes %}<p class="flash">{{ m }}</p>{% endfor %}</div>{% endif %}{% endwith %}
 <main>

@@ -78,7 +78,7 @@ def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
     gone = row(page, "vacuum")
     assert gone.locator("form").count() == 0 and gone.locator(".check").inner_text() == "✓"
     gone.locator(".meta").click()
-    page.wait_for_url(live + "/tasks/5")
+    assert task_overlay(page) == "vacuum"
 
 
 def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
@@ -89,7 +89,7 @@ def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
 
 
 def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
-    page.goto(live + "/tasks/2")
+    page.goto(live + "/tasks/2?embed=task")
     page.get_by_role("button", name="Done and open project").click()
     page.wait_for_url("**/projects/*")
     assert page.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
@@ -121,7 +121,7 @@ def test_on_a_touch_screen_the_calendar_button_is_the_native_picker(browser, liv
     page = ctx.new_page()
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(live + "/tasks/2")
+    page.goto(live + "/tasks/2?embed=task")
     assert page.evaluate("matchMedia('(pointer: coarse)').matches")
     page.fill("input[name=due_date]", "2026-11-03")
     field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
@@ -138,7 +138,7 @@ def test_on_a_touch_screen_the_calendar_button_is_the_native_picker(browser, liv
 
 
 def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, conn):
-    page.goto(live + "/tasks/2")
+    page.goto(live + "/tasks/2?embed=task")
     page.fill("input[name=due_date]", "")
     field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
     field.locator(".pick").click()  # showPicker() needs this real click's user activation
@@ -163,7 +163,7 @@ def test_running_timer_clock_ticks(page, live):
 
 def test_task_page_timer_is_by_the_title_and_ticks(page, live):
     page.clock.install(time=NOW)
-    page.goto(live + "/tasks/7")  # "call mum", running
+    page.goto(live + "/tasks/7?embed=task")  # "call mum", running
     timer = page.locator(".title-line .task-timer")
     stop, title = timer.get_by_role("button", name="Stop the timer"), page.locator("input.big").bounding_box()
     box = stop.bounding_box()
@@ -171,7 +171,7 @@ def test_task_page_timer_is_by_the_title_and_ticks(page, live):
     before = timer.locator(".clock").inner_text()
     page.clock.run_for(3000)
     assert timer.locator(".clock").inner_text() != before
-    page.goto(live + "/tasks/2")  # "buy tiles", not running
+    page.goto(live + "/tasks/2?embed=task")  # "buy tiles", not running
     with page.expect_navigation():
         page.locator(".title-line .task-timer").get_by_role("button", name="Start the timer").click()
     assert page.locator(".title-line .task-timer").get_by_role("button", name="Stop the timer").is_visible()
@@ -322,8 +322,8 @@ def test_project_row_arrow_folds_out_its_steps(page, live):
         r.locator("button.peek").click()
         assert link.is_visible() and r.locator("button.peek").get_attribute("aria-expanded") == "true"
         link.click()
-        page.wait_for_url("**/tasks/*")
-        assert page.locator("input.big").input_value() == step
+        assert task_overlay(page) == step
+        page.keyboard.press("Escape")
 
 
 def test_expand_all_folds_out_every_project(page, live):
@@ -345,7 +345,7 @@ def test_search_suggests_as_you_type_and_opens_the_pick(page, live):
     page.wait_for_selector(".suggest a")
     assert page.locator(".suggest a").first.inner_text().startswith("lay tiles")
     page.locator(".suggest a").first.click()
-    page.wait_for_url("**/tasks/3")
+    assert task_overlay(page) == "lay tiles"
 
 
 def test_search_suggestions_keyboard(page, live):
@@ -354,10 +354,11 @@ def test_search_suggestions_keyboard(page, live):
     page.keyboard.type("tiles")
     page.wait_for_selector(".suggest a")
     page.keyboard.press("ArrowDown")
-    second = page.locator(".suggest a").nth(1).get_attribute("href")
-    with page.expect_navigation():
-        page.keyboard.press("Enter")
-    assert page.url == live + second
+    second = page.locator(".suggest a").nth(1)
+    assert second.get_attribute("href").startswith("/tasks/")
+    title = second.locator("span").first.inner_text()
+    page.keyboard.press("Enter")
+    assert task_overlay(page) == title  # a task opens in its overlay
     page.goto(live + "/next")
     page.fill(".search input", "tiles")
     page.wait_for_selector(".suggest a")
@@ -374,7 +375,7 @@ def test_add_line_reveals_its_extra_fields_on_focus(page, live):
 
 
 def test_new_option_reveals_the_name_box(page, live):
-    page.goto(live + "/tasks/2")
+    page.goto(live + "/tasks/2?embed=task")
     box = page.locator("input[name=new_project]")
     assert box.is_hidden()
     page.select_option("select[name=project_id]", "__new__")  # "＋ New project…": no save yet, it needs a name
@@ -730,13 +731,44 @@ def test_capture_keys_do_nothing_while_help_is_open(page, live):
     assert page.evaluate("document.activeElement.name") != "q"
 
 
+def task_overlay(page):
+    """The task open in its overlay (app.js): its title, once its frame has loaded."""
+    page.wait_for_selector("dialog.task-dialog[open]")
+    return page.frame_locator("dialog.task-dialog iframe").locator("input.big").input_value()
+
+
+def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
+    """Closing it is going back: nothing changed, the page stays as it was; changed, it reloads to show it.
+    /tasks/<id> opens the task's list with it open."""
+    page.goto(live + "/next")
+    page.evaluate("window.mark = 1")  # gone after a reload
+    row(page, "vacuum").locator(".title").click()
+    assert task_overlay(page) == "vacuum" and page.url == live + "/next"
+    frame = page.frame_locator("dialog.task-dialog iframe")
+    frame.locator("input.big").focus()
+    page.keyboard.press("Escape")  # in the frame
+    page.wait_for_selector("dialog.task-dialog[open]", state="detached")
+    assert page.evaluate("window.mark") == 1
+    row(page, "vacuum").locator(".title").click()
+    task_overlay(page)
+    frame.locator("input.big").fill("vacuum all")  # saved on closing, before the page reloads
+    with page.expect_navigation():
+        page.locator("dialog.task-dialog .close").click()
+    assert db.get_task(conn, 5)["title"] == "vacuum all" and row(page, "vacuum all").count() == 1
+    page.goto(live + "/tasks/2")
+    assert page.url == live + "/projects/1?task=2" and task_overlay(page) == "buy tiles"
+    page.keyboard.press("Escape")
+    page.wait_for_selector("dialog.task-dialog[open]", state="detached")
+    assert page.url == live + "/projects/1"
+
+
 def test_clicking_anywhere_on_a_row_opens_it(page, live):
     page.goto(live + "/next")
     r = row(page, "buy tiles")
     box = r.bounding_box()
-    with page.expect_navigation():
-        page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)  # blank space right of the title
-    assert page.url == live + "/tasks/2"
+    page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)  # blank space right of the title
+    assert task_overlay(page) == "buy tiles" and page.url == live + "/next"
+    page.keyboard.press("Escape")
     page.goto(live + "/projects")
     r = row(page, "Kitchen")
     box = r.bounding_box()
@@ -760,7 +792,7 @@ def test_horizons_arrow_keys_move_between_levels(page, live):
 
 
 def test_remind_box_previews_how_it_reads(page, live):
-    page.goto(live + "/tasks/7")  # "call mum": a reminder still to come
+    page.goto(live + "/tasks/7?embed=task")  # "call mum": a reminder still to come
     hint = page.locator(".when[data-parse=remind]")
     page.fill("input[name=remind_at]", "oct 30 at 5pm")
     sync_api.expect(hint).to_have_text("→ Fri Oct 30, 17:00")
@@ -773,7 +805,7 @@ def test_remind_box_previews_how_it_reads(page, live):
 
 
 def test_due_and_repeat_boxes_preview_how_they_read(page, live):
-    page.goto(live + "/tasks/7")
+    page.goto(live + "/tasks/7?embed=task")
     due, rule = page.locator(".when[data-parse=due]"), page.locator(".when[data-parse=recur]")
     page.fill("input[name=due_date]", "tomorrow")
     sync_api.expect(due).to_have_text("→ Fri Oct 23")
@@ -790,7 +822,7 @@ def test_due_and_repeat_boxes_preview_how_they_read(page, live):
 
 
 def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, live, conn):
-    page.goto(live + "/tasks/7")  # "call mum": a reminder still to come
+    page.goto(live + "/tasks/7?embed=task")  # "call mum": a reminder still to come
     field = page.locator(".date-field", has=page.locator("input[name=remind_at]"))
     field.locator(".pick").click()  # showPicker() needs this real click's user activation
     assert field.locator(".picker").input_value() == page.input_value("input[name=remind_at]").replace(" ", "T")
@@ -839,7 +871,7 @@ def test_nav_hides_and_returns_with_touch_scrolling(browser, live):
     ctx.close()
 
 
-@pytest.mark.parametrize("url", ["/projects/1", "/tasks/2"])
+@pytest.mark.parametrize("url", ["/projects/1", "/horizons/3"])
 def test_a_record_page_opens_centered_past_the_nav(page, live, url):
     page.set_viewport_size({"width": 1200, "height": 700})
     page.goto(live + url)
@@ -871,10 +903,10 @@ def test_project_status_select_saves_on_pick(page, live, conn):
 
 
 def test_task_step_select_saves_on_pick(page, live, conn):
-    page.goto(live + "/tasks/3")  # "lay tiles", a later step
+    page.goto(live + "/tasks/3?embed=task")  # "lay tiles", a later step
     with page.expect_navigation():
         page.locator("select[name=step]").select_option("waiting")
-    assert db.get_task(conn, 3)["step"] == "waiting" and page.url == live + "/tasks/3"
+    assert db.get_task(conn, 3)["step"] == "waiting" and page.url == live + "/tasks/3?embed=task"
     assert page.get_by_role("button", name="Save").count() == 0 or not page.get_by_role("button", name="Save").is_visible()
 
 

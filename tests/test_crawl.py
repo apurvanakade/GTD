@@ -28,6 +28,8 @@ class Page(HTMLParser):
         a = dict(attrs)
         if tag == "a" and "href" in a:
             self.links.append(a["href"])
+        elif tag == "iframe" and a.get("src", "").startswith("/"):  # a task's overlay (?task=<id>) frames its page
+            self.links.append(a["src"])
         elif tag == "form":
             self._form = {"method": (a.get("method") or "get").lower(), "action": a.get("action"),
                           "fields": [], "selects": [], "buttons": []}
@@ -155,7 +157,7 @@ def test_every_link_works(client, conn):
     html_pages = [u for u, p in pages.items() if p]
     assert len(html_pages) > 25, html_pages  # the crawl really reached the app
     for must in ("/inbox", "/next", "/waiting", "/someday", "/review", "/calendar", "/horizons",
-                 "/projects/1", "/projects/4", "/tasks/1", "/horizons/3"):
+                 "/projects/1", "/projects/4", "/tasks/1?embed=task", "/horizons/3"):
         assert must in pages, must
 
 
@@ -243,7 +245,7 @@ def test_saving_an_edit_page_unchanged_changes_nothing(client, conn):
     columns = lambda row: {k: row[k] for k in row.keys()}
     for (tid,) in conn.execute("SELECT id FROM tasks WHERE state != 'done'").fetchall():
         before = columns(db.get_task(conn, tid))
-        submit_unchanged(client, f"/tasks/{tid}")
+        submit_unchanged(client, f"/tasks/{tid}?embed=task")
         assert columns(db.get_task(conn, tid)) == before, before["title"]
     for (pid,) in conn.execute("SELECT id FROM projects").fetchall():
         before = columns(db.get_project(conn, pid))

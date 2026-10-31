@@ -1,5 +1,5 @@
 // The Inbox's Process button (inbox.html): the top item and one question at a time, after Allen's processing
-// flowchart. The item shows as its own task page in a frame (?embed=1), so it can be clarified on the way: its title,
+// flowchart. The item shows as its own task page in a frame (?embed=process), so it can be clarified on the way: its title,
 // notes, due date, repeat and reminder save as on its page, and are saved before it's filed. Picking an answer files
 // nothing: File does, as the drop panel or its page would, in the background; the item leaves the list and the next
 // one follows, until the inbox is empty. y / n answer, Enter files, ‹ goes back a question, Esc stops.
@@ -25,7 +25,7 @@
     li = at;
     if (!li) { dialog.close(); return location.reload(); }  // inbox zero: the page's empty state
     const title = li.querySelector('.title').textContent;
-    frame.src = `/tasks/${li.dataset.id}?embed=1`;
+    frame.src = `/tasks/${li.dataset.id}?embed=process`;
     left.textContent = `${rows().length} left`;
     select.selectedIndex = 0;
     name.value = title;

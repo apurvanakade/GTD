@@ -47,7 +47,7 @@ def test_capture_box_only_on_inbox(client, conn):
     pid = db.add_project(conn, "P")
     inbox = client.get("/inbox").data.decode()
     assert '<input name="title" placeholder="Capture' in inbox.split("<main>")[1]
-    for url in ("/next", f"/tasks/{tid}", f"/projects/{pid}"):
+    for url in ("/next", f"/tasks/{tid}?embed=task", f"/projects/{pid}"):
         page = client.get(url).data
         assert b"<dialog" in page and b"Capture to inbox" not in page, url
     r = client.post("/capture", data={"title": "buy milk"}, headers={"Referer": "/next"}, follow_redirects=True)
@@ -58,8 +58,8 @@ def test_crosslinks(client, conn):
     pid = db.add_project(conn, "Garden")
     tid = db.add_task(conn, "dig", step="next", project_id=pid)
     gid = db.add_task(conn, "stretch", step="next", ground=1)
-    assert f'href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
-    gpage = client.get(f"/tasks/{gid}").get_data(as_text=True)
+    assert f'href="/projects/{pid}"' in client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True)
+    gpage = client.get(f"/tasks/{gid}?embed=task").get_data(as_text=True)
     assert 'title="Open the project"' not in gpage  # an H0 task has no project to open
     assert 'class="crumb"' not in client.get(f"/projects/{pid}").get_data(as_text=True)  # its selects say where it is
 
@@ -123,8 +123,8 @@ def test_done_then_pick_next(client, conn):
     db.add_task(conn, "b", step="later", project_id=pid)
     h = db.add_task(conn, "h", step="next", ground=1)
     assert 'done-then-project' not in client.get("/next").get_data(as_text=True)  # only on the task page
-    assert f'/tasks/{a}/done-then-project' in client.get(f"/tasks/{a}").get_data(as_text=True)
-    assert f'/tasks/{h}/done-then-project' not in client.get(f"/tasks/{h}").get_data(as_text=True)  # no project
+    assert f'/tasks/{a}/done-then-project' in client.get(f"/tasks/{a}?embed=task").get_data(as_text=True)
+    assert f'/tasks/{h}/done-then-project' not in client.get(f"/tasks/{h}?embed=task").get_data(as_text=True)  # no project
     r = client.post(f"/tasks/{a}/done-then-project", headers={"Referer": "http://localhost/next"})
     assert r.status_code == 302 and r.headers["Location"].endswith(f"/projects/{pid}")
     assert db.get_task(conn, a)["state"] == "done"
@@ -182,14 +182,14 @@ def test_inbox_is_not_a_status(client, conn):
     client.post("/capture", data={"title": "call dentist"})
     (t,) = db.inbox_tasks(conn)
     assert t["step"] is None and client.get("/inbox").status_code == 200
-    page = client.get(f"/tasks/{t['id']}").get_data(as_text=True)
+    page = client.get(f"/tasks/{t['id']}?embed=task").get_data(as_text=True)
     assert 'name="step"' not in page  # nothing to pick until it's in a project
     pid = db.add_project(conn, "Teeth")
     db.add_task(conn, "find number", step="later", project_id=pid)  # project has no next action: still later
     client.post(f"/tasks/{t['id']}", data={"title": "call dentist", "project_id": str(pid)})
     t = db.get_task(conn, t["id"])
     assert (t["step"], t["project_id"], t["inbox"]) == ("later", pid, 0) and db.inbox_tasks(conn) == []
-    assert 'name="step"' in client.get(f"/tasks/{t['id']}").get_data(as_text=True)
+    assert 'name="step"' in client.get(f"/tasks/{t['id']}?embed=task").get_data(as_text=True)
     # Taking the project away puts it back in the inbox, whatever its status was.
     db.update_task(conn, t["id"], step="waiting")
     r = client.post(f"/tasks/{t['id']}", data={"project_id": "", "step": "waiting"}, follow_redirects=True)
@@ -206,7 +206,7 @@ def test_h0_tasks_are_next_or_waiting(client, conn):
     client.post(f"/tasks/{tid}", data={"project_id": "h0", "step": "waiting"})
     t = db.get_task(conn, tid)
     assert (t["ground"], t["step"], t["project_id"]) == (1, "waiting", None)  # moved: still waiting
-    page = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    page = client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True)
     assert '<option selected>waiting</option>' in page and "<option>later</option>" not in page
     client.post(f"/tasks/{tid}", data={"project_id": "h0", "step": "next"})
     assert db.get_task(conn, tid)["step"] == "next"
@@ -581,8 +581,8 @@ def test_saving_a_task_stays_on_its_page(client, conn):
     pid = db.add_project(conn, "P")
     tid = db.add_task(conn, "call", step="next", project_id=pid)
     # A field saves as soon as it's changed; the page stays put, with no buttons to save or leave.
-    r = client.post(f"/tasks/{tid}", data={"step": "waiting"})
-    assert r.headers["Location"] == f"/tasks/{tid}" and db.get_task(conn, tid)["step"] == "waiting"
+    r = client.post(f"/tasks/{tid}?embed=task", data={"step": "waiting"})
+    assert r.headers["Location"] == f"/tasks/{tid}?embed=task" and db.get_task(conn, tid)["step"] == "waiting"
     page = client.get(r.headers["Location"]).get_data(as_text=True)
     assert "Saved." not in page and "Save &amp; exit" not in page and "data-save-on-change" in page
 
@@ -633,7 +633,7 @@ def test_task_form_edges(client, conn):
     assert "understand repeat rule “fortnightly”" in r.get_data(as_text=True)
     client.post(f"/tasks/{tid}", data={"recur": "every 3 days", "due_date": ""})
     assert db.get_task(conn, tid)["due_date"] == "2026-10-22"  # a repeat needs a due date: today
-    assert client.get("/tasks/999").status_code == 404
+    assert client.get("/tasks/999?embed=task").status_code == client.get("/tasks/999").status_code == 404
     assert client.post("/tasks/999/complete").status_code == 404
 
 
@@ -869,7 +869,7 @@ def test_time_totals_on_task_project_and_timer_pages(client, conn):
     db.timer_start(conn, b, NOW - timedelta(minutes=30))  # stops a after 60 min
     db.complete_task(conn, a, TODAY, NOW)  # done tasks still count toward the project
     db.timer_start(conn, h0, NOW - timedelta(minutes=10))  # stops b after 20 min
-    assert "1h 00m" in client.get(f"/tasks/{a}").get_data(as_text=True)
+    assert "1h 00m" in client.get(f"/tasks/{a}?embed=task").get_data(as_text=True)
     assert "1h 20m" in client.get(f"/projects/{pid}").get_data(as_text=True)
     page = client.get("/timer").get_data(as_text=True)
     assert "Kitchen" in page and "1h 20m" in page and "H0 · ground level" in page and "0h 10m" in page
@@ -883,7 +883,7 @@ def test_task_page_timer_sits_on_the_title_line(client, conn):
     h0 = db.add_task(conn, "stretch", ground=1)
     db.timer_start(conn, t, NOW - timedelta(minutes=90))
     db.timer_stop(conn, NOW - timedelta(minutes=30))
-    line = lambda tid: (lambda p: p[p.index('class="title-line"'):p.index('<textarea')])(client.get(f"/tasks/{tid}").get_data(as_text=True))
+    line = lambda tid: (lambda p: p[p.index('class="title-line"'):p.index('<textarea')])(client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True))
     for tid in (t, h0):
         assert 'class="task-timer"' in line(tid) and "Start the timer" in line(tid)
     assert "1h 00m" in line(t)
@@ -893,14 +893,30 @@ def test_task_page_timer_sits_on_the_title_line(client, conn):
     assert "1h 00m" in line(t) and "Start the timer" not in line(t)  # done: time shown, no ▶
 
 
-def test_task_page_embedded_in_process_edits_only_the_item(client, conn):
-    """?embed=1 (Process's frame): title, notes, due, repeats, remind; no project, step, timer or ✓; links leave it."""
+def test_a_task_opens_only_in_a_frame(client, conn):
+    """No task page of its own: /tasks/<id> goes to the task's list with ?task=<id>, whose overlay frames
+    /tasks/<id>?embed=task, the whole page. Process's frame (?embed=process) edits only the item."""
+    seed(conn)
+    home = lambda tid: client.get(f"/tasks/{tid}").location
+    assert home(2) == "/projects/1?task=2"  # a project's step: its project
+    assert home(7) == "/next?task=7"  # H0 next action
+    assert home(1) == "/inbox?task=1"
+    waiting = conn.execute("SELECT id FROM tasks WHERE ground AND step = 'waiting' AND state = 'open'").fetchone()[0]
+    someday = conn.execute("SELECT id FROM tasks WHERE step = 'someday' AND state = 'open'").fetchone()[0]
+    done = db.add_task(conn, "posted it", ground=1, step="next")
+    db.complete_task(conn, done, TODAY, NOW)
+    assert (home(waiting), home(someday), home(done)) == (f"/waiting?task={waiting}", f"/someday?task={someday}", f"/done?task={done}")
+    page = client.get("/next?task=7").get_data(as_text=True)
+    assert '<dialog class="task-dialog"' in page and 'src="/tasks/7?embed=task"' in page
+    assert 'src="about:blank"' in client.get("/next").get_data(as_text=True)
+    task = client.get("/tasks/2?embed=task").get_data(as_text=True)  # "buy tiles", not running
+    assert 'class="embed"' in task and '<base target="_top">' in task and 'target="_self"' in task
+    assert 'name="project_id"' in task and "Start the timer" in task and 'class="task-dialog"' not in task
     tid = db.add_task(conn, "ring Bob")
-    page = client.get(f"/tasks/{tid}?embed=1").get_data(as_text=True)
-    assert 'class="embed"' in page and '<base target="_top">' in page
+    page = client.get(f"/tasks/{tid}?embed=process").get_data(as_text=True)
     assert 'name="recur"' in page and 'name="due_date"' in page and 'name="project_id"' not in page and "Start the timer" not in page
-    assert 'name="project_id"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
-    assert client.post(f"/tasks/{tid}?embed=1", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed=1")
+    for mode in ("task", "process"):
+        assert client.post(f"/tasks/{tid}?embed={mode}", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed={mode}")
 
 
 def test_new_project_from_task_form(client, conn):
@@ -911,13 +927,13 @@ def test_new_project_from_task_form(client, conn):
     p = conn.execute("SELECT * FROM projects WHERE title = 'Garden'").fetchone()
     assert p and p["status"] == "active"
     assert t["project_id"] == p["id"] and not t["ground"] and t["step"] == "next"
-    assert b'name="new_project"' in client.get(f"/tasks/{tid}").data
+    assert b'name="new_project"' in client.get(f"/tasks/{tid}?embed=task").data
 
 
 def test_new_option_without_a_name_picks_nothing(client, conn):
     """The pickers' "＋ New…" option only reveals the name box; picked with the box left empty, it's no choice."""
     tid = db.add_task(conn, "ring Bob")
-    html = client.get(f"/tasks/{tid}").data.decode()
+    html = client.get(f"/tasks/{tid}?embed=task").data.decode()
     assert html.count('value="__new__"') == 1
     client.post(f"/tasks/{tid}", data={"project_id": "__new__", "new_project": ""})
     t = db.get_task(conn, tid)
@@ -1026,7 +1042,7 @@ def test_task_form_accepts_words_for_due_date(client, conn):
 def test_due_date_box_has_a_calendar_picker(client, conn):
     pid = db.add_project(conn, "P")
     tid = db.add_task(conn, "call", step="next", project_id=pid)
-    html = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    html = client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True)
     assert 'name="due_date"' in html and 'class="pick"' in html and 'type="date" class="picker"' in html
 
 
@@ -1655,7 +1671,7 @@ def test_someday_activate_sends_only_the_status(client, conn):
 
 def test_date_button_does_not_share_the_calendar_class(client, conn):
     seed(conn)
-    html = client.get("/tasks/2").get_data(as_text=True)
+    html = client.get("/tasks/2?embed=task").get_data(as_text=True)
     assert 'class="pick"' in html and 'class="cal"' not in html
 
 
@@ -1723,7 +1739,7 @@ def test_project_pickers_are_one_list(client, conn):
         return [(label, re.findall(item, body)) for label, body in re.findall(group, html, re.S)]
 
     db.add_task(conn, "loose")
-    task = client.get("/tasks/1").data.decode()
+    task = client.get("/tasks/1?embed=task").data.decode()
     assert groups(task, r'<optgroup label="([\w ]+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
     inbox = client.get("/inbox").data.decode()
     assert groups(inbox, r'<section class="group"><h3>([\w ]+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
@@ -1777,7 +1793,7 @@ def test_task_page_sets_a_reminder_in_words(client, conn):
     tid = db.add_task(conn, "call", ground=1)
     client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": "tomorrow 9am"})
     assert local(db.get_task(conn, tid)["remind_at"]) == datetime(2026, 10, 23, 9, 0)
-    html = client.get(f"/tasks/{tid}").get_data(as_text=True)
+    html = client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True)
     assert 'name="remind_at" value="2026-10-23 09:00"' in html
     client.post(f"/tasks/{tid}", data={"title": "call", "remind_at": "gibberish"}, follow_redirects=True)
     assert local(db.get_task(conn, tid)["remind_at"]) == datetime(2026, 10, 23, 9, 0)  # kept
@@ -2141,7 +2157,7 @@ def test_task_page_of_an_abandoned_project_keeps_its_project(client, conn):
     pid = db.add_project(conn, "Gone")
     t = db.add_task(conn, "t", step="next", project_id=pid)
     db.abandon_project(conn, pid)
-    html = client.get(f"/tasks/{t}").get_data(as_text=True)
+    html = client.get(f"/tasks/{t}?embed=task").get_data(as_text=True)
     assert f'<option value="{pid}" selected>Gone</option>' in html
     client.post(f"/tasks/{t}", data={"title": "t", "project_id": str(pid)})
     assert db.get_task(conn, t)["project_id"] == pid
@@ -2324,7 +2340,7 @@ def test_every_project_step_and_listed_project_has_a_position(client, conn):
 def test_the_task_pages_project_link_stands_out(client, conn):
     pid = db.add_project(conn, "P")
     tid = db.add_task(conn, "step", project_id=pid)
-    assert f'class="open-project" href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
+    assert f'class="open-project" href="/projects/{pid}"' in client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True)
 
 
 def test_h0_tasks_need_no_date(client, conn):
@@ -2492,7 +2508,7 @@ def test_h0_tasks_can_be_someday(client, conn):
     assert (db.get_task(conn, t)["step"], db.get_task(conn, t)["due_date"]) == ("someday", None)  # not dated: no tickler
     # Not on H0 or in its count; on Someday and in its count.
     assert t not in [x["id"] for x in db.h0_actions(conn)] and db.counts(conn, TODAY)["someday"] == 1
-    html = client.get(f"/tasks/{t}").get_data(as_text=True)
+    html = client.get(f"/tasks/{t}?embed=task").get_data(as_text=True)
     assert "<option selected>someday</option>" in html and ">Tickler <" in html.replace("\n", "")
     # Becoming someday drops a date already come (it would be back in the Inbox at once), keeps one to come.
     n = db.add_task(conn, "call", ground=1, due_date=TODAY.isoformat(), today=TODAY)
@@ -2528,7 +2544,7 @@ def test_someday_add_line_makes_a_task_or_a_project(client, conn):
 @pytest.mark.parametrize("step", ["someday", "waiting"])
 def test_someday_and_waiting_task_pages_disable_repeats_and_keep_the_rule(client, conn, step):
     t = db.add_task(conn, "idea", ground=1, step=step, recur="weekly", due_date="2026-12-01")
-    recur_box = lambda: re.search(r'<input name="recur"[^>]*>', client.get(f"/tasks/{t}").get_data(as_text=True))[0]
+    recur_box = lambda: re.search(r'<input name="recur"[^>]*>', client.get(f"/tasks/{t}?embed=task").get_data(as_text=True))[0]
     assert 'value="weekly"' in recur_box() and " disabled" in recur_box()
     client.post(f"/tasks/{t}", data={"due_date": "2026-12-01", "step": step, "project_id": "h0"})
     assert db.get_task(conn, t)["recur"] == "weekly"  # a disabled box isn't posted: the rule stays

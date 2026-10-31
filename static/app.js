@@ -3,7 +3,7 @@
 async function post(url, body) {
   try {
     const r = await fetch(url, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-    if (r.ok) return true;
+    if (r.ok) { changed(); return true; }
   } catch {}
   location.reload();
   return false;
@@ -27,7 +27,7 @@ async function post(url, body) {
 // however short the page; a reload or Back keeps the browser's own scroll.
 (() => {
   const big = document.querySelector('main .big'), main = document.querySelector('main');
-  if (!big || document.body.matches('.embed')) return;  // inside Process the frame fits the page
+  if (!big || document.body.matches('.embed')) return;  // in a frame, the frame fits the page
   main.style.paddingTop = '1px';  // measured with some padding, which stops the header's margins collapsing through main
   const top = el => el.getBoundingClientRect().top + scrollY, start = top(big);
   const end = Math.max(...[...main.children].filter(el => el.tagName !== 'SCRIPT' && getComputedStyle(el).position !== 'fixed')
@@ -41,7 +41,7 @@ async function post(url, body) {
 })();
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (document.querySelector('dialog[open]') || document.body.matches('.embed')) return;  // Esc closes a dialog natively; Process's frame goes nowhere
+  if (document.querySelector('dialog[open]') || document.body.matches('.embed')) return;  // Esc closes a dialog natively; a task's frame goes nowhere
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
   if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
@@ -82,7 +82,7 @@ document.addEventListener('change', e => {
   fieldsSaved = (async () => {
     try {
       const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-      if (r.ok) return toast((await r.json()).flashes);
+      if (r.ok) { changed(); return toast((await r.json()).flashes); }
     } catch {}
     location.reload();
   })();
@@ -253,7 +253,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
       active = (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
       show();
     }
-    if (e.key === 'Enter') { e.preventDefault(); location = items[active].url; }
+    if (e.key === 'Enter') { e.preventDefault(); box.querySelector('a.on').click(); }  // a task opens in its overlay
   });
   input.addEventListener('focus', () => { if (items.length) box.hidden = false; });
   document.addEventListener('pointerdown', e => { if (!form.contains(e.target)) box.hidden = true; });
@@ -304,5 +304,66 @@ document.addEventListener('click', e => {
       || String(getSelection())) return;
   const a = li.querySelector(':scope > .title, :scope > .name > .title');
   if (!a) return;
-  if (e.metaKey || e.ctrlKey) open(a.href); else location = a.href;
+  if (e.metaKey || e.ctrlKey) open(a.href); else a.click();  // a task opens in its overlay (below)
 });
+// Every task opens in an overlay over the page it was clicked on (base.html's dialog.task-dialog), its page in a frame
+// (?embed=task), so closing it is going back. ⌘/Ctrl-click opens a new tab, where /tasks/<id> opens the task's list with
+// it open (?task=<id>, as a reminder's tap does). Closing (×, Esc, a click beside it) saves what's typed first, and
+// reloads the page under it if the task changed (changed(), from the frame), so its lists show it.
+function changed() { if (frameElement) frameElement.dataset.changed = '1'; }
+if (frameElement) {
+  document.addEventListener('submit', changed, true);
+  document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
+    if (e.key === 'Escape' && !document.querySelector('dialog[open]')) frameElement.closest('dialog')?.querySelector('.close')?.click();
+  });
+}
+(() => {
+  const dialog = document.querySelector('dialog.task-dialog');
+  if (!dialog) return;  // in a frame already: its links open in the page (base target)
+  const frame = dialog.querySelector('iframe');
+  const taskId = href => {
+    const u = new URL(href, location);
+    return u.origin === location.origin && !u.search && u.pathname.match(/^\/tasks\/(\d+)$/)?.[1];
+  };
+  let observed = null;
+  const fit = () => {  // the frame takes the height of the page in it, growing as notes do
+    const html = frame.contentDocument?.documentElement;
+    if (!html || html === observed || frame.src === 'about:blank') return;
+    observed = html;
+    new ResizeObserver(() => frame.style.height = html.offsetHeight + 'px').observe(html);
+  };
+  frame.addEventListener('load', fit);
+  const show = id => {
+    delete frame.dataset.changed;
+    frame.src = `/tasks/${id}?embed=task`;
+    dialog.showModal();
+  };
+  let closing = false;
+  const close = async () => {
+    if (closing) return;
+    closing = true;
+    const w = frame.contentWindow;
+    w?.document.activeElement?.blur?.();
+    const saved = await (w?.autosaved?.() ?? true);  // false on a conflict: settled in the frame first
+    closing = false;
+    if (!saved) return;
+    dialog.close();
+    const url = new URL(location);
+    if (url.searchParams.has('task')) { url.searchParams.delete('task'); history.replaceState(null, '', url); }
+    if (frame.dataset.changed) return location.reload();
+    frame.src = 'about:blank';
+  };
+  dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
+  dialog.querySelector('.close').addEventListener('click', close);
+  dialog.addEventListener('click', e => {  // beside it, on the backdrop
+    const r = dialog.getBoundingClientRect();
+    if (e.target === dialog && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) close();
+  });
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href]'), id = a && taskId(a.href);
+    if (!id || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    show(id);
+  });
+  if (frame.getAttribute('src') !== 'about:blank') { dialog.showModal(); fit(); }  // ?task=<id>
+})();

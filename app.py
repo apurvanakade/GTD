@@ -67,7 +67,9 @@ def template_globals():
     timer = db.timer_running(conn())
     return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer else stopped_timer(),
-            "embed": request.args.get("embed") == "1"}  # a task page inside Process (inbox.html): no chrome
+            # A task page in a frame, without chrome: "task" (the overlay every task opens in) or "process" (inbox.html).
+            "embed": request.args.get("embed"),
+            "open_task": request.args.get("task", type=int)}  # ?task=<id>: the page opens with that task's overlay
 
 
 STOPPED = timedelta(minutes=10)  # how long a stopped timer's pill stays, to finish its task or start it again
@@ -563,7 +565,21 @@ def task_view(id):
         if request.headers.get("X-Requested-With") == "fetch":  # a field saved in the background: just its messages
             return {"flashes": get_flashed_messages()}
         return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
+    if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
+        return redirect(task_home(t, task=id))
     return render_template("task.html", t=t, project_groups=db.project_groups(c), seconds=db.task_seconds(c, id, now()))
+
+
+def task_home(t, **args):
+    """The list a task is opened over when it's reached by URL (a reminder's tap, a new tab): its project's page, else
+    the list it's on, else Done."""
+    if t["project_id"]:
+        return url_for("project_view", id=t["project_id"], **args)
+    if t["state"] != "open":
+        return url_for("done", **args)
+    if t["inbox"]:
+        return url_for("inbox", **args)
+    return url_for({"waiting": "waiting", "someday": "someday"}.get(t["step"], "next_view"), **args)
 
 
 def flash_demoted(titles):
