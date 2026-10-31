@@ -50,7 +50,7 @@
       <p class="row"><button type="button" class="primary" data-do="waiting" title="As H0 waiting">File</button></p></section>
   </form>
 </dialog>
-<script src="{{ url_for('static', filename='process.js') }}"></script>
+<script defer src="{{ url_for('static', filename='process.js') }}"></script>{# after app.js, whose frame helpers it uses #}
 {% elif not tickled %}
 <p class="empty clear">Empty. Capture anything on your mind above.</p>
 {% endif %}

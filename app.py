@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 from flask import (Flask, abort, flash, g, get_flashed_messages, make_response, redirect, render_template, request,
                    session, url_for)
@@ -65,10 +66,11 @@ def same_origin_only():
 @app.context_processor
 def template_globals():
     timer = db.timer_running(conn())
-    return {"counts": db.counts(conn(), today()), "today": today().isoformat(),
-            "timer": timer, "stopped": None if timer else stopped_timer(),
-            # A task page in a frame, without chrome: "task" (the overlay every task opens in) or "process" (inbox.html).
-            "embed": request.args.get("embed"),
+    # A task page in a frame, without chrome: "task" (the overlay every task opens in) or "process" (inbox.html).
+    # base.html leaves out the nav, bar and pill there, so their numbers aren't worked out.
+    embed = request.args.get("embed")
+    return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
+            "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
             "open_task": request.args.get("task", type=int)}  # ?task=<id>: the page opens with that task's overlay
 
 
@@ -89,6 +91,16 @@ NEW = "__new__"  # project_select's "＋ New project…" option (_task.html)
 def form_value(name):
     """Stripped form value, or None when blank."""
     return (request.form.get(name) or "").strip() or None
+
+
+def form_ids():
+    """A drag-and-drop's ids in their new order (the form's comma-separated `ids`)."""
+    return [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()]
+
+
+def fetched():
+    """A background save by the page's JS (X-Requested-With: fetch), which updates the page itself."""
+    return request.headers.get("X-Requested-With") == "fetch"
 
 
 def task_fields_from_form(current=None):
@@ -132,27 +144,29 @@ def task_fields_from_form(current=None):
     return fields
 
 
-def parse_due(raw):
+# Each parser reports an unreadable value through `say` (flash, unless split_title() decides it was no mark at all).
+def parse_due(raw, say=flash):
     """A due date typed in words as ISO, or None, flashed."""
     due = dates.parse(raw, today())
     if not due:
-        flash(f"Didn't understand date “{raw}” – try “tomorrow”, “saturday” or “oct 30”.")
+        say(f"Didn't understand date “{raw}” – try “tomorrow”, “saturday” or “oct 30”.")
     return due and due.isoformat()
 
 
-def parse_recur(raw):
+def parse_recur(raw, say=flash):
     """A repeat rule, or None, flashed."""
     if not recur.parse(raw):
-        flash(f"Didn't understand repeat rule “{raw}” – try “weekly” or “every 6 months”.")
+        say(f"Didn't understand repeat rule “{raw}” – try “weekly” or “every 6 months”.")
         return None
     return raw
 
 
-def parse_reminder(raw):
-    """A reminder typed in words (local time) as a UTC ISO time, or None, flashed, when unreadable or already past."""
+def parse_reminder(raw, say=flash):
+    """A reminder typed in words (local time) as a UTC ISO time, or None, flashed, when unreadable or already past
+    (that one always: it was understood)."""
     when = dates.parse_when(raw, local_now())
     if not when:
-        flash(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
+        say(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
     elif when <= local_now():
         flash(f"Reminder “{raw}” has already passed – not set.")
     else:
@@ -167,29 +181,29 @@ TITLE_MARK = re.compile(r"\s([@*!])(\S[^@*!]*?)\s*$")
 
 def split_title(title):
     """(title, fields) with the trailing marks peeled off the end. The first unusable one (and all before it) stays
-    in the title, so nothing typed is lost."""
+    in the title, so nothing typed is lost. It's flashed only when it's one word (`@blah`): several that don't read
+    ("call @home about taxes") are just the title's own words."""
     fields = {}
     while m := TITLE_MARK.search(title):
         name, parse = TITLE_MARKS[m.group(1)]
-        value = name not in fields and parse(m.group(2))
+        quiet = len(m.group(2).split()) > 1
+        value = name not in fields and parse(m.group(2), say=(lambda _: None) if quiet else flash)
         if not value:
             break
         fields[name], title = value, title[:m.start()].rstrip()
     return title, fields
 
 
-def tickle_from_form(fields):
-    """The form's tickler date (`tickle_on`, in words) into fields: blank clears it; unreadable is flashed, left out;
-    one already come is flashed too, since it's back in the Inbox at once."""
-    if "tickle_on" in request.form:
-        raw = form_value("tickle_on")
-        if not raw:
-            fields["tickle_on"] = None
-        elif due := parse_due(raw):
-            fields["tickle_on"] = due
-            if due <= today().isoformat():
-                flash("Its tickler date has come: it's back in the Inbox.")
-    return fields
+def tickle_from_form():
+    """The form's tickler date (`tickle_on`, in words): {"tickle_on": date}, or {"tickle_on": None} when blank, or {}
+    when absent or unreadable (flashed)."""
+    if "tickle_on" not in request.form:
+        return {}
+    raw = form_value("tickle_on")
+    if not raw:
+        return {"tickle_on": None}
+    due = parse_due(raw)
+    return {"tickle_on": due} if due else {}
 
 
 @app.template_global()
@@ -198,9 +212,14 @@ def someday_url(x):
     return url_for("task_view" if x["kind"] == "task" else "project_view", id=x["id"])
 
 
-def orphaned(project_id, ground):
-    """Open tasks need a project unless marked H0 (ground level); those with neither are inbox items."""
-    return not project_id and not ground
+def orphaned(project_id, ground, say=None):
+    """Open tasks need a project unless marked H0 (ground level); those with neither are inbox items. With `say`
+    ("it", "this"), flashes where it went."""
+    if not project_id and not ground:
+        if say:
+            flash(f"No project and not H0 · ground level, so {say} went to the inbox to be processed.")
+        return True
+    return False
 
 
 def back(default="next_view"):
@@ -225,7 +244,7 @@ def capture():
     if fields.get("title"):
         title = fields.pop("title")
         db.add_task(conn(), title, today=today(), **fields)
-        if not (request.referrer or "").endswith(url_for("inbox")):  # the inbox list already shows it
+        if urlsplit(request.referrer or "").path != url_for("inbox"):  # the inbox list already shows it
             parts = [f"Added to inbox: {title}"]
             if "due_date" in fields:
                 parts.append(f"due {fields['due_date']}")
@@ -281,10 +300,8 @@ def task_move():
 @app.post("/tasks/order")
 def tasks_order():
     """A task list's drag-and-drop (Inbox, a band of Next, Waiting, Someday) sends its task ids in their new order."""
-    db.reorder_tasks(conn(), [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    return back()
+    db.reorder_tasks(conn(), form_ids())
+    return ("", 204) if fetched() else back()
 
 
 # --- lists -----------------------------------------------------------------
@@ -318,8 +335,7 @@ def add_next_action():
     fields = task_fields_from_form()
     pid = fields.get("project_id")
     fields["step"] = "later" if pid and db.project_next(conn(), pid) else "next"
-    if orphaned(pid, fields.get("ground")):
-        flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
+    orphaned(pid, fields.get("ground"), say="it")
     db.add_task(conn(), fields.pop("title"), today=today(), **fields)
 
 
@@ -361,10 +377,9 @@ def waiting():
 def waiting_add():
     if form_value("title"):
         fields = task_fields_from_form()
-        if orphaned(fields.get("project_id"), fields.get("ground")):
-            flash("No project and not H0 · ground level, so it went to the inbox to be processed.")
+        orphaned(fields.get("project_id"), fields.get("ground"), say="it")
         db.add_task(conn(), fields.pop("title"), today=today(), step="waiting", **fields)
-    return redirect(url_for("waiting"))
+    return back("waiting")
 
 
 @app.route("/someday")
@@ -559,10 +574,10 @@ def task_view(id):
         ground = fields["ground"] if "ground" in fields else t["ground"]
         if (project_id, bool(ground)) != (t["project_id"], bool(t["ground"])) and "step" in fields and fields["step"] == t["step"]:
             fields.pop("step")  # moved, with the step select untouched: it lands as a move does (db._fit_step())
-        if orphaned(project_id, ground) and not t["inbox"] and t["state"] == "open":
-            flash("No project and not H0 · ground level, so this went to the inbox to be processed.")
+        if not t["inbox"] and t["state"] == "open":
+            orphaned(project_id, ground, say="this")
         flash_demoted(db.update_task(c, id, today=today(), **fields))
-        if request.headers.get("X-Requested-With") == "fetch":  # a field saved in the background: just its messages
+        if fetched():  # a field saved in the background: just its messages
             return {"flashes": get_flashed_messages()}
         return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
@@ -592,9 +607,7 @@ def complete(id):
     c = conn()
     db.get_task(c, id) or abort(404)
     db.complete_task(c, id, today(), now())
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    return back()
+    return ("", 204) if fetched() else back()
 
 
 @app.post("/tasks/<int:id>/done-then-project")
@@ -603,7 +616,8 @@ def complete_then_project(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     db.complete_task(c, id, today(), now())
-    return redirect(url_for("project_view", id=t["project_id"])) if t["project_id"] else back()
+    # It's pressed in a task's frame but opens a page: with no project (a stale frame), the task's list, with it open.
+    return redirect(url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t, task=id))
 
 
 @app.post("/tasks/<int:id>/delete")
@@ -615,7 +629,7 @@ def delete(id):
         db.delete_task(c, id)
     elif t:
         db.abandon_task(c, id, now())
-        return back()  # an abandoned task's page still shows it, with Revive
+        return ("", 204) if fetched() else back()  # an abandoned task's page still shows it, with Revive
     return redirect(url_for("done"))  # where abandoned tasks are listed; its own page is gone
 
 
@@ -648,10 +662,8 @@ def projects_view():
 def projects_order(status):
     """The Projects, Waiting and Someday pages' drag-and-drop sends the project ids in their new order."""
     c = conn()
-    db.reorder_projects(c, status, [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    return back()
+    db.reorder_projects(c, status, form_ids())
+    return ("", 204) if fetched() else back()
 
 
 def add_project_from_form(status="active"):
@@ -680,17 +692,19 @@ def project_view(id):
             db.abandon_project(c, id, now())
             flash(f"Abandoned “{p['title']}”: it's on Done.")
             return back()
-        if p["status"] == "abandoned" and status in PROJECT_STATUSES:  # revived with its steps, then given the status
-            db.revive_project(c, id)
-        if status == "done" and db.project_tasks(c, id):
-            flash("Finish, move or delete the project's open tasks first.")
-        elif status in PROJECT_STATUSES:
-            fields["status"] = status
         with db.transaction(c):
+            if p["status"] == "abandoned" and status in PROJECT_STATUSES:  # revived with its steps, then the status
+                db.revive_project(c, id)
+            if status == "done" and db.project_tasks(c, id):
+                flash("Finish, move or delete the project's open tasks first.")
+            elif status in PROJECT_STATUSES:
+                fields["status"] = status
             db.update_project(c, id, **fields)
-            tickle = tickle_from_form({})
-            if "tickle_on" in tickle and fields.get("status", p["status"]) == "someday":  # someday projects only
+            tickle = tickle_from_form()
+            if tickle and fields.get("status", p["status"]) == "someday":  # someday projects only
                 db.set_project_tickle(c, id, tickle["tickle_on"])
+                if tickle["tickle_on"] and tickle["tickle_on"] <= today().isoformat():
+                    flash("Its tickler date has come: it's back in the Inbox.")
         if fields.get("status") == "someday" != p["status"]:
             flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()
@@ -724,10 +738,8 @@ def project_order(id):
     """The project page's drag-and-drop sends the task ids in their new order."""
     c = conn()
     db.get_project(c, id) or abort(404)
-    db.reorder_project(c, id, [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    return redirect(url_for("project_view", id=id))
+    db.reorder_project(c, id, form_ids())
+    return ("", 204) if fetched() else redirect(url_for("project_view", id=id))
 
 
 @app.post("/projects/<int:id>/tasks")
@@ -760,9 +772,7 @@ def task_due(id):
     if t["state"] != "open":
         abort(400)
     db.update_task(c, id, today=today(), due_date=due)
-    if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
-    return back("calendar_view")
+    return ("", 204) if fetched() else back("calendar_view")
 
 
 @app.route("/calendar", methods=["GET", "POST"])

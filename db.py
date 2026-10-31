@@ -111,14 +111,17 @@ TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "gro
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
-TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
-  lp.position AS list_position
-  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id"""
+TASK_COLS = f"""t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
+  lp.position AS list_position"""
+TASK_FROM = "FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id"
+TASK_SELECT = f"SELECT {TASK_COLS} {TASK_FROM}"
 # The list an open task is in: inbox, next, waiting or someday (its step), or none (a later step, a closed task).
 LIST = "CASE WHEN t.state != 'open' OR t.step = 'later' THEN NULL ELSE coalesce(t.step, 'inbox') END"
 # Every task list's order: as dragged, new arrivals on top; tasks never placed (from before lists had an order) after
 # those, in the list's old order.
 LISTED = "lp.position IS NULL, lp.position"
+# Next's order (and the lists drawn from it): as dragged; unplaced ones soonest due first, undated ones last.
+NEXT_ORDER = f"{LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC"
 
 # An H0 someday task: a single someday / maybe item. Its due date is its tickler: out of sight until then.
 MAYBE = "t.state = 'open' AND t.step = 'someday'"
@@ -387,13 +390,12 @@ def tasks_with_step(c, step):
 def next_actions(c, today):
     """Next actions that count today: next_list() minus repeats not yet due."""
     return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_NEXT}
-        ORDER BY {LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""", (today.isoformat(),)).fetchall()
+        ORDER BY {NEXT_ORDER}""", (today.isoformat(),)).fetchall()
 
 
 def h0_actions(c):
     """Every H0 next action, repeats not yet due included, in Next's order."""
-    return c.execute(f"""{TASK_SELECT} WHERE {H0_NEXT}
-        ORDER BY {LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
+    return c.execute(f"{TASK_SELECT} WHERE {H0_NEXT} ORDER BY {NEXT_ORDER}").fetchall()
 
 
 def inbox_tasks(c):
@@ -402,9 +404,8 @@ def inbox_tasks(c):
 
 def next_list(c):
     """The Next tab: every next action, H0's and active projects', repeats not yet due included, in its order (the
-    page splits it into due bands; unplaced ones soonest due first, undated ones last)."""
-    return c.execute(f"""{TASK_SELECT} WHERE {NEXT}
-        ORDER BY {LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
+    page splits it into due bands)."""
+    return c.execute(f"{TASK_SELECT} WHERE {NEXT} ORDER BY {NEXT_ORDER}").fetchall()
 
 
 def overdue(c, today):
@@ -456,8 +457,8 @@ def search(c, q):
     tasks = c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND {where} ORDER BY
         {INBOX} DESC, {STEP_ORDER},
         lower(t.title)""", args).fetchall()
-    done = c.execute(f"""{TASK_SELECT} WHERE t.state != 'open' AND {where}
-        ORDER BY t.completed_at DESC LIMIT 50""", args).fetchall()
+    done = _one_per_repeat(c.execute(f"""{TASK_SELECT} WHERE t.state != 'open' AND {where}
+        ORDER BY t.completed_at DESC""", args))[:50]
     where, args = _matching(q, ["title", "notes"])
     projects = c.execute(f"""SELECT * FROM projects WHERE {where}
         ORDER BY status IN ('done', 'abandoned'), lower(title)""", args).fetchall()
@@ -466,12 +467,30 @@ def search(c, q):
     return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references}
 
 
+def _repeat_key(t):
+    """A done repeat's instances share this; any other task is its own."""
+    return (t["title"], t["project_id"], t["ground"], t["recur"]) if t["recur"] else t["id"]
+
+
+def _one_per_repeat(rows):
+    """Closed tasks, newest first, with only the latest of each repeat's done instances."""
+    seen, out = set(), []
+    for t in rows:
+        if _repeat_key(t) not in seen:
+            seen.add(_repeat_key(t))
+            out.append(t)
+    return out
+
+
 def suggest(c, q, limit=10):
-    """The best fuzzy title matches among tasks (done ones too), projects, horizons and reference.
-    Titles containing every query word come first, so scattered-letter matches can't crowd them out;
+    """The best fuzzy title matches among tasks (done ones too, a repeat's latest only), projects, horizons and
+    reference. Titles containing every query word come first, so scattered-letter matches can't crowd them out;
     then open items before done ones."""
-    rows = [("task", r) for r in c.execute(f"""SELECT t.id, t.title, t.state, t.step, t.ground, p.title AS project_title,
-        ({INBOX}) AS inbox FROM tasks t LEFT JOIN projects p ON p.id = t.project_id""")]  # no notes: only titles count
+    cols = "t.id, t.title, t.state, t.step, t.ground, t.recur, t.project_id, p.title AS project_title"
+    tasks = c.execute(f"""SELECT {cols}, ({INBOX}) AS inbox FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+        ORDER BY t.state != 'open', t.completed_at DESC""").fetchall()  # no notes: only titles count
+    rows = [("task", r) for r in tasks if r["state"] == "open"]
+    rows += [("task", r) for r in _one_per_repeat(r for r in tasks if r["state"] != "open")]
     rows += [("project", r) for r in c.execute("SELECT id, title, status FROM projects")]
     rows += [("horizon", r) for r in c.execute("SELECT id, title, level FROM horizons")]
     rows += [("reference", r) for r in c.execute("SELECT id, title FROM reference")]
@@ -579,10 +598,9 @@ def _least_reviewed(rows):
 
 def someday_tasks(c):
     """H0's someday tasks, in their list's order, each with `reviewed_at` and its due date as `tickle_on`, as a project has."""
-    return c.execute(f"""SELECT x.*, x.due_date AS tickle_on,
-          (SELECT r.reviewed_at FROM task_reviews r WHERE r.task_id = x.id) AS reviewed_at
-        FROM ({TASK_SELECT} WHERE {MAYBE}) x
-        ORDER BY x.list_position IS NULL, x.list_position, x.created_at DESC, x.id DESC""").fetchall()
+    return c.execute(f"""SELECT {TASK_COLS}, t.due_date AS tickle_on,
+          (SELECT r.reviewed_at FROM task_reviews r WHERE r.task_id = t.id) AS reviewed_at
+        {TASK_FROM} WHERE {MAYBE} ORDER BY {LISTED}, t.created_at DESC, t.id DESC""").fetchall()
 
 
 def someday_to_review(c, today):
@@ -656,9 +674,8 @@ def done_since(c, since):
     as one row, the latest, so a daily task doesn't fill the review's look back."""
     rows = {}
     for t in done_tasks(c, limit=-1, since=since):
-        key = (t["title"], t["project_id"], t["ground"], t["recur"]) if t["recur"] else t["id"]
-        task, n = rows.get(key, (t, 0))
-        rows[key] = (task, n + 1)
+        task, n = rows.get(_repeat_key(t), (t, 0))
+        rows[_repeat_key(t)] = (task, n + 1)
     return list(rows.values())
 
 
@@ -901,10 +918,10 @@ def save_text(c, table, id, fields, base):
     (now neither `base` nor the new text) is a conflict: nothing is written and the current text is returned
     for the page to ask about. Otherwise writes and returns None."""
     norm = lambda s: (s or "").replace("\r\n", "\n").strip()
-    c.execute("BEGIN IMMEDIATE")  # no other save between the check and the write
+    if not c.in_transaction:  # no other save between the check and the write (inside one, its lock holds already)
+        c.execute("BEGIN IMMEDIATE")
     row = c.execute(f"SELECT title, notes FROM {table} WHERE id = ?", (id,)).fetchone()
     if any(norm(row[k]) not in (norm(base.get(k)), norm(v)) for k, v in fields.items()):
-        c.rollback()
-        return {k: row[k] for k in ("title", "notes")}
+        return {k: row[k] for k in ("title", "notes")}  # nothing written; the outermost transaction ends it
     TEXT_TABLES[table](c, id, **fields)
     return None

@@ -11,12 +11,14 @@ async function post(url, body) {
 // The nav slides away while you scroll down and comes back when you scroll up, reach the top, or point at the top
 // edge. Touch scrolling (iPad) drives it too; the clamp ignores Safari's rubber band.
 (() => {
+  const nav = document.querySelector('nav');
+  if (!nav) return;  // in a frame: no nav
   let last = scrollY;
   const show = on => document.body.classList.toggle('nav-hidden', !on);
   addEventListener('scroll', () => {
     const y = Math.max(0, Math.min(scrollY, document.documentElement.scrollHeight - innerHeight));
     if (Math.abs(y - last) < 4) return;
-    show(y < last || y <= document.querySelector('nav').offsetHeight);
+    show(y < last || y <= nav.offsetHeight);
     last = y;
   }, {passive: true});
   addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
@@ -63,7 +65,7 @@ function capture() {
   const inline = document.querySelector('main .capture input');
   inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
 }
-document.querySelector('.add-inbox').addEventListener('click', capture);
+document.querySelector('.add-inbox')?.addEventListener('click', capture);
 // A field marked data-submit (the project page's status and tickler date)
 // saves its form as soon as it's changed; a text box waits while its 📅 picker is open.
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
@@ -78,7 +80,10 @@ document.addEventListener('change', e => {
   if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
   if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();
   const body = new URLSearchParams();
-  for (const name of ['due_date', 'recur', 'remind_at']) body.set(name, f.elements[name].value);
+  for (const name of ['due_date', 'recur', 'remind_at']) {
+    const box = f.elements[name];
+    if (box && !box.disabled) body.set(name, box.value);  // a disabled box (Repeats while someday or waiting) keeps its rule
+  }
   fieldsSaved = (async () => {
     try {
       const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
@@ -164,7 +169,7 @@ document.addEventListener('click', e => {
   all.textContent = open ? 'Collapse all' : 'Expand all';
 });
 // Light / dark toggle; the pick overrides the system setting and is remembered.
-document.querySelector('.theme-toggle').addEventListener('click', () => {
+document.querySelector('.theme-toggle')?.addEventListener('click', () => {
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   root.dataset.theme = dark ? 'light' : 'dark';
@@ -227,7 +232,9 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
 // Search suggests fuzzy title matches as you type; Enter or a click opens the highlighted one.
 // With no suggestions, Enter falls back to the full-text results page.
 (() => {
-  const form = document.querySelector('.search'), input = form.querySelector('input'), box = form.querySelector('.suggest');
+  const form = document.querySelector('.search');
+  if (!form) return;  // in a frame: no search bar
+  const input = form.querySelector('input'), box = form.querySelector('.suggest');
   let items = [], active = 0, seq = 0, timer;
   const esc = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'})[c]);
   const show = () => {
@@ -290,6 +297,7 @@ document.addEventListener('submit', async e => {
 async function refreshNav() {
   try {
     const old = document.querySelector('nav');
+    if (!old) return;
     const fresh = new DOMParser().parseFromString(await (await fetch('/nav')).text(), 'text/html').querySelector('nav');
     if (!fresh) return;
     fresh.querySelectorAll('a').forEach(a => a.classList.toggle('on', !!old.querySelector(`a.on[href="${a.getAttribute('href')}"]`)));
@@ -311,6 +319,26 @@ document.addEventListener('click', e => {
 // it open (?task=<id>, as a reminder's tap does). Closing (×, Esc, a click beside it) saves what's typed first, and
 // reloads the page under it if the task changed (changed(), from the frame), so its lists show it.
 function changed() { if (frameElement) frameElement.dataset.changed = '1'; }
+// A frame holding a task page (this overlay, Process's) takes the height of the page in it, growing as notes do.
+function fitFrame(frame) {
+  let watch = null;
+  const fit = () => {
+    watch?.disconnect();
+    const html = frame.contentDocument?.documentElement;
+    if (!html || frame.src === 'about:blank') return;
+    watch = new ResizeObserver(() => frame.style.height = html.offsetHeight + 'px');
+    watch.observe(html);
+  };
+  frame.addEventListener('load', fit);
+  fit();  // loaded before this ran (?task=<id>)
+}
+// Everything typed in a frame's task page saved: the box being typed in leaves it (saving it), title and notes through
+// autosave. False on a conflict, to be settled in the frame first; true with nothing loaded.
+function frameSaved(frame) {
+  const w = frame.contentWindow;
+  w?.document.activeElement?.blur?.();
+  return w?.autosaved?.() ?? Promise.resolve(true);
+}
 if (frameElement) {
   document.addEventListener('submit', changed, true);
   document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
@@ -325,14 +353,7 @@ if (frameElement) {
     const u = new URL(href, location);
     return u.origin === location.origin && !u.search && u.pathname.match(/^\/tasks\/(\d+)$/)?.[1];
   };
-  let observed = null;
-  const fit = () => {  // the frame takes the height of the page in it, growing as notes do
-    const html = frame.contentDocument?.documentElement;
-    if (!html || html === observed || frame.src === 'about:blank') return;
-    observed = html;
-    new ResizeObserver(() => frame.style.height = html.offsetHeight + 'px').observe(html);
-  };
-  frame.addEventListener('load', fit);
+  fitFrame(frame);
   const show = id => {
     delete frame.dataset.changed;
     frame.src = `/tasks/${id}?embed=task`;
@@ -342,9 +363,7 @@ if (frameElement) {
   const close = async () => {
     if (closing) return;
     closing = true;
-    const w = frame.contentWindow;
-    w?.document.activeElement?.blur?.();
-    const saved = await (w?.autosaved?.() ?? true);  // false on a conflict: settled in the frame first
+    const saved = await frameSaved(frame);
     closing = false;
     if (!saved) return;
     dialog.close();
@@ -365,5 +384,5 @@ if (frameElement) {
     e.preventDefault();
     show(id);
   });
-  if (frame.getAttribute('src') !== 'about:blank') { dialog.showModal(); fit(); }  // ?task=<id>
+  if (frame.getAttribute('src') !== 'about:blank') dialog.showModal();  // ?task=<id>
 })();

@@ -47,7 +47,7 @@ def test_capture_box_only_on_inbox(client, conn):
     pid = db.add_project(conn, "P")
     inbox = client.get("/inbox").data.decode()
     assert '<input name="title" placeholder="Capture' in inbox.split("<main>")[1]
-    for url in ("/next", f"/tasks/{tid}?embed=task", f"/projects/{pid}"):
+    for url in ("/next", f"/projects/{pid}"):  # a task's frame has no dialog of its own
         page = client.get(url).data
         assert b"<dialog" in page and b"Capture to inbox" not in page, url
     r = client.post("/capture", data={"title": "buy milk"}, headers={"Referer": "/next"}, follow_redirects=True)
@@ -128,8 +128,9 @@ def test_done_then_pick_next(client, conn):
     r = client.post(f"/tasks/{a}/done-then-project", headers={"Referer": "http://localhost/next"})
     assert r.status_code == 302 and r.headers["Location"].endswith(f"/projects/{pid}")
     assert db.get_task(conn, a)["state"] == "done"
-    r = client.post(f"/tasks/{h}/done-then-project", headers={"Referer": "http://localhost/next"})
-    assert r.headers["Location"].endswith("/next") and db.get_task(conn, h)["state"] == "done"
+    # No project (a stale page): the frame's page isn't shown full-window; the task's list opens with it.
+    r = client.post(f"/tasks/{h}/done-then-project", headers={"Referer": f"http://localhost/tasks/{h}?embed=task"})
+    assert r.headers["Location"] == f"/next?task={h}" and db.get_task(conn, h)["state"] == "done"
 
 
 def test_done_stays_on_the_page(client, conn):
@@ -593,6 +594,8 @@ def test_deleting_an_abandoned_task_goes_to_done(client, conn):
     assert db.get_task(conn, tid)["state"] == "abandoned" and r.headers["Location"] == f"http://localhost/tasks/{tid}"
     r = client.post(f"/tasks/{tid}/delete")
     assert db.get_task(conn, tid) is None and r.headers["Location"] == "/done"
+    tid = db.add_task(conn, "y")  # Process's Trash: in the background, no page
+    assert client.post(f"/tasks/{tid}/delete", headers={"X-Requested-With": "fetch"}).status_code == 204
 
 
 def test_delete_empty_project_only(client, conn):
@@ -684,6 +687,9 @@ def test_capture_on_inbox_has_no_flash_and_blank_is_ignored(client, conn):
     assert b"Added to inbox" not in r.data and b"milk" in r.data
     client.post("/capture", data={"title": "   "})
     assert [t["title"] for t in db.inbox_tasks(conn)] == ["milk"]
+    r = client.post("/capture", data={"title": "eggs"}, headers={"Referer": "http://localhost/inbox?task=1"},
+                    follow_redirects=True)
+    assert b"Added to inbox" not in r.data
 
 
 def test_home_and_horizon_page(client, conn):
@@ -1205,6 +1211,8 @@ def test_add_waiting_for_on_the_waiting_page(client, conn):
     r = client.post("/waiting/add", data={"title": "mystery", "project_id": "", "due_date": ""}, follow_redirects=True)
     assert [t["title"] for t in db.inbox_tasks(conn)] == ["mystery"]
     assert b"went to the inbox" in r.data
+    r = client.post("/waiting/add", data={"title": "x", "project_id": "h0"}, headers={"Referer": "http://localhost/review"})
+    assert r.headers["Location"] == "http://localhost/review"  # stays where it was added
 
 
 def test_add_someday_project_on_the_someday_page(client, conn):
@@ -2027,12 +2035,13 @@ def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
 @pytest.mark.parametrize("title, flashed", [
     ("pay rent @blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
     ("a @ b", None), ("5 * 3", None), ("mail bob@x.com", None),
+    ("Call @home about taxes", None), ("fix it *really soon", None),  # several words, no date: just a title
 ])
 def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, flashed):
     html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
     t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
     assert (t["title"], t["due_date"], t["recur"]) == (title, None, None)
-    assert flashed is None or flashed in html
+    assert flashed in html if flashed else "understand" not in html
 
 
 def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
@@ -2427,6 +2436,8 @@ def test_a_someday_projects_tickler_date(client, conn):
     assert db.get_project(conn, p)["tickle_on"] is None
     client.post(f"/projects/{p}", data={"status": "active", "tickle_on": "nov 15"})  # active: no tickler
     assert db.get_project(conn, p)["tickle_on"] is None
+    html = client.post(f"/projects/{p}", data={"status": "active", "tickle_on": "today"}, follow_redirects=True).get_data(as_text=True)
+    assert "back in the Inbox" not in html  # ignored, so not announced
     assert 'name="tickle_on"' not in client.get(f"/projects/{p}").get_data(as_text=True)
 
 
@@ -2611,3 +2622,29 @@ def test_someday_tasks_are_searchable(client, conn):
     assert "<h2>Someday / maybe</h2>" in html and f"/tasks/{t}" in html
     assert any(s["url"] == f"/tasks/{t}" and s["kind"] == "someday" for s in client.get("/search/suggest?q=italian").json)
 
+
+
+def test_suggest_and_search_list_a_repeat_once(client, conn):
+    """A daily task leaves a done copy each day; they mustn't crowd the suggestions or the done results."""
+    t = db.add_task(conn, "take vitamins", ground=1, recur="daily")
+    for _ in range(12):
+        t = db.complete_task(conn, t, TODAY)
+    kinds = [s["kind"] for s in client.get("/search/suggest?q=vitamins").get_json()]
+    assert kinds == ["next", "done"]
+    assert len(db.search(conn, "vitamins")["done"]) == 1
+
+
+def test_save_text_conflict_keeps_an_outer_transactions_writes(conn):
+    tid = db.add_task(conn, "a", ground=1)
+    other = db.add_task(conn, "b", ground=1)
+    with db.transaction(conn):
+        db.update_task(conn, other, title="b2")
+        assert db.save_text(conn, "tasks", tid, {"title": "mine"}, {"title": "stale"}) is not None
+    assert db.get_task(conn, other)["title"] == "b2" and db.get_task(conn, tid)["title"] == "a"
+
+
+def test_an_embedded_task_page_has_no_chrome(client, conn):
+    tid = db.add_task(conn, "x", ground=1)
+    html = client.get(f"/tasks/{tid}?embed=task").get_data(as_text=True)
+    assert "<nav" not in html and 'class="bar"' not in html and "capture-dialog" not in html
+    assert 'name="title"' in html

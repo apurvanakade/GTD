@@ -51,7 +51,10 @@ document.querySelectorAll("form[data-autosave]").forEach(form => {
     const by = e.submitter;
     if (!await save() || by?.hidden) return;  // a conflict stops it to be settled first; Enter only meant save
     form.dataset.saved = "1";
-    setTimeout(() => form.requestSubmit(by));  // a task later: during this submit event a new one is ignored
+    setTimeout(() => {  // a task later: during this submit event a new one is ignored
+      form.requestSubmit(by);
+      delete form.dataset.saved;  // that one went through; the next submit saves first again
+    });
   });
 
   function load(theirs) {

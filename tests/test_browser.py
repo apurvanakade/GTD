@@ -1139,3 +1139,31 @@ def test_process_keys_back_and_next_action_with_a_date(page, live, conn):
     assert (t["title"], t["recur"], t["ground"], t["step"], t["due_date"]) == ("call the legacy orphan", "weekly", 1, "next", "2026-10-23")
     page.keyboard.press("Escape")
     assert dialog.is_hidden() and row(page, "inbox item").count() == 1
+
+
+def test_process_skips_ticked_rows_and_reloads_after_an_edit(page, live, conn):
+    page.goto(live + "/inbox")
+    with page.expect_response(lambda r: "/complete" in r.url):
+        row(page, "legacy orphan").locator("form.done button").click()  # ticked in place: the row stays, faded
+    page.get_by_role("button", name="Process").click()
+    dialog = page.locator("dialog.process")
+    item = page.frame_locator("dialog.process iframe")
+    item.locator("main input[name=title][value='inbox item']").wait_for()  # not the ticked one
+    assert dialog.locator(".left").text_content() == "1 left"
+    item.locator("main input[name=title]").fill("inbox item, clarified")
+    with page.expect_navigation():  # closing after an edit redraws the list under it
+        dialog.get_by_role("button", name="Stop").click()
+    assert row(page, "inbox item, clarified").count() == 1
+
+
+def test_a_disabled_repeat_box_isnt_saved_with_the_other_fields(page, live, conn):
+    """A repeating someday task's Tickler cleared: the dormant rule mustn't bring a date of today with it."""
+    tid = db.add_task(conn, "idea", ground=1, step="someday", recur="weekly", due_date="2026-12-01")
+    conn.commit()
+    page.goto(live + f"/someday?task={tid}")
+    due = page.frame_locator("dialog.task-dialog iframe").locator("main input[name=due_date]")
+    due.fill("")
+    with page.expect_response(lambda r: r.request.method == "POST" and f"/tasks/{tid}" in r.url):
+        due.press("Tab")
+    t = db.get_task(conn, tid)
+    assert (t["due_date"], t["recur"]) == (None, "weekly")

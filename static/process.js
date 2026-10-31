@@ -3,14 +3,16 @@
 // notes, due date, repeat and reminder save as on its page, and are saved before it's filed. Picking an answer files
 // nothing: File does, as the drop panel or its page would, in the background; the item leaves the list and the next
 // one follows, until the inbox is empty. y / n answer, Enter files, ‹ goes back a question, Esc stops.
-// /inbox?process=1 opens it; so does a click on a row, at that item (⌘/Ctrl-click still opens its page).
+// /inbox?process=1 opens it; so does a click on a row, at that item (⌘/Ctrl-click still opens its page). A row ticked
+// off in place (faded, `.gone`) is done: Process skips it. Stopping (×, Esc) redraws the list if an item was edited.
 (() => {
   const dialog = document.querySelector('dialog.process');
   const frame = dialog.querySelector('iframe'), left = dialog.querySelector('.left'), back = dialog.querySelector('.back');
   const sections = [...dialog.querySelectorAll('section')], select = dialog.querySelector('select[name=project_id]');
   const name = dialog.querySelector('input[name=new_project]');
   let li = null, trail = [], busy = false;
-  const rows = () => [...document.querySelectorAll('main ul.tasks:not(.tickled) > li.task[data-id]')];
+  const ROW = 'main ul.tasks:not(.tickled) > li.task[data-id]:not(.gone)';
+  const rows = () => [...document.querySelectorAll(ROW)];
   const shown = () => sections.find(s => !s.hidden);
   const field = n => frame.contentDocument?.querySelector(`main [name=${n}]`);  // the item's page, once loaded
   const ask = q => {
@@ -25,6 +27,7 @@
     li = at;
     if (!li) { dialog.close(); return location.reload(); }  // inbox zero: the page's empty state
     const title = li.querySelector('.title').textContent;
+    delete frame.dataset.changed;  // edits to an item filed away don't need the list redrawn
     frame.src = `/tasks/${li.dataset.id}?embed=process`;
     left.textContent = `${rows().length} left`;
     select.selectedIndex = 0;
@@ -64,21 +67,21 @@
     h0: () => save({project_id: 'h0', step: 'next'}),  // its date: the frame's Due box
     waiting: () => save({project_id: 'h0', step: 'waiting'}),
   };
-  // The frame's edits saved first: a box being typed in saves on leaving it, title and notes through autosave (false
-  // on a conflict, settled there first). Not loaded yet, there's nothing to save.
-  const clarified = () => {
-    const w = frame.contentWindow;
-    w?.document.activeElement?.blur?.();
-    return w?.autosaved?.() ?? true;
+  fitFrame(frame);  // app.js
+  // Stopping saves the item's edits first (a conflict keeps it open), and redraws the list if it changed.
+  const stop = async () => {
+    if (busy) return;
+    busy = true;
+    const saved = await frameSaved(frame);
+    busy = false;
+    if (!saved) return;
+    dialog.close();
+    if (frame.dataset.changed) location.reload();
   };
-  // The frame takes the height of the page in it, growing as notes do.
-  frame.addEventListener('load', () => {
-    const html = frame.contentDocument?.documentElement;
-    if (html) new ResizeObserver(() => frame.style.height = html.offsetHeight + 'px').observe(html);
-  });
+  dialog.addEventListener('cancel', e => { e.preventDefault(); stop(); });
   const press = async b => {
     if (b === back) { trail.pop(); return ask(trail.pop()); }
-    if (b.classList.contains('close')) return dialog.close();
+    if (b.classList.contains('close')) return stop();
     if (b.dataset.choose) { choose(b); return shown().querySelector('[data-do]').focus(); }
     if (b.disabled) return;
     if (b.dataset.go === 'next') {  // a project picked first, a new one named
@@ -88,7 +91,7 @@
     if (b.dataset.do) {
       if (busy) return;
       busy = true;
-      const ok = await clarified() && await actions[b.dataset.do]();
+      const ok = await frameSaved(frame) && await actions[b.dataset.do]();
       busy = false;
       if (!ok) return;
       li.remove();
@@ -116,7 +119,7 @@
   // Ahead of app.js's row click (which would open the task page): the row's buttons, shift-click (move.js) and a
   // click ending a text selection keep their jobs.
   document.addEventListener('click', e => {
-    const row = e.target.closest('main ul.tasks:not(.tickled) > li.task[data-id]');
+    const row = e.target.closest(ROW);
     if (!row || e.button || e.shiftKey || e.metaKey || e.ctrlKey || String(getSelection())
         || e.target.closest('button, input, select, textarea, label, form, a:not(.title)')) return;
     e.preventDefault();

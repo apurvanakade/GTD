@@ -10,6 +10,12 @@
 {% if embed %}<base target="_top">{% endif %}{# in a task's frame: links open in the page itself #}
 </head>
 <body{% if embed %} class="embed"{% endif %}>
+{#- In a frame (a task's overlay, Process) the page is the task alone: no nav, bar, pill or dialogs. #}
+{# One list drives both the key handler and the help overlay. #}
+{% set go_keys = [('t', 'timer_view', 'Timer'), ('c', 'calendar_view', 'Calendar'), ('n', 'next_view', 'Next'),
+  ('w', 'waiting', 'Waiting'), ('i', 'inbox', 'Inbox'), ('p', 'projects_view', 'Projects'), ('s', 'someday', 'Someday'),
+  ('r', 'reference', 'Reference'), ('v', 'review', 'Review'), ('o', 'horizons_view', 'Horizons'), ('d', 'done', 'Done')] %}
+{% if not embed %}
 {% include "_nav.html" %}
 {# The bar is identical on every page so switching tabs never moves it. #}
 <div class="bar">
@@ -37,10 +43,6 @@
   <form method="post" action="{{ url_for('timer_dismiss') }}"><button class="icon" title="Dismiss" aria-label="Dismiss">×</button></form>
 </div>
 {% endif %}
-{# One list drives both the key handler and the help overlay. #}
-{% set go_keys = [('t', 'timer_view', 'Timer'), ('c', 'calendar_view', 'Calendar'), ('n', 'next_view', 'Next'),
-  ('w', 'waiting', 'Waiting'), ('i', 'inbox', 'Inbox'), ('p', 'projects_view', 'Projects'), ('s', 'someday', 'Someday'),
-  ('r', 'reference', 'Reference'), ('v', 'review', 'Review'), ('o', 'horizons_view', 'Horizons'), ('d', 'done', 'Done')] %}
 <dialog class="help-dialog">
   <h2>Keyboard shortcuts</h2>
   <dl>
@@ -62,7 +64,6 @@
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
-{% if not embed %}
 {#- Every task opens here, over the page it was clicked on (static/app.js); ?task=<id> opens with it. #}
 <dialog class="task-dialog" aria-label="Task">
   <button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button>
