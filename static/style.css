@@ -294,7 +294,6 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .task .name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
 .task .name .title { margin-right: 6px; }
 .task .proj { color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
-.task .proj::before { content: "▸ "; }
 .task .date { min-width: 6.4em; text-align: right; }
 .task .step { min-width: 4.2em; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
