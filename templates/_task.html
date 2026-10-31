@@ -136,10 +136,10 @@
 
 {# Projects, Waiting and Someday: one list of tight project rows, dragged to reorder (static/app.js). #}
 {% macro project_list(ps, steps, status, empty) %}
-{% if ps %}<ul class="tasks cards plain" data-reorder="{{ url_for('projects_order', status=status) }}">
+{% if ps %}<ul class="tasks" data-reorder="{{ url_for('projects_order', status=status) }}">
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
-{% else %}<ul class="tasks cards"><li class="empty">{{ empty }}</li></ul>{% endif %}
+{% else %}<ul class="tasks"><li class="empty">{{ empty }}</li></ul>{% endif %}
 {% endmacro %}
 
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}

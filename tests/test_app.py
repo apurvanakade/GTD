@@ -1650,12 +1650,12 @@ def test_horizons_has_one_add_line_with_a_level(client, conn):
     assert [h["title"] for h in db.horizons(conn)["area"]] == ["Health"]
 
 
-def test_search_uses_project_pills_and_task_rows(client, conn):
+def test_search_lists_projects_and_task_rows(client, conn):
     pid = db.add_project(conn, "Tile shop")
     done = db.add_task(conn, "tile order", step="next", project_id=pid)
     db.complete_task(conn, done, TODAY)
     html = client.get("/search?q=tile").get_data(as_text=True)
-    assert re.search(r'<h2>Projects</h2>\s*<ul class="tasks cards">', html)
+    assert re.search(r'<h2>Projects</h2>\s*<ul class="tasks">', html)
     done_part = html.split("<h2>Done</h2>")[1]
     assert 'class="check"' in done_part and 'class="name"' in done_part  # row(): ✓ and the project after the title
 

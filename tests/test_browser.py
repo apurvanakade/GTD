@@ -304,8 +304,7 @@ def test_slash_on_inbox_focuses_its_add_box(page, live):
 def test_task_rows_are_one_height(page, live, conn):
     """A Make next or Activate button mustn't make its row taller than the others."""
     db.add_project(conn, "Plain dream", status="someday")
-    # The project cards are compact, so compared among themselves (Someday's H0 task rows are task rows).
-    for url, n, rows in (("/projects/1", 3, "ul.tasks"), ("/someday?tickled=1", 2, "ul.tasks.cards")):
+    for url, n, rows in (("/projects/1", 3, "ul.tasks"), ("/someday?tickled=1", 2, "ul.tasks")):
         page.goto(live + url)
         heights = page.locator(f"{rows} > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
         assert len(heights) >= n and max(heights) - min(heights) < 1, (url, heights)
@@ -778,28 +777,21 @@ def test_all_clear_lists_show_a_big_check(page, live, conn):
     assert page.locator(".empty.clear").count() == 0  # "Nothing matches" isn't good news
 
 
-def test_task_rows_have_no_lines_and_projects_are_pills(page, live, conn):
-    page.goto(live + "/next")
-    style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
-    assert style(page.locator("li.task").first, "borderBottomWidth") == "0px"
-    for url in ("/horizons?level=projects",):
-        page.goto(live + url)
-        rows = page.locator("ul.cards > li.task")
-        assert rows.count() >= 1, url
-        assert float(style(rows.first, "borderTopLeftRadius")[:-2]) >= 16, url
-        assert style(rows.first, "borderTopWidth") == "1px", url
-
-
-def test_projects_and_someday_are_tight_lists(page, live, conn):
-    """Projects, Waiting and Someday: plain rows, like task rows but tighter, no pill boxes."""
+def test_every_list_is_the_same_plain_row(page, live, conn):
+    """Tasks, projects, reference and horizons' lists: one row style, smaller than body text, no boxes or dividers."""
     db.add_project(conn, "Shed")
     db.add_project(conn, "Boat", status="someday")
     db.add_project(conn, "Deck", status="waiting")
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
+    for url in ("/next", "/projects", "/waiting", "/someday?tickled=1", "/reference", "/horizons?level=projects", "/done"):
+        page.goto(live + url)
+        rows = page.locator("ul.tasks > li.task")
+        assert rows.count() >= 1, url
+        assert style(rows.first, "borderTopWidth") == "0px" and style(rows.first, "borderBottomWidth") == "0px", url
+        assert float(style(rows.first, "fontSize")[:-2]) < 16, url
     for url in ("/projects", "/waiting", "/someday?tickled=1"):
         page.goto(live + url)
-        rows = page.locator("ul.cards.plain > li.task")
-        assert style(rows.first, "borderTopWidth") == "0px", url
+        rows = page.locator("ul[data-reorder] > li.task")
         a, b = rows.nth(0).bounding_box(), rows.nth(1).bounding_box()
         assert a["height"] <= 30 and b["y"] - (a["y"] + a["height"]) <= 1, (url, a, b)
 

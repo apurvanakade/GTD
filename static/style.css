@@ -5,6 +5,8 @@
   --line: light-dark(#ecebe9, #35312e); --card: light-dark(#ffffff, #262220); --soft: light-dark(#f2f1ef, #2a2624);
   --accent: light-dark(#2563eb, #60a5fa); --accent-fg: light-dark(#ffffff, #0c0a09); --warn: light-dark(#b45309, #fbbf24);
   --danger: light-dark(#b91c1c, #f87171);
+  /* Type scale: body text 1rem; every list row --fs-m; meta, hints and small controls --fs-s; tags and counts --fs-xs. */
+  --fs-xs: .75rem; --fs-s: .8125rem; --fs-m: .9rem;
 }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
@@ -13,11 +15,11 @@
 .k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
 /* Next and H0 fold into due bands; dates and ↻ show on hover, except an overdue date. */
 .band { margin-top: 14px; }
-.band > summary { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
+.band > summary { font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
 .band > summary::-webkit-details-marker { display: none; }
 .band > summary::before { content: "▸"; display: inline-block; width: 1.2em; transition: transform .15s; }
 .band[open] > summary::before { transform: rotate(90deg); }
-.band > summary b { font-weight: 600; font-size: .7rem; background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
+.band > summary b { font-weight: 600; font-size: var(--fs-xs); background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 .tasks.soon .task:not(.overdue) :is(.date, .recur) { opacity: 0; }
 .tasks.soon .task:hover :is(.date, .recur), .tasks.soon .task:focus-within :is(.date, .recur) { opacity: 1; }
 
@@ -30,7 +32,7 @@ body {
 a { color: var(--accent); text-decoration: none; }
 h1 { font-size: 1.5rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
 h1 small { color: var(--muted); font-weight: normal; font-size: 1rem; }
-h2 { font-size: .8rem; margin: 28px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+h2 { font-size: var(--fs-s); margin: 28px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 
 /* Nav: three groups of daily tabs, then the muted weekly-review pages on the right. */
 nav {
@@ -91,7 +93,7 @@ textarea { resize: vertical; }
   opacity: 0; pointer-events: none; transition: opacity .12s;
 }
 .md-wrap:focus-within .md-tools { opacity: 1; pointer-events: auto; }
-.md-tools button { padding: 0 6px; min-width: 1.7em; font-size: .85rem; line-height: 1.5; border-radius: 5px; }
+.md-tools button { padding: 0 6px; min-width: 1.7em; font-size: var(--fs-s); line-height: 1.5; border-radius: 5px; }
 .md-tools button:hover { color: var(--fg); background: var(--soft); }
 [hidden] { display: none !important; }  /* `button`'s display would otherwise show a hidden one */
 button, .button {
@@ -148,12 +150,12 @@ body:has(> .running-timer) { padding-bottom: 88px; }
 
 /* Every page: header (back link, heading, actions), add line, list. */
 header.page { margin: 24px 0 14px; }
-header.page .crumb { margin: 0 0 4px; color: var(--muted); font-size: .9rem; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+header.page .crumb { margin: 0 0 4px; color: var(--muted); font-size: var(--fs-m); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 /* A task page's timer, on its title line: as easy to spot as ▶ on the lists. */
 .task-timer { display: inline-flex; gap: 8px; align-items: center; margin: 0 6px; }
-.task-timer button { font-size: .8rem; padding: 1px 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; }
+.task-timer button { font-size: var(--fs-s); padding: 1px 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; }
 .task-timer button:hover { background: var(--accent); color: var(--accent-fg); }
-.task-timer .clock { font: .85rem ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--fg); }
+.task-timer .clock { font: var(--fs-s) ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--fg); }
 .task-timer.on .clock { color: var(--accent); }
 header.page .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
 header.page .head:empty, header.page .head:has(> .actions:empty:only-child) { display: none; }
@@ -196,10 +198,10 @@ body.dragging-tasks .drop-panel, body.pinned-panel .drop-panel { transform: none
 body.pinned-panel .drop-panel .unpin { display: block; }
 .pin-panel[aria-pressed="true"] { color: var(--fg); background: var(--soft); }
 .drop-panel .group { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-.drop-panel h3 { margin: 0 10px 4px; font-size: .9375rem; font-weight: 700; color: var(--fg); }
+.drop-panel h3 { margin: 0 10px 4px; font-size: var(--fs-m); font-weight: 700; color: var(--fg); }
 .drop-panel .group .target { padding: 5px 10px 5px 20px; margin: 1px 0; }
 .drop-panel .target { padding: 8px 10px; margin: 2px 0; border-radius: 8px; border: 1px dashed transparent; }
-.drop-panel .target .meta { color: var(--muted); font-size: .8rem; }
+.drop-panel .target .meta { color: var(--muted); font-size: var(--fs-s); }
 .drop-panel .target.new, .drop-panel .target.maybe, .drop-panel .target[data-project="h0"] { color: var(--muted); }
 .drop-panel .new input { display: none; margin-top: 6px; }
 .drop-panel .new.naming input { display: block; }
@@ -210,8 +212,8 @@ body.pinned-panel .drop-panel .unpin { display: block; }
   position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100% - 32px);
   display: flex; flex-direction: column; gap: 6px; pointer-events: none; animation: fade-out .4s 5s forwards;
 }
-.add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: .8rem; }
-.capture-dialog .marks { margin: 6px 0 0; font-size: .8rem; }
+.add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: var(--fs-s); }
+.capture-dialog .marks { margin: 6px 0 0; font-size: var(--fs-s); }
 .flash { margin: 0; background: var(--card); border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
 @keyframes fade-out { to { opacity: 0; visibility: hidden; } }
 
@@ -223,22 +225,22 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 /* A record page's first line: the big title, then its few controls as quiet selects and icons. */
 .title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .title-line .big { flex: 1 1 240px; width: auto; min-width: 0; }
-.title-line select { background: transparent; border-color: transparent; color: var(--muted); padding: 4px 6px; font-size: .875rem; }
+.title-line select { background: transparent; border-color: transparent; color: var(--muted); padding: 4px 6px; font-size: var(--fs-m); }
 .title-line select:hover { border-color: var(--line); color: var(--fg); }
 .title-line > .warn { cursor: help; }
 .title-line form { margin: 0; display: contents; }
 /* A someday tickler date, quiet like the selects beside it: ⏳, the box, 📅; how it reads shows only while editing. */
-.title-line .tickler { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: .875rem; }
+.title-line .tickler { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: var(--fs-m); }
 .tickler .date-field { flex: none; }
 .tickler .date-field input[name] { width: 6.5em; padding: 4px 6px; font-size: inherit; color: inherit; background: transparent; border-color: transparent; }
 .tickler .date-field input[name]:hover, .tickler .date-field input[name]:focus { border-color: var(--line); color: var(--fg); }
 .tickler .date-field .pick { padding: 2px; opacity: .6; }
-.tickler .hint { font-size: .8rem; white-space: nowrap; }
+.tickler .hint { font-size: var(--fs-s); white-space: nowrap; }
 .tickler:not(:focus-within) .hint { display: none; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
 .project textarea, .edit textarea, .project .md-editor, .edit .md-editor { margin-top: 6px; }
-.autosave { margin: 4px 0 0; min-height: 1.2em; font-size: .85rem; }
+.autosave { margin: 4px 0 0; min-height: 1.2em; font-size: var(--fs-s); }
 .autosave button { padding: 0 2px; font-size: inherit; text-decoration: underline; }
 .project textarea, .project .md-editor { background: transparent; border-color: transparent; }
 .project textarea:focus, .project .md-editor:focus { border-color: var(--line); }
@@ -252,31 +254,24 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .edit .open-project { flex: none; display: inline-grid; place-items: center; width: 2em; height: 2em; border-radius: 8px;
   font-size: 1.1rem; font-weight: 600; text-decoration: none; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .edit .open-project:hover { background: var(--accent); color: var(--accent-fg); }
-.edit label { display: block; margin: 8px 0; color: var(--muted); font-size: .9rem; }
+.edit label { display: block; margin: 8px 0; color: var(--muted); font-size: var(--fs-m); }
 .edit label input, .edit label select { display: block; width: 100%; margin-top: 4px; color: var(--fg); font-size: 1rem; }
 .edit label input[name="new_project"] { display: none; }
 .edit label select:has(option[value^="__new__"]:checked) + input { display: block; }
-/* Rows. */
-.tasks { list-style: none; margin: 0; padding: 0; }
-.task {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
-  min-height: 41px; padding: 8px 6px; border-radius: 8px;  /* no divider lines: spacing and the hover tint set rows apart */
-}
+/* Rows: every list (tasks, projects, reference, horizons) is the same plain row, one height, no boxes or dividers. */
+.tasks { list-style: none; margin: 0; padding: 0; font-size: var(--fs-m); }
+.task { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 4px 6px; border-radius: 6px; }
 .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
 .task .title { color: var(--fg); flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }  /* basis 0: a long title wraps rather than pushing the buttons onto a line of their own */
-.task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: .8rem; color: var(--muted); }
+.task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--fs-s); color: var(--muted); }
 .task .name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
 .task .name .title { margin-right: 6px; }
-.task .proj { color: var(--muted); font-size: .8rem; white-space: nowrap; }
-.task .date { font-variant-numeric: tabular-nums; min-width: 6.4em; text-align: right; }
+.task .proj { color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
+.task .proj::before { content: "▸ "; }
+.task .date { min-width: 6.4em; text-align: right; }
 .task .step { min-width: 4.2em; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
-.task .remind { font-size: .75rem; filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
-.task .proj::before { content: "▸ "; }
-/* Projects, Waiting and Someday: tight plain rows (no pill boxes). */
-.tasks.cards.plain { gap: 0; }
-.tasks.cards.plain > .task { min-height: 0; padding: 2px 6px; gap: 2px 8px; border: 0; border-radius: 6px; background: none; }
-.tasks.cards.plain > .task:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.task .remind { font-size: var(--fs-xs); filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task form { margin: 0; }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
 .task.stalled .title { color: var(--warn); }
@@ -285,14 +280,14 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
-.task .reviewed { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* a someday card */
-.task .until { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: .8rem; white-space: nowrap; }  /* tickled to later */
+/* A someday project's last review, and a tickler date still to come. */
+.task :is(.reviewed, .until) { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
 .task .until + .reviewed { margin-left: 0; }
 /* The review's projects and someday steps: ✓, title, then faint details. */
 .plain.review-list { list-style: none; padding-left: 0; }
 .review-list li { display: flex; align-items: center; gap: 8px; }
 .review-list form { display: contents; }
-.review-list .date { color: var(--muted); font-size: .85rem; }
+.review-list .date { color: var(--muted); font-size: var(--fs-s); }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
 .task.gone { opacity: .35; text-decoration: line-through; }
 .done button {
@@ -301,16 +296,16 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 }
 .done button:hover { border-color: var(--accent); background: var(--accent); }
 .task .peek { width: 1.2em; padding: 0; line-height: 20px; color: var(--muted); }
-.peek-all, .tickled-toggle { font-size: .8125rem; }
+.peek-all, .tickled-toggle { font-size: var(--fs-s); }
 .task .steps { display: none; flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 0 0 0 calc(1.2em + 10px); }
 .task.open .steps { display: block; }
-.task .steps li { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: .9rem; }
+.task .steps li { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; font-size: var(--fs-s); }
 .task .steps a { color: var(--fg); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
 .task .start button, .task .timing button, .task .make-next button, .task .row-btn button {
-  padding: 0 6px; font-size: .75rem; line-height: 20px; color: var(--muted);
+  padding: 0 6px; font-size: var(--fs-xs); line-height: 20px; color: var(--muted);
 }
 /* ▶ (.start) always shows, so the timer starts from anywhere. */
 .task .start button:hover { color: var(--accent); }
@@ -322,19 +317,12 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 /* Holds Make next's width on rows without it, so a project page's dates line up. */
 .task .slot { visibility: hidden; }
 
-/* A thin bar: time per project. */
-.progress > i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
-.progress { display: inline-block; width: 72px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; vertical-align: middle; }
-/* Lists of projects are pills: one rounded box each, a small gap between. */
-.tasks.cards { display: flex; flex-direction: column; gap: 6px; }
-.tasks.cards > .task { border: 1px solid var(--line); border-radius: 20px; padding: 7px 14px; background: var(--card); }  /* 7px: the border makes up the row height */
-.tasks.cards > .task:hover { border-color: color-mix(in srgb, var(--muted) 50%, var(--line)); }
 /* Decks (Review, Horizons): one card at a time, a rail of dots to move between them. Review's past weeks: a streak. */
 .deck { list-style: none; padding-left: 0; }
 .deck > li:not(.on) { display: none; }
 .deck > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
 .deck h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
-.deck h2 + .hint { margin: 2px 0 0; font-size: .85rem; }
+.deck h2 + .hint { margin: 2px 0 0; font-size: var(--fs-s); }
 .review h2 + .hint { margin-left: calc(1.3em + 10px); }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
 .deck .count.clear { color: var(--muted); }
@@ -353,21 +341,21 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .streak .wk.hit { background: var(--accent); }
 .plain { padding-left: 18px; }
 .date { font-variant-numeric: tabular-nums; }
-.done-toggle { margin-top: 1.5em; font-size: .9rem; }
+.done-toggle { margin-top: 1.5em; font-size: var(--fs-m); }
 .done-toggle a { color: var(--muted); }
 .deck textarea { margin-top: 8px; }
 
 /* Calendar. */
 .cal { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; }
-.cal th { font-size: .7rem; color: var(--muted); font-weight: 600; padding: 4px 0; text-transform: uppercase; letter-spacing: .05em; }
+.cal th { font-size: var(--fs-xs); color: var(--muted); font-weight: 600; padding: 4px 0; text-transform: uppercase; letter-spacing: .05em; }
 .cal td { vertical-align: top; height: 88px; border: 1px solid var(--line); padding: 3px; overflow: hidden; }
 .cal td.out { opacity: .4; }
 .cal td.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.cal .day { border: 0; background: none; padding: 0 4px; font-size: .8rem; color: var(--muted); border-radius: 999px; }
+.cal .day { border: 0; background: none; padding: 0 4px; font-size: var(--fs-s); color: var(--muted); border-radius: 999px; }
 .cal .day:hover { background: var(--accent); color: var(--accent-fg); }
 .cal td.today .day { background: var(--accent); color: var(--accent-fg); font-weight: 700; }
 .cal .ev {
-  display: block; font-size: .75rem; line-height: 1.35; padding: 1px 4px; margin-top: 2px;
+  display: block; font-size: var(--fs-xs); line-height: 1.35; padding: 1px 4px; margin-top: 2px;
   border-radius: 3px; color: var(--fg); border-left: 3px solid var(--k, var(--line));
   background: color-mix(in srgb, var(--k, var(--line)) 10%, transparent);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -377,7 +365,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .cal td.drop { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .cal.week td { height: 320px; }
 .cal.week .ev { white-space: normal; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0; font-size: .75rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0; font-size: var(--fs-xs); color: var(--muted); }
 .legend span::before {
   content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; background: var(--k);
 }
@@ -394,19 +382,19 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 details.tally > summary { list-style: none; cursor: pointer; }
 details.tally > summary::-webkit-details-marker { display: none; }
 details.tally h2 { justify-content: flex-start; gap: 12px; }
-.split-toggle { font-size: .9rem; font-weight: normal; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.split-toggle { font-size: var(--fs-m); font-weight: normal; text-transform: none; letter-spacing: 0; color: var(--muted); }
 .split-toggle::after { content: "Show split"; }
 details.tally[open] .split-toggle::after { content: "Hide split"; }
 summary:hover .split-toggle { color: var(--fg); }
 .tally h2 b { font-size: 1.6rem; font-weight: 600; text-transform: none; color: var(--fg); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .tally ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 9em) 1fr auto; gap: 8px 12px; align-items: center; }
 .tally li { display: contents; }
-.tally .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .85rem; }
+.tally .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-s); }
 a.who { text-decoration: none; }
 a.who:hover { color: var(--fg); }
 .tally.wide ul { grid-template-columns: minmax(0, 18em) 1fr auto; }  /* a project page's: full width, step titles run longer */
 .tally .bar > i { display: block; height: 8px; min-width: 4px; border-radius: 4px; background: var(--accent); }
-.tally .dur { color: var(--muted); font-size: .8rem; text-align: right; font-variant-numeric: tabular-nums; }
+.tally .dur { color: var(--muted); font-size: var(--fs-s); text-align: right; font-variant-numeric: tabular-nums; }
 .history { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto auto auto auto; }
 /* Entries share the list's columns (subgrid) so they line up even though their buttons differ. */
 .entry {
@@ -414,10 +402,10 @@ a.who:hover { color: var(--fg); }
   grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center;
 }
 .entry .entry-task { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.entry .entry-project { color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entry .entry-project { color: var(--muted); font-size: var(--fs-m); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .entry input {
   width: auto; padding: 4px 6px; border-color: transparent; background: transparent;
-  color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums;
+  color: var(--muted); font-size: var(--fs-m); font-variant-numeric: tabular-nums;
 }
 .entry input:hover { border-color: var(--line); }
 .entry input:focus { border-color: var(--muted); outline: none; background: var(--card); color: var(--fg); }
@@ -425,7 +413,7 @@ a.who:hover { color: var(--fg); }
 .entry .dur { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .entry.running .dur { color: var(--accent); font-weight: 600; }
 .entry .actions { display: flex; gap: 2px; justify-content: flex-end; }
-.entry .actions button { padding: 2px 8px; font-size: .8125rem; }
+.entry .actions button { padding: 2px 8px; font-size: var(--fs-s); }
 /* Too narrow for one line per entry: task + buttons, then project, then times. */
 @media (max-width: 720px) {
   .history { grid-template-columns: 1fr auto auto; }

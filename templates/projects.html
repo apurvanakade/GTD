@@ -8,7 +8,7 @@
 <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
 {% if show_done %}
 <h2>Completed</h2>
-<ul class="tasks cards">
+<ul class="tasks">
   {% for p in done_projects|sort(attribute='completed_at', reverse=True) %}
   <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at|local_date }}</span>{% endif %}</li>
   {% else %}

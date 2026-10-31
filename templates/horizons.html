@@ -43,7 +43,7 @@
     </ul>
     {% elif step == 'projects' %}
     <span class="count">{{ projects|length }}</span>
-    <ul class="tasks cards">
+    <ul class="tasks">
       {% for p in projects %}
       <li class="task{% if p.stalled %} stalled{% endif %}">
         <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.stalled %}⚠ {% endif %}{{ p.title }}</a>
