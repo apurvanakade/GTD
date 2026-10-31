@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form, pin_button, move_panel, project_select with context %}
+{% from "_task.html" import row, task_list, add_form, pin_button, move_panel, project_select with context %}
 {% block title %}Inbox{% endblock %}
 {% block actions %}{% if tasks %}<button type="button" class="process-start" title="One item at a time, one question at a time">Process</button>{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
@@ -12,7 +12,7 @@
     <span class="meta"><span class="date" title="Tickler date">{{ x.tickle_on }}</span></span></li>
 {% endfor %}</ul>{% endif %}
 {% if tasks %}
-<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
+{{ task_list(tasks) }}
 {{ move_panel('inbox') }}
 {# Process (static/process.js): the top item's task page (to clarify it: title, notes, repeat…), then one question at
    a time, after Allen's flowchart. data-go asks the next question; data-choose picks an answer, which File (data-do)

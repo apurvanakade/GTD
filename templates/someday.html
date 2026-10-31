@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, add_form, someday_kind_select, project_list, pin_button, move_panel with context %}
+{% from "_task.html" import row, task_list, add_form, someday_kind_select, project_list, pin_button, move_panel with context %}
 {% block title %}Someday / maybe{% endblock %}
 {% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}
   {%- if tickled %}<a class="tickled-toggle" href="{{ tickled_url }}" title="{{ tickled }} out of sight until their tickler date">{{ 'Hide tickled' if show_tickled else 'Show tickled' }}</a>{% endif %}
@@ -7,7 +7,7 @@
 {% block body %}
 {% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ someday_kind_select() }}{% endcall %}
 {# H0's someday tasks first (drag one onto a project or H0 to commit to it), then someday projects. #}
-{% if tasks %}<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>{% endif %}
+{% if tasks %}{{ task_list(tasks) }}{% endif %}
 {% if projects or not tasks %}{{ project_list(projects, steps, 'someday', 'Nothing parked here.') }}{% endif %}
 {% if tasks %}{{ move_panel('someday', current='someday') }}{% endif %}
 {% endblock %}

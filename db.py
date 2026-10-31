@@ -95,6 +95,12 @@ CREATE TABLE IF NOT EXISTS project_tickles (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   tickle_on TEXT NOT NULL
 );
+-- A task's place in the list it's in (Inbox, Next, Waiting, Someday: list_of()), dragged on that page. A table of its
+-- own, not tasks.position, which is a step's place in its project: a waiting step is in both, in different orders.
+CREATE TABLE IF NOT EXISTS list_positions (
+  task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
 # Stored in the file's user_version once SCHEMA has run on it, so a connection skips it until SCHEMA changes.
@@ -105,8 +111,15 @@ TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "gro
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
-TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox
-  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id"""
+TASK_SELECT = f"""SELECT t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
+  lp.position AS list_position
+  FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id"""
+# The list an open task is in: inbox, next, waiting or someday (its step), or none (a later step, a closed task).
+LIST = "CASE WHEN t.state != 'open' OR t.step = 'later' THEN NULL ELSE coalesce(t.step, 'inbox') END"
+# Every task list's order: as dragged, new arrivals on top; tasks never placed (from before lists had an order) after
+# those, in the list's old order.
+LISTED = "lp.position IS NULL, lp.position"
+
 # An H0 someday task: a single someday / maybe item. Its due date is its tickler: out of sight until then.
 MAYBE = "t.state = 'open' AND t.step = 'someday'"
 # Next Actions: H0's and active projects' next actions; recurring tasks count from their due day.
@@ -193,6 +206,7 @@ def add_task(c, title, today=None, **fields):
     if fields.get("project_id") and "position" not in fields:  # a new step goes to the top, under the next action
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}, today=today))
+    _arrive(c, id, None)
     _reopen_project(c, id)
     _one_next(c, id, was_next=False)
     return id
@@ -205,11 +219,32 @@ def update_task(c, id, today=None, **fields):
     current = get_task(c, id)
     if current and fields.get("project_id") and fields["project_id"] != current["project_id"] and "position" not in fields:
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])  # filed: top of its project
+    was = list_of(c, id)
     _update(c, "tasks", TASK_FIELDS, id, _fit_step(fields, current, today))
+    _arrive(c, id, was)
     if current and "remind_at" in fields and fields["remind_at"] != current["remind_at"]:
         c.execute("UPDATE tasks SET reminded_at = NULL WHERE id = ?", (id,))  # a new time is sent again
     _reopen_project(c, id)
     return _one_next(c, id, was_next=current is not None and current["step"] == "next")
+
+
+def list_of(c, id):
+    return (c.execute(f"SELECT {LIST} FROM tasks t WHERE t.id = ?", (id,)).fetchone() or [None])[0]
+
+
+def _arrive(c, id, was):
+    """A task that has just come into a list (it was in `was`) goes to its top, like every new item."""
+    now = list_of(c, id)
+    if now and now != was:
+        c.execute(f"""INSERT OR REPLACE INTO list_positions (task_id, position) SELECT ?, coalesce(min(lp.position), 0) - 1
+            FROM tasks t JOIN list_positions lp ON lp.task_id = t.id WHERE {LIST} = ?""", (id, now))
+
+
+@atomic
+def reorder_tasks(c, ids):
+    """Number a task list's tasks in the given order (Inbox, a band of Next, Waiting, Someday); closed ones are ignored."""
+    c.executemany("""INSERT OR REPLACE INTO list_positions (task_id, position)
+        SELECT id, ? FROM tasks WHERE id = ? AND state = 'open'""", [(n, id) for n, id in enumerate(ids)])
 
 
 def _reopen_project(c, id):
@@ -300,6 +335,7 @@ def revive_task(c, id):
     as it was), or an inbox item. A done project it belongs to is reopened, since it has an open task again."""
     c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN step ELSE 'later' END,
         completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
+    _arrive(c, id, None)
     _reopen_project(c, id)
 
 
@@ -325,6 +361,8 @@ def complete_task(c, id, today, now=None):
         step = "later" if t["step"] == "next" and t["project_id"] else t["step"]
         new_id = add_task(c, t["title"], today=today, notes=t["notes"], step=step, project_id=t["project_id"],
                           ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
+        if t["list_position"] is not None:  # the next instance takes this one's place in its list
+            c.execute("UPDATE list_positions SET position = ? WHERE task_id = ?", (t["list_position"], new_id))
     return new_id
 
 
@@ -340,31 +378,33 @@ def mark_reminded(c, id, now):
 
 
 def tasks_with_step(c, step):
-    """Open tasks at this step (project and H0 tasks; inbox items have none), newest first."""
-    return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY t.created_at DESC, t.id DESC", (step,)).fetchall()
+    """Open tasks at this step (project and H0 tasks; inbox items have none), in their list's order (Waiting's:
+    unplaced ones H0's first, newest first)."""
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.step = ?
+        ORDER BY {LISTED}, NOT t.ground, t.created_at DESC, t.id DESC""", (step,)).fetchall()
 
 
 def next_actions(c, today):
     """Next actions that count today: next_list() minus repeats not yet due."""
     return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_NEXT}
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""", (today.isoformat(),)).fetchall()
+        ORDER BY {LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""", (today.isoformat(),)).fetchall()
 
 
 def h0_actions(c):
-    """Every H0 next action, repeats not yet due included, soonest due first; undated ones last."""
+    """Every H0 next action, repeats not yet due included, in Next's order."""
     return c.execute(f"""{TASK_SELECT} WHERE {H0_NEXT}
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
+        ORDER BY {LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
 
 
 def inbox_tasks(c):
-    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY t.created_at DESC, t.id DESC").fetchall()
+    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY {LISTED}, t.created_at DESC, t.id DESC").fetchall()
 
 
 def next_list(c):
-    """The Next tab: every next action, H0's and active projects', repeats not yet due included, soonest due first;
-    undated ones last."""
+    """The Next tab: every next action, H0's and active projects', repeats not yet due included, in its order (the
+    page splits it into due bands; unplaced ones soonest due first, undated ones last)."""
     return c.execute(f"""{TASK_SELECT} WHERE {NEXT}
-        ORDER BY t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
+        ORDER BY {LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC""").fetchall()
 
 
 def overdue(c, today):
@@ -538,10 +578,11 @@ def _least_reviewed(rows):
 
 
 def someday_tasks(c):
-    """H0's someday tasks, newest first, each with `reviewed_at` and its due date as `tickle_on`, as a project has."""
+    """H0's someday tasks, in their list's order, each with `reviewed_at` and its due date as `tickle_on`, as a project has."""
     return c.execute(f"""SELECT x.*, x.due_date AS tickle_on,
           (SELECT r.reviewed_at FROM task_reviews r WHERE r.task_id = x.id) AS reviewed_at
-        FROM ({TASK_SELECT} WHERE {MAYBE} ORDER BY t.created_at DESC, t.id DESC) x""").fetchall()
+        FROM ({TASK_SELECT} WHERE {MAYBE}) x
+        ORDER BY x.list_position IS NULL, x.list_position, x.created_at DESC, x.id DESC""").fetchall()
 
 
 def someday_to_review(c, today):

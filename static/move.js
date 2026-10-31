@@ -1,7 +1,7 @@
 // The drop panel on every task list (move_panel() in _task.html): it slides in while an open row is dragged, or
 // stays while pinned by the header's Projects button; dropping the row on a project (or H0, its "Someday / maybe",
-// Reference, "＋ New…") moves the task there (/tasks/move). Rows are dragged from anywhere, except on a project page, where the ⠿ grip
-// drags them, so the same drag reorders the steps or moves one out. Shift-click selects rows (Esc clears); dragging
+// Reference, "＋ New…") moves the task there (/tasks/move). A row's ⠿ grip drags it (app.js), so the same drag
+// reorders its list or moves it out. Shift-click selects rows (Esc clears); dragging
 // a selected row moves them all.
 (() => {
   const panel = document.querySelector('.drop-panel'), body = document.body, pin = document.querySelector('.pin-panel');
@@ -16,7 +16,6 @@
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
   // Open rows only: they have a tick-off button. Done and abandoned rows stay put.
   const movable = li => li?.matches('main ul.tasks > li.task[data-id]') && li.querySelector(':scope > form.done');
-  document.querySelectorAll('main ul.tasks:not([data-reorder]) > li.task[data-id]').forEach(li => { if (movable(li)) li.draggable = true; });
   const selected = () => [...document.querySelectorAll('main li.task.selected')].filter(movable);
   const unselect = () => document.querySelectorAll('main li.task.selected').forEach(li => li.classList.remove('selected'));
   // Shift-click toggles a row, its title too (instead of opening it); no text gets selected on the way.

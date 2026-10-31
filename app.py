@@ -276,6 +276,15 @@ def task_move():
     return "", 204
 
 
+@app.post("/tasks/order")
+def tasks_order():
+    """A task list's drag-and-drop (Inbox, a band of Next, Waiting, Someday) sends its task ids in their new order."""
+    db.reorder_tasks(conn(), [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()])
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
+    return back()
+
+
 # --- lists -----------------------------------------------------------------
 
 def toggle_url(show, arg="done"):
@@ -340,10 +349,9 @@ def bands(tasks):
 
 @app.route("/waiting")
 def waiting():
-    """Waiting projects, then waiting tasks: H0's first, then project steps."""
+    """Waiting projects, then waiting tasks (H0's and project steps, in one dragged order)."""
     c = conn()
-    tasks = sorted(db.tasks_with_step(c, "waiting"), key=lambda t: not t["ground"])
-    return render_template("waiting.html", projects=db.projects(c, "waiting"), tasks=tasks,
+    return render_template("waiting.html", projects=db.projects(c, "waiting"), tasks=db.tasks_with_step(c, "waiting"),
                            steps=db.open_steps(c, "waiting"), project_groups=db.project_groups(c))
 
 

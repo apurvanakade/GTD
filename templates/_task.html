@@ -1,8 +1,11 @@
+{# grip: ⠿ drags the row, to reorder its list or onto the drop panel. On a project page (project=False) the next
+   action is pinned on top: its grip only moves it out. #}
 {% macro row(t, project=True, make_next=False, grip=False) %}
 {% set closed = t.state != 'open' %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if grip and t.step == 'next' and not closed %} data-pinned{% endif %}>
-  {% if grip and t.step == 'next' and not closed %}<span class="grip" title="Drag to another project" aria-hidden="true">⠿</span>
-  {% elif grip %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
+{% set pinned = grip and not project and t.step == 'next' and not closed %}
+<li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if pinned %} data-pinned{% endif %}>
+  {% if pinned %}<span class="grip" title="Drag to another project" aria-hidden="true">⠿</span>
+  {% elif grip and not closed %}<span class="grip" title="Drag to reorder, or onto a project" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
   {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}
@@ -25,16 +28,20 @@
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
   {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}
   {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>
-  {% elif grip and not closed %}<span class="make-next slot" aria-hidden="true"><button type="button" tabindex="-1" disabled>Make next</button></span>{% endif %}
+  {% elif grip and not project and not closed %}<span class="make-next slot" aria-hidden="true"><button type="button" tabindex="-1" disabled>Make next</button></span>{% endif %}
 </li>
 {% endmacro %}
 
-{# Next: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. #}
+{# A task list (Inbox, Waiting, Someday), dragged by ⠿ to reorder (/tasks/order) or onto the drop panel. #}
+{% macro task_list(tasks) %}<ul class="tasks" data-reorder="{{ url_for('tasks_order') }}">{% for t in tasks %}{{ row(t, grip=True) }}{% endfor %}</ul>{% endmacro %}
+
+{# Next: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. Each band
+   reorders on its own. #}
 {% macro banded(tasks, project=True, empty='') %}
 {% for key, label, is_open, rows in tasks|bands %}
 <details class="band" data-band="{{ key }}"{% if is_open %} open{% endif %}>
   <summary>{{ label }} <b>{{ rows|length }}</b></summary>
-  <ul class="tasks soon">{% for t in rows %}{{ row(t, project=project) }}{% endfor %}</ul>
+  <ul class="tasks soon" data-reorder="{{ url_for('tasks_order') }}">{% for t in rows %}{{ row(t, project=project, grip=True) }}{% endfor %}</ul>
 </details>
 {% else %}
 <ul class="tasks"><li class="empty clear">{{ empty }}</li></ul>

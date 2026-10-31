@@ -178,9 +178,13 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   const s = c.dataset.start ? (Date.now() - c.dataset.start) / 1000 : +c.dataset.seconds + (Date.now() - loaded) / 1000;
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
-// Drag ⠿ to reorder a project's steps, or the projects on Projects, Waiting and Someday; the new order is saved in the background.
+// Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
+// on Projects, Waiting and Someday; the new order is saved in the background. Shift-selected rows (move.js) go as a
+// block, if they're all in this list.
 (() => {
-  let dragged = null, from = null;
+  let dragged = null, from = null, before = null, out = false;  // dragged: the rows on the move, in page order
+  // Dropped on the drop panel (move.js), the rows leave: the list's order isn't saved, and stays as it was.
+  document.querySelector('.drop-panel')?.addEventListener('drop', () => { out = true; });
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
   document.querySelectorAll('ul[data-reorder]').forEach(list => {
@@ -188,34 +192,36 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     list.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; });
     list.addEventListener('pointerup', () => list.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
     list.addEventListener('dragstart', e => {
-      dragged = e.target.closest('li[draggable]');
-      if (!dragged) return;
+      const li = e.target.closest('li[draggable]');
+      if (!li) return;
+      const picked = li.classList.contains('selected') ? [...document.querySelectorAll('main li.task.selected')] : [li];
+      if (picked.some(r => r.parentElement !== list)) return;  // a selection across lists only moves out (move.js)
+      dragged = picked;
       from = list;
-      dragged.classList.add('dragging');
+      before = rows(list);
+      out = false;
+      dragged.forEach(r => r.classList.add('dragging'));
       e.dataTransfer.effectAllowed = 'move';
     });
     list.addEventListener('dragover', e => {
-      if (!dragged || 'pinned' in dragged.dataset) return;  // the next action only moves out, to another project
-      if (list !== from) return;
+      if (!dragged || list !== from || dragged.some(r => 'pinned' in r.dataset)) return;  // the next action only moves out, to another project
       const over = rows(list).find(li => li.contains(e.target));
       if (!over) return;
       e.preventDefault();
-      if (over === dragged) return;
+      if (dragged.includes(over)) return;
       const r = over.getBoundingClientRect();
       // A project's next action is pinned to the top: nothing goes above it.
-      if (e.clientY < r.top + r.height / 2 && !('pinned' in over.dataset)) over.before(dragged); else over.after(dragged);
+      if (e.clientY < r.top + r.height / 2 && !('pinned' in over.dataset)) over.before(...dragged); else over.after(...dragged);
     });
     list.addEventListener('drop', e => e.preventDefault());
   });
   document.addEventListener('dragend', () => {
-    if (!dragged || !from) return;
-    const list = dragged.closest('ul[data-reorder]');
-    dragged.classList.remove('dragging');
-    dragged.removeAttribute('draggable');
-    if (!list) { dragged = from = null; return; }  // moved out to another project (move.js)
-    const body = new URLSearchParams({ids: rows(list).map(li => li.dataset.id).join(',')});
-    dragged = from = null;
-    post(list.dataset.reorder, body);
+    if (!dragged) return;
+    const list = from, ids = rows(list).map(li => li.dataset.id);
+    dragged.forEach(r => { r.classList.remove('dragging'); r.removeAttribute('draggable'); });
+    if (out) list.append(...before);
+    else if (ids.join() !== before.map(li => li.dataset.id).join()) post(list.dataset.reorder, new URLSearchParams({ids: ids.join(',')}));
+    dragged = from = before = null;
   });
 })();
 // Search suggests fuzzy title matches as you type; Enter or a click opens the highlighted one.

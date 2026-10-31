@@ -372,12 +372,54 @@ def bands(html):
     return out
 
 
+def test_task_lists_keep_a_dragged_order(client, conn):
+    """Inbox, Next, Waiting and Someday: new arrivals on top, then as dragged; a waiting step's place on Waiting is
+    its own, apart from its place in its project."""
+    pid = db.add_project(conn, "P")
+    a, b, c = (db.add_task(conn, t) for t in "abc")
+    titles = lambda rows: [t["title"] for t in rows]
+    assert titles(db.inbox_tasks(conn)) == ["c", "b", "a"]
+    db.reorder_tasks(conn, [a, c, b])
+    assert titles(db.inbox_tasks(conn)) == ["a", "c", "b"]
+    db.update_task(conn, c, title="c!")  # an edit keeps its place
+    assert titles(db.inbox_tasks(conn)) == ["a", "c!", "b"]
+    w1 = db.add_task(conn, "w1", step="waiting", project_id=pid)
+    db.update_task(conn, a, ground=1, step="waiting")  # filed: on top of Waiting
+    assert titles(db.tasks_with_step(conn, "waiting")) == ["a", "w1"]
+    db.reorder_tasks(conn, [w1, a])
+    later = db.add_task(conn, "later", step="later", project_id=pid)
+    db.reorder_project(conn, pid, [later, w1])
+    assert titles(db.tasks_with_step(conn, "waiting")) == ["w1", "a"]  # the project's order didn't touch it
+    assert titles(db.project_tasks(conn, pid)) == ["later", "w1"]
+    db.abandon_task(conn, w1)
+    db.revive_task(conn, w1)  # back as a later step: in no list
+    db.update_task(conn, w1, step="waiting")
+    assert titles(db.tasks_with_step(conn, "waiting")) == ["w1", "a"]  # back on top
+    # A repeat's next instance takes its place.
+    r = db.add_task(conn, "r", ground=1, step="next", recur="daily", due_date="2026-10-22")
+    n = db.add_task(conn, "n", ground=1, step="next", due_date="2026-10-22")
+    db.reorder_tasks(conn, [n, r])
+    db.complete_task(conn, r, TODAY)
+    assert titles(db.next_list(conn)) == ["n", "r"]
+    for t in db.someday_tasks(conn) + [db.get_task(conn, db.add_task(conn, "s", ground=1, step="someday"))]:
+        assert t["list_position"] is not None
+    html = client.get("/inbox").get_data(as_text=True)
+    assert 'data-reorder="/tasks/order"' in html and 'class="grip"' in html
+
+
 def test_next_folds_into_due_bands(client, conn):
     for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"),
                        ("mo", "2026-11-10"), ("lt", "2027-03-01")]:
         db.add_task(conn, title, step="next", ground=1, due_date=due)
     html = client.get("/next").get_data(as_text=True)
-    assert bands(html) == [("now", True, ["od", "td"]), ("week", False, ["wk"]), ("later", False, ["mo", "lt"])]
+    # Within a band, newest first until dragged (each band its own list).
+    assert bands(html) == [("now", True, ["td", "od"]), ("week", False, ["wk"]), ("later", False, ["lt", "mo"])]
+    assert html.count('class="tasks soon" data-reorder="/tasks/order"') == 3
+    ids = {t["title"]: t["id"] for t in db.next_list(conn)}
+    assert client.post("/tasks/order", data={"ids": f"{ids['od']},{ids['td']}"},
+                       headers={"X-Requested-With": "fetch"}).status_code == 204
+    html = client.get("/next").get_data(as_text=True)
+    assert bands(html)[0] == ("now", True, ["od", "td"])
     assert re.search(r'data-band="week"[^>]*>\s*<summary>This week <b>1</b></summary>', html)
     assert 'class="legend"' not in html
     pid = db.add_project(conn, "P")
@@ -988,7 +1030,7 @@ def test_due_date_box_has_a_calendar_picker(client, conn):
     assert 'name="due_date"' in html and 'class="pick"' in html and 'type="date" class="picker"' in html
 
 
-def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, conn):
+def test_next_tab_lists_every_next_action_in_due_bands(client, conn):
     pid, sid = db.add_project(conn, "P"), db.add_project(conn, "S", status="someday")
     db.add_task(conn, "undated", step="next", project_id=pid)
     db.add_task(conn, "weekly far", step="next", recur="weekly", due_date="2026-11-30", project_id=db.add_project(conn, "Q"))
@@ -998,7 +1040,7 @@ def test_next_tab_lists_every_next_action_by_due_date_and_colors_them(client, co
     db.add_task(conn, "ground soon", step="next", ground=1, due_date="2026-10-22")
     html = client.get("/next").get_data(as_text=True)
     assert "Upcoming" not in html and "someday step" not in html
-    assert html.index("overdue one") < html.index("ground soon") < html.index("weekly far") < html.index("undated")
+    assert html.index("ground soon") < html.index("overdue one") < html.index("weekly far") < html.index("undated")
     assert ">ground<" in html and 'title="Ground level' in html  # H0's tag where a project's would be
     assert db.counts(conn, TODAY)["next"] == 2  # due today or overdue: not undated, not a far repeat
 
@@ -1069,7 +1111,7 @@ def test_project_next_action_is_pinned_but_has_a_grip_to_move_it_out(client, con
     ids = seed(conn)
     page = client.get(f"/projects/{ids['active']}").get_data(as_text=True)
     rows = re.findall(r'<li class="task[^"]*" data-id="(\d+)"( data-pinned)?>\s*<span class="grip" title="([^"]*)"', page)
-    assert sorted(rows) == [("2", " data-pinned", "Drag to another project"), ("3", "", "Drag to reorder"), ("4", "", "Drag to reorder")]
+    assert sorted(rows) == [("2", " data-pinned", "Drag to another project"), ("3", "", "Drag to reorder, or onto a project"), ("4", "", "Drag to reorder, or onto a project")]
 
 
 def test_done_page_lists_finished_tasks_and_projects(client, conn):

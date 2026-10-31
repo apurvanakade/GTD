@@ -274,6 +274,24 @@ def test_drag_reorders_project_steps(page, live, conn):
     assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
 
 
+def test_drag_reorders_a_task_list(page, live, conn):
+    """Inbox (Next, Waiting and Someday share the code): ⠿ reorders; shift-selected rows go as a block."""
+    db.add_task(conn, "third")
+    page.goto(live + "/inbox")
+    titles = lambda: page.locator("ul[data-reorder] > li.task .title").all_inner_texts()
+    assert titles() == ["third", "legacy orphan", "inbox item"]
+    with page.expect_response(lambda r: r.url.endswith("/tasks/order")) as saved:
+        row(page, "inbox item").locator(".grip").drag_to(row(page, "third"), target_position={"x": 40, "y": 2})
+    assert saved.value.status == 204
+    assert titles() == ["inbox item", "third", "legacy orphan"]
+    assert [t["title"] for t in db.inbox_tasks(conn)] == ["inbox item", "third", "legacy orphan"]
+    row(page, "inbox item").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    row(page, "third").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    with page.expect_response(lambda r: r.url.endswith("/tasks/order")):
+        row(page, "third").locator(".grip").drag_to(row(page, "legacy orphan"), target_position={"x": 40, "y": 20})
+    assert [t["title"] for t in db.inbox_tasks(conn)] == ["legacy orphan", "inbox item", "third"]
+
+
 def test_drag_reorders_someday_projects(page, live, conn):
     db.add_project(conn, "Another dream", status="someday")  # Projects shares the code; this covers both
     page.goto(live + "/someday?tickled=1")
@@ -502,8 +520,8 @@ def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
 
 
 def drag_to_panel(page, source, target):
-    """The drop panel only appears once a drag starts, so drag by hand: pick up, then find the target."""
-    source.hover()
+    """The drop panel only appears once a drag starts, so drag by hand: pick up the row's grip, then find the target."""
+    source.locator(".grip").hover()
     page.mouse.down()
     page.mouse.move(100, 100, steps=5)
     target = page.locator(".drop-panel " + target)
@@ -515,7 +533,7 @@ def drag_to_panel(page, source, target):
 def test_dragging_an_inbox_row_onto_a_project_files_it(page, live, conn):
     page.goto(live + "/inbox")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert page.url == live + "/inbox"
     assert db.get_task(conn, 1)["project_id"] == 1
@@ -536,7 +554,7 @@ def test_shift_clicked_rows_drag_together(page, live, conn):
     assert page.locator("li.task.selected").count() == 0
     row(page, "inbox item").click(modifiers=["Shift"], position={"x": 400, "y": 10})
     row(page, "legacy orphan").click(modifiers=["Shift"], position={"x": 400, "y": 10})
-    drag_to_panel(page, row(page, "legacy orphan").locator(".title"), '[data-project="1"]')
+    drag_to_panel(page, row(page, "legacy orphan"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task.selected')")
     assert db.get_task(conn, 1)["project_id"] == db.get_task(conn, orphan)["project_id"] == 1
     assert page.locator("main li.task[data-id]").count() == 0
@@ -545,14 +563,14 @@ def test_shift_clicked_rows_drag_together(page, live, conn):
 def test_an_unselected_row_drags_alone(page, live, conn):
     page.goto(live + "/inbox")
     row(page, "legacy orphan").click(modifiers=["Shift"], position={"x": 400, "y": 10})
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert db.get_task(conn, 1)["project_id"] == 1 and row(page, "legacy orphan").count() == 1
 
 
 def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="reference"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="reference"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert db.get_task(conn, 1) is None
     assert [(r["title"], r["notes"]) for r in db.references(conn) if r["title"] == "inbox item"] == [("inbox item", "from email")]
@@ -560,7 +578,7 @@ def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
 
 def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__"]')
     name = page.locator(".drop-panel .naming input[name=new_project]")
     name.wait_for(state="visible")
     assert page.locator(".drop-panel input[name=new_project]:visible").count() == 1
@@ -574,7 +592,7 @@ def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live,
 
 def test_escape_cancels_naming_a_new_project(page, live, conn):
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="__new__"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__"]')
     page.locator(".drop-panel .naming input[name=new_project]").wait_for(state="visible")
     page.keyboard.press("Escape")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
@@ -588,7 +606,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     page.locator(".pin-panel").click()
     panel.wait_for(state="visible")
     assert panel.locator("h3").all_text_contents() == ["Projects", "Done"]
-    drag_to_panel(page, row(page, "inbox item").locator(".title"), '[data-project="1"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert panel.is_visible()  # still pinned after the drop
     page.reload()
@@ -603,7 +621,7 @@ def test_dragging_a_next_action_onto_another_project_moves_it(page, live, conn):
     page.goto(live + "/next")
     now = page.locator("details[data-band=now] summary b")
     before = int(now.text_content())
-    drag_to_panel(page, row(page, "buy tiles").locator(".title"), '[data-project="2"]')
+    drag_to_panel(page, row(page, "buy tiles"), '[data-project="2"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"2\"]')")
     assert page.url == live + "/next" and int(now.text_content()) == before - 1
     assert (db.get_task(conn, 2)["project_id"], db.get_task(conn, 2)["step"]) == (2, "later")  # next stays a conscious choice
@@ -613,12 +631,12 @@ def test_dragging_between_h0_and_a_project_on_next(page, live, conn):
     """An H0 task filed in a project leaves Next (a later step); a project's next action dropped on H0 stays on it."""
     page.goto(live + "/next")
     page.locator(".pin-panel").click()
-    drag_to_panel(page, row(page, "vacuum").locator(".title"), '[data-project="1"]')
+    drag_to_panel(page, row(page, "vacuum"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"5\"]')")
     t = db.get_task(conn, 5)
     assert (t["project_id"], t["step"], t["ground"]) == (1, "later", 0)
     with page.expect_navigation():  # it stays on Next, now under H0: the page redraws
-        drag_to_panel(page, row(page, "buy tiles").locator(".title"), '[data-project="h0"]')
+        drag_to_panel(page, row(page, "buy tiles"), '[data-project="h0"]')
     assert row(page, "buy tiles").locator(".proj").inner_text() == "H0"
     t = db.get_task(conn, 2)
     assert (t["project_id"], t["step"], t["ground"]) == (None, "next", 1)
@@ -626,23 +644,23 @@ def test_dragging_between_h0_and_a_project_on_next(page, live, conn):
 
 def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
     page.goto(live + "/waiting")
-    drag_to_panel(page, row(page, "quote from Bob").locator(".title"), '[data-project="2"]')
+    drag_to_panel(page, row(page, "quote from Bob"), '[data-project="2"]')
     page.wait_for_function("document.querySelector('li.task[data-id=\"4\"] .proj')?.textContent === 'Stalled'")
     assert (db.get_task(conn, 4)["project_id"], db.get_task(conn, 4)["step"]) == (2, "waiting")
 
 
 def test_waiting_lists_projects_then_tasks_and_drags_projects(page, live, conn):
-    """Waiting projects (dragged to reorder), then the waiting tasks, H0's first."""
+    """Waiting projects, then the waiting tasks; each list drags to reorder."""
     db.add_project(conn, "Visa", status="waiting")
     page.goto(live + "/waiting")
     assert page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts() == ["Visa", "Waiting proj"]
-    assert page.locator("main ul.tasks:not([data-reorder]) > li.task a.title").all_inner_texts() == ["parcel from Ann", "quote from Bob"]
+    assert page.locator("ul[data-reorder] > li.task > .name > a.title").all_inner_texts() == ["parcel from Ann", "quote from Bob"]
     with page.expect_response(lambda r: r.url.endswith("/order/waiting")) as saved:
         row(page, "Waiting proj").locator(".grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
     assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj", "Visa"]
     # An H0 waiting task dropped on a project stays waiting.
-    drag_to_panel(page, row(page, "parcel from Ann").locator(".title"), '[data-project="2"]')
+    drag_to_panel(page, row(page, "parcel from Ann"), '[data-project="2"]')
     page.wait_for_function("document.querySelector('li.task[data-id=\"14\"] .proj')?.textContent === 'Stalled'")
     t = db.get_task(conn, 14)
     assert (t["project_id"], t["step"], t["ground"]) == (2, "waiting", 0)
@@ -651,11 +669,11 @@ def test_waiting_lists_projects_then_tasks_and_drags_projects(page, live, conn):
 def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, live, conn):
     page.goto(live + "/projects/1")
     assert page.locator('.drop-panel [data-project="1"]').count() == 0  # not its own project
-    drag_to_panel(page, row(page, "lay tiles").locator(".grip"), '[data-project="2"]')
+    drag_to_panel(page, row(page, "lay tiles"), '[data-project="2"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"3\"]')")
     assert (db.get_task(conn, 3)["project_id"], db.get_task(conn, 3)["step"]) == (2, "later")
     # The next action can't be reordered, but it can go: the page redraws, the project now stalled.
-    drag_to_panel(page, row(page, "buy tiles").locator(".grip"), '[data-project="2"]')
+    drag_to_panel(page, row(page, "buy tiles"), '[data-project="2"]')
     page.locator(".title-line > .warn").wait_for()
     assert row(page, "buy tiles").count() == 0 and db.get_task(conn, 2)["project_id"] == 2
 
@@ -971,7 +989,7 @@ def test_dragging_an_inbox_row_onto_someday(page, live, conn):
         drag_to_panel(page, row(page, "inbox item"), '[data-project="someday"]')
     assert saved.value.status == 204
     page.wait_for_function("![...document.querySelectorAll('li.task a.title')].some(a => a.textContent === 'inbox item')")
-    t = next(t for t in db.someday_tasks(conn) if t["title"] == "inbox item")
+    t = db.someday_tasks(conn)[0]  # on top: the drag's way over the Inbox's rows didn't save an order
     assert (t["notes"], t["ground"], t["step"]) == ("from email", 1, "someday")
 
 
