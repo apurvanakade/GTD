@@ -453,8 +453,9 @@ def reference_delete(id):
 
 @app.route("/done")
 def done():
-    return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.projects(conn(), "done"),
-                           abandoned=db.done_tasks(conn(), state="abandoned"), dropped=db.abandoned_projects(conn()))
+    return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.closed_projects(conn(), "done"),
+                           abandoned=db.done_tasks(conn(), state="abandoned"),
+                           dropped=db.closed_projects(conn(), "abandoned"))
 
 
 # The weekly review's steps, in Allen's order (get clear, get current, get creative); review.html has one card per key.
@@ -618,15 +619,15 @@ def complete_then_project(id):
 
 @app.post("/tasks/<int:id>/delete")
 def delete(id):
-    """Abandons the task (it stays on Done, revivable); deleting an abandoned task deletes it for good."""
+    """Abandons the task (it stays on Done, revivable); deleting a done or abandoned task deletes it for good."""
     c = conn()
     t = db.get_task(c, id)
-    if t and t["state"] == "abandoned":
+    if t and t["state"] != "open":
         db.delete_task(c, id)
     elif t:
         db.abandon_task(c, id, now())
         return ("", 204) if fetched() else back()  # an abandoned task's page still shows it, with Revive
-    return redirect(url_for("done"))  # where abandoned tasks are listed; its own page is gone
+    return redirect(url_for("done"))  # where closed tasks are listed; its own page is gone
 
 
 @app.post("/tasks/<int:id>/revive")
@@ -660,7 +661,7 @@ def projects_view():
     show = request.args.get("done") == "1"
     return render_template("projects.html", projects=db.projects(conn()), steps=db.open_steps(conn()),
                            show_done=show, toggle_url=toggle_url(show),
-                           done_projects=db.projects(conn(), "done") if show else [])
+                           done_projects=[p for s in db.CLOSED for p in db.closed_projects(conn(), s)] if show else [])
 
 
 @app.post("/projects/order/<any(active, waiting, someday):status>")
@@ -683,7 +684,7 @@ def project_create():
     return back("projects_view")
 
 
-PROJECT_STATUSES = ("active", "waiting", "someday", "done")  # what the status select sets; "abandoned" abandons
+PROJECT_STATUSES = ("active", "waiting", "someday")  # what the status select sets; done or abandoned closes it
 
 
 @app.route("/projects/<int:id>", methods=["GET", "POST"])
@@ -693,16 +694,14 @@ def project_view(id):
     if request.method == "POST":
         fields = {}  # title and notes are autosave's, as on the task page
         status = request.form.get("status")
-        if status == "abandoned" and p["status"] != "abandoned":  # with its open steps; it's on Done, revivable
-            db.abandon_project(c, id, now())
-            flash(f"Abandoned “{p['title']}”: it's on Done.")
+        if status in db.CLOSED and p["status"] not in db.CLOSED:  # with its open steps; it's on Done, revivable
+            db.close_project(c, id, status, now=now())
+            flash(f"{'Done' if status == 'done' else 'Abandoned'}: “{p['title']}”. It's on Done.")
             return back()
         with db.transaction(c):
-            if p["status"] == "abandoned" and status in PROJECT_STATUSES:  # revived with its steps, then the status
+            if p["status"] in db.CLOSED and status in PROJECT_STATUSES:  # revived with its steps, then the status
                 db.revive_project(c, id)
-            if status == "done" and db.project_tasks(c, id):
-                flash("Finish, move or abandon its open steps first, or ✓ its outcome.")
-            elif status in PROJECT_STATUSES:
+            if status in PROJECT_STATUSES:
                 fields["status"] = status
             db.update_project(c, id, **fields)
             if "outcome" in request.form:
@@ -729,7 +728,7 @@ def project_reached(id):
     if steps not in ("done", "abandoned") or p["status"] not in ("active", "waiting"):
         abort(400)
     n = len(db.project_tasks(c, id))
-    db.reach_outcome(c, id, steps, now())
+    db.close_project(c, id, "done", steps, now())
     flash(f"Done: “{p['title']}”" + (f", {n} open step{'s' * (n > 1)} {'marked done' if steps == 'done' else 'abandoned'}." if n else "."))
     return back()
 

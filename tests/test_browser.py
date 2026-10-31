@@ -76,9 +76,13 @@ def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
     gone = row(page, "vacuum")
-    assert gone.locator("form").count() == 0 and gone.locator(".check").inner_text() == "✓"
+    assert gone.locator("form.done").count() == 0 and gone.locator(".check").inner_text() == "✓"
     gone.locator(".meta").click()
     assert task_overlay(page) == "vacuum"
+    page.keyboard.press("Escape")
+    gone.get_by_role("button", name="Revive").click()  # like any done row, it can be revived
+    page.wait_for_selector("li.task:has-text('vacuum') form.done")
+    assert page.url == live + "/horizons?level=ground"
 
 
 def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
@@ -613,7 +617,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     panel.wait_for(state="hidden")
     page.locator(".pin-panel").click()
     panel.wait_for(state="visible")
-    assert panel.locator("h3").all_text_contents() == ["Projects", "Done"]
+    assert panel.locator("h3").all_text_contents() == ["Projects"]
     drag_to_panel(page, row(page, "inbox item"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert panel.is_visible()  # still pinned after the drop

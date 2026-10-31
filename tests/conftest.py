@@ -53,7 +53,7 @@ def seed(c):
     db.add_task(c, "legacy orphan", step="next")
     finished = db.add_task(c, "old tiles", step="next", project_id=done)
     db.complete_task(c, finished, TODAY)
-    db.update_project(c, done, status="done")
+    db.close_project(c, done, "done")
     db.abandon_task(c, db.add_task(c, "dropped idea", step="later", project_id=active))
     db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
     db.add_reference(c, "Packing", notes="- [ ] passport\n- [x] charger")  # a checklist
@@ -68,7 +68,7 @@ def seed(c):
     db.toggle_review_step(c, "sweep")  # this week's review under way
     dropped = db.add_project(c, "Dropped proj", status="someday")
     db.add_task(c, "given-up step", step="next", project_id=dropped)
-    db.abandon_project(c, dropped)
+    db.close_project(c, dropped, "abandoned")
     db.add_task(c, "parcel from Ann", ground=1, step="waiting", due_date="2026-10-27")  # H0, waiting
     italian = db.add_task(c, "learn Italian", notes="evenings", ground=1, step="someday")  # H0, someday
     db.add_task(c, "sail", ground=1, step="someday", due_date=TODAY.isoformat())  # tickled: back in the Inbox

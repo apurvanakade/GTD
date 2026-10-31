@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import add_form, project_list with context %}
+{% from "_task.html" import add_form, project_list, closed_project with context %}
 {% block title %}Projects{% endblock %}
 {% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
@@ -9,8 +9,7 @@
 {% if show_done %}
 <h2>Completed</h2>
 <ul class="tasks">
-  {% for p in done_projects|sort(attribute='completed_at', reverse=True) %}
-  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at|local_date }}</span>{% endif %}</li>
+  {% for p in done_projects|sort(attribute='completed_at', reverse=True) %}{{ closed_project(p) }}
   {% else %}
   <li class="empty">No finished projects.</li>
   {% endfor %}

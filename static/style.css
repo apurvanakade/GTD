@@ -322,7 +322,8 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .review-list form { display: contents; }
 .review-list .date { color: var(--muted); font-size: var(--fs-s); }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
-.task.gone { opacity: .35; text-decoration: line-through; }
+.task.gone { text-decoration: line-through; }
+.task.gone > :not(.row-btn) { opacity: .35; }  /* Revive stays clear: it undoes the tick */
 .done button {
   width: 18px; height: 18px; padding: 0; border-radius: 50%;
   border: 1.5px solid var(--muted); background: transparent;

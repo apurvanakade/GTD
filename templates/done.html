@@ -1,11 +1,10 @@
 {% extends "base.html" %}
-{% from "_task.html" import row with context %}
+{% from "_task.html" import row, closed_project with context %}
 {% block title %}Done{% endblock %}
 {% block body %}
 <h2>Projects</h2>
 <ul class="tasks">
-  {% for p in projects %}
-  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a>{% if p.completed_at %}<span class="meta">{{ p.completed_at|local_date }}</span>{% endif %}</li>
+  {% for p in projects %}{{ closed_project(p) }}
   {% else %}
   <li class="empty">No finished projects.</li>
   {% endfor %}
@@ -19,10 +18,7 @@
 <h2>Abandoned</h2>
 {% if dropped %}
 <ul class="tasks">
-  {% for p in dropped %}
-  <li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta">{{ p.completed_at|local_date }}</span>
-    <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to someday / maybe, with its steps">Revive</button></form></li>
-  {% endfor %}
+  {% for p in dropped %}{{ closed_project(p) }}{% endfor %}
 </ul>
 {% endif %}
 {% if abandoned %}

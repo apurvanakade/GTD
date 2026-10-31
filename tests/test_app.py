@@ -143,16 +143,6 @@ def test_project_outcome(client, conn):
     assert db.get_project(conn, c)["status"] == "done"
 
 
-def test_project_cannot_complete_with_open_tasks(client, conn):
-    pid = db.add_project(conn, "P")
-    tid = db.add_task(conn, "t", step="next", project_id=pid)
-    client.post(f"/projects/{pid}", data={"title": "P", "notes": "", "status": "done"})
-    assert db.get_project(conn, pid)["status"] == "active"
-    db.complete_task(conn, tid, TODAY)
-    client.post(f"/projects/{pid}", data={"title": "P", "notes": "n", "status": "done"})
-    assert db.get_project(conn, pid)["status"] == "done"
-
-
 def test_projects_take_several_next_actions(client, conn):
     pid = db.add_project(conn, "P")
     a = db.add_task(conn, "a", step="next", project_id=pid)
@@ -862,6 +852,12 @@ def test_deleting_a_task_abandons_it_then_deletes_it_for_good(client, conn):
     assert db.timer_running(conn) is None and len(db.time_entries(conn)) == 1  # stopped, time kept
     client.post(f"/tasks/{t}/delete")  # deleting an abandoned task is a hard delete
     assert db.get_task(conn, t) is None and db.time_entries(conn) == []
+    d = db.add_task(conn, "y", step="next", ground=1)
+    client.post(f"/tasks/{d}/complete")
+    page = client.get(f"/tasks/{d}?embed=task").get_data(as_text=True)
+    assert f"/tasks/{d}/revive" in page and "Delete for good" in page  # a done task's page: ↺ and ✕, as abandoned
+    client.post(f"/tasks/{d}/delete")  # so is a done one's
+    assert db.get_task(conn, d) is None
 
 
 def test_abandoned_tasks_leave_every_list_and_show_on_done(client, conn):
@@ -880,19 +876,37 @@ def test_abandoned_tasks_leave_every_list_and_show_on_done(client, conn):
     assert db.get_task(conn, t)["state"] == "abandoned"
 
 
-def test_revive_brings_an_abandoned_task_back_where_it_was(client, conn):
+@pytest.mark.parametrize("close", ["delete", "complete"])
+def test_revive_brings_a_closed_task_back_where_it_was(client, conn, close):
+    """Done and abandoned are the same but for the name: either revives the same way."""
     pid = db.add_project(conn, "P")
     t = db.add_task(conn, "x", step="next", project_id=pid)
-    h0, loose = db.add_task(conn, "h", step="next", ground=1), db.add_task(conn, "loose")
+    h0, loose = db.add_task(conn, "h", step="waiting", ground=1), db.add_task(conn, "loose")
     for i in (t, h0, loose):
-        client.post(f"/tasks/{i}/delete")
+        client.post(f"/tasks/{i}/{close}")
     r = client.post(f"/tasks/{t}/revive")
     task = db.get_task(conn, t)
-    assert task["step"] == "later" and task["completed_at"] is None and task["project_id"] == pid
+    assert task["state"] == "open" and task["step"] == "later" and task["completed_at"] is None and task["project_id"] == pid
     assert r.headers["Location"] == "/next"  # no Referer: the default
     client.post(f"/tasks/{h0}/revive")
     client.post(f"/tasks/{loose}/revive")
-    assert db.get_task(conn, h0)["ground"] and db.get_task(conn, loose)["inbox"]
+    assert (db.get_task(conn, h0)["ground"], db.get_task(conn, h0)["step"]) == (1, "waiting")
+    assert db.get_task(conn, loose)["inbox"]  # an inbox item comes back to the inbox
+    page = client.get(f"/tasks/{t}?embed=task").get_data(as_text=True)
+    assert f"/tasks/{t}/complete" in page and f"/tasks/{t}/revive" not in page  # open again: ✓, no ↺
+
+
+def test_reviving_a_done_repeat_takes_back_its_next_instance(client, conn):
+    t = db.add_task(conn, "water plants", step="next", ground=1, recur="weekly", due_date="2026-10-22")
+    client.post(f"/tasks/{t}/complete")
+    client.post(f"/tasks/{t}/revive")
+    assert [r["title"] for r in db.open_tasks(conn)] == ["water plants"] and db.get_task(conn, t)["state"] == "open"
+    client.post(f"/tasks/{t}/complete")
+    timed = db.open_tasks(conn)[0]["id"]
+    db.timer_start(conn, timed, NOW - timedelta(minutes=5))
+    db.timer_stop(conn, NOW)
+    client.post(f"/tasks/{t}/revive")  # an instance with time on it is kept
+    assert sorted(r["id"] for r in db.open_tasks(conn)) == [t, timed]
 
 
 def test_edit_and_delete_time_entries(client, conn):
@@ -1472,16 +1486,6 @@ def test_reference_page_shows_a_url_once(client, conn):
 
 # --- review fixes (2026-10-24) ----------------------------------------------
 
-def test_reviving_a_step_reopens_its_done_project(client, conn):
-    pid = db.add_project(conn, "Q")
-    t = db.add_task(conn, "q1", project_id=pid, step="next")
-    client.post(f"/tasks/{t}/delete")
-    client.post(f"/projects/{pid}", data={"status": "done"})
-    assert db.get_project(conn, pid)["completed_at"]
-    client.post(f"/tasks/{t}/revive")
-    p = db.get_project(conn, pid)
-    assert (p["status"], p["completed_at"]) == ("active", None)
-
 
 def test_reactivating_a_project_clears_its_completion(client, conn):
     pid = db.add_project(conn, "P")
@@ -1782,7 +1786,7 @@ def test_review_count_is_not_a_big_title(client, conn):
 def test_revive_and_activate_buttons_are_not_make_next(client, conn):
     seed(conn)
     done = client.get("/done").get_data(as_text=True)
-    assert re.search(r'class="row-btn"><button[^>]*>Revive', done)
+    assert re.search(r'class="row-btn"><button[^>]*>Revive', done.split("<h2>Abandoned")[0])  # done rows too
     assert 'class="row-btn"' in client.get("/someday?tickled=1").get_data(as_text=True)
 
 
@@ -1799,9 +1803,9 @@ def test_project_pickers_are_one_list(client, conn):
     ids = seed(conn)
     pid = db.add_project(conn, "Another active")
     db.reorder_projects(conn, "active", [pid, ids["active"], ids["stalled"]])  # dragged first on Projects, so first here too
-    # Active then waiting then someday; then done. No abandoned one.
+    # Active then waiting then someday. No done or abandoned one.
     assert [(label, [p["title"] for p in ps]) for label, ps, _ in db.project_groups(conn)] == [
-        ("Projects", ["Another active", "Kitchen", "Stalled", "Waiting proj", "Someday proj"]), ("Done", ["Done proj"])]
+        ("Projects", ["Another active", "Kitchen", "Stalled", "Waiting proj", "Someday proj"])]
     expected = [(label, [str(p["id"]) for p in ps]) for label, ps, _ in db.project_groups(conn)]
 
     def groups(html, group, item):
@@ -1812,25 +1816,11 @@ def test_project_pickers_are_one_list(client, conn):
     assert groups(task, r'<optgroup label="([\w ]+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
     inbox = client.get("/inbox").data.decode()
     assert groups(inbox, r'<section class="group"><h3>([\w ]+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
-    assert "Someday proj · someday" in task and "Dropped proj" not in task + inbox
+    assert "Someday proj · someday" in task and "Dropped proj" not in task + inbox and "Done proj" not in task + inbox
     # "＋ New project…" once, in both.
     assert task.count('value="__new__"') == 1 and inbox.count('data-project="__new__"') == 1
 
 
-def test_filing_into_a_done_project_reopens_it(client, conn):
-    pid = db.add_project(conn, "Old", status="done")
-    a = db.add_task(conn, "a")
-    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
-    assert (db.get_project(conn, pid)["status"], db.get_project(conn, pid)["completed_at"]) == ("active", None)
-    done = db.add_project(conn, "Finished", status="done")
-    db.add_task(conn, "b", project_id=done, step="next")
-    assert db.get_project(conn, done)["status"] == "active"
-    # A done task joining it doesn't.
-    gone = db.add_project(conn, "Gone", status="done")
-    t = db.add_task(conn, "c")
-    db.complete_task(conn, t, TODAY)
-    db.update_task(conn, t, project_id=gone)
-    assert db.get_project(conn, gone)["status"] == "done"
 
 
 # --- reminders ---------------------------------------------------------------
@@ -2164,31 +2154,35 @@ def test_new_items_go_to_the_top(client, conn):
 
 # --- abandoned projects, inbox → reference -----------------------------------
 
-def test_abandoning_a_project_abandons_its_open_steps_and_lists_it_on_done(client, conn):
+@pytest.mark.parametrize("close", ["abandoned", "done"])
+def test_closing_a_project_closes_its_open_steps_and_lists_it_on_done(client, conn, close):
+    """Done and abandoned are the same but for the name: picking either closes the project with its open steps."""
     pid = db.add_project(conn, "Boat", status="someday")
-    a = db.add_task(conn, "a", step="next", project_id=pid)
+    a = db.add_task(conn, "a", step="next", project_id=pid, recur="weekly", due_date="2026-10-22")
     b = db.add_task(conn, "b", step="later", project_id=pid)
     done = db.add_task(conn, "finished", step="later", project_id=pid)
     db.complete_task(conn, done, TODAY)
     earlier = db.add_task(conn, "dropped before", step="later", project_id=pid)
     db.abandon_task(conn, earlier)
     client.post(f"/tasks/{a}/start")
-    r = client.post(f"/projects/{pid}", data={"status": "abandoned"}, headers={"Referer": f"/projects/{pid}"})
+    r = client.post(f"/projects/{pid}", data={"status": close}, headers={"Referer": f"/projects/{pid}"})
     assert r.headers["Location"] == f"/projects/{pid}"  # no jump
     p = db.get_project(conn, pid)
-    assert p["status"] == "abandoned" and p["completed_at"] and p["position"] is None
-    assert [db.get_task(conn, i)["state"] for i in (a, b, done)] == ["abandoned", "abandoned", "done"]
+    assert p["status"] == close and p["completed_at"] and p["position"] is None
+    assert [db.get_task(conn, i)["state"] for i in (a, b, done)] == [close, close, "done"]
+    assert not db.project_tasks(conn, pid)  # a repeating step spawns no next instance
     assert db.timer_running(conn) is None and len(db.time_entries(conn)) == 1  # stopped, time kept
-    # It leaves every list and picker, and Done lists it (not its steps one by one), revivable.
+    # It leaves every list and picker, and Done lists it (not the steps it took down), revivable.
     assert ">Boat<" not in client.get("/someday").get_data(as_text=True)
     assert not [p for _, ps, _ in db.project_groups(conn) for p in ps if p["id"] == pid]
-    page = client.get("/done").get_data(as_text=True).split("<h2>Abandoned")[1]
+    page = client.get("/done").get_data(as_text=True).split("<h2>Abandoned")[close == "abandoned"]
     assert "Boat" in page and f"/projects/{pid}/revive" in page and ">a<" not in page
+    assert "Boat" in client.get("/projects?done=1").get_data(as_text=True)
     project_page = client.get(f"/projects/{pid}?done=1").get_data(as_text=True)
-    assert "<option selected>abandoned</option>" in project_page
+    assert f"<option selected>{close}</option>" in project_page
     assert f'href="/tasks/{a}"' in project_page and f"/tasks/{a}/revive" in project_page  # its steps, each revivable
-    # Revive (Done's button, or picking someday): back as someday with the steps it took down; one abandoned before
-    # stays abandoned.
+    # Revive (Done's button, or picking someday): back as someday with the steps it took down; one closed before
+    # stays closed.
     client.post(f"/projects/{pid}", data={"status": "someday"})
     p = db.get_project(conn, pid)
     assert p["status"] == "someday" and p["completed_at"] is None
@@ -2196,37 +2190,59 @@ def test_abandoning_a_project_abandons_its_open_steps_and_lists_it_on_done(clien
         ("open", "later"), ("open", "later"), ("done", "later"), ("abandoned", "later")]
 
 
-def test_abandon_and_revive_by_status(client, conn):
+@pytest.mark.parametrize("close", ["abandoned", "done"])
+def test_close_and_revive_by_status(client, conn, close):
     pid = db.add_project(conn, "P")
-    client.post(f"/projects/{pid}/revive")  # not abandoned: nothing happens
+    client.post(f"/projects/{pid}/revive")  # not closed: nothing happens
     assert db.get_project(conn, pid)["status"] == "active"
-    client.post(f"/projects/{pid}", data={"status": "abandoned"})
-    client.post(f"/projects/{pid}", data={"status": "abandoned"})  # twice: still the first time
+    client.post(f"/projects/{pid}", data={"status": close})
+    client.post(f"/projects/{pid}", data={"status": close})  # twice: still the first time
     first = db.get_project(conn, pid)["completed_at"]
-    assert db.get_project(conn, pid)["status"] == "abandoned" and first
-    # An untouched save (no status) leaves it abandoned; picking another status revives it into that one.
+    assert db.get_project(conn, pid)["status"] == close and first
+    # An untouched save (no status) leaves it closed; picking another status revives it into that one.
     client.post(f"/projects/{pid}", data={"title": "P"})
-    assert db.get_project(conn, pid)["status"] == "abandoned"
+    assert db.get_project(conn, pid)["status"] == close
     t = db.add_task(conn, "t", step="later", project_id=db.add_project(conn, "Q"))
     q = db.get_task(conn, t)["project_id"]
     db.add_task(conn, "u", step="next", project_id=q)
-    client.post(f"/projects/{q}", data={"status": "abandoned"})
+    client.post(f"/projects/{q}", data={"status": close})
     client.post(f"/projects/{q}", data={"status": "active"})
     assert db.get_project(conn, q)["status"] == "active" and db.get_task(conn, t)["state"] == "open"
+    assert db.get_project(conn, q)["completed_at"] is None
+    # One closed by ✓ (its outcome reached) revives the same way, with its steps.
+    r = db.add_project(conn, "R")
+    v = db.add_task(conn, "v", step="next", project_id=r)
+    client.post(f"/projects/{r}/reached", data={"steps": close})
+    client.post(f"/projects/{r}/revive")
+    assert db.get_project(conn, r)["status"] == "someday" and db.get_task(conn, v)["state"] == "open"
     assert client.post("/projects/999/revive").status_code == 404
 
-def test_reviving_one_step_of_an_abandoned_project_brings_the_project_back(client, conn):
+@pytest.mark.parametrize("close", ["abandoned", "done"])
+def test_reviving_one_step_of_a_closed_project_brings_the_project_back(client, conn, close):
     pid = db.add_project(conn, "P")
     t = db.add_task(conn, "t", step="next", project_id=pid)
-    db.abandon_project(conn, pid)
+    client.post(f"/projects/{pid}", data={"status": close})
     client.post(f"/tasks/{t}/revive")
-    assert db.get_project(conn, pid)["status"] == "someday" and db.get_task(conn, t)["state"] == "open"
+    p = db.get_project(conn, pid)
+    assert (p["status"], p["completed_at"]) == ("someday", None) and db.get_task(conn, t)["state"] == "open"
+    # So does an open task joining it.
+    client.post(f"/projects/{pid}", data={"status": close})
+    a = db.add_task(conn, "a")
+    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert db.get_project(conn, pid)["status"] == "someday"
+    # A closed task joining it doesn't.
+    client.post(f"/projects/{pid}", data={"status": close})
+    c = db.add_task(conn, "c")
+    db.complete_task(conn, c, TODAY)
+    db.update_task(conn, c, project_id=pid)
+    assert db.get_project(conn, pid)["status"] == close
 
 
-def test_task_page_of_an_abandoned_project_keeps_its_project(client, conn):
+@pytest.mark.parametrize("close", ["abandoned", "done"])
+def test_task_page_of_a_closed_project_keeps_its_project(client, conn, close):
     pid = db.add_project(conn, "Gone")
     t = db.add_task(conn, "t", step="next", project_id=pid)
-    db.abandon_project(conn, pid)
+    client.post(f"/projects/{pid}", data={"status": close})
     html = client.get(f"/tasks/{t}?embed=task").get_data(as_text=True)
     assert f'<option value="{pid}" selected>Gone</option>' in html
     client.post(f"/tasks/{t}", data={"title": "t", "project_id": str(pid)})
@@ -2253,22 +2269,14 @@ def test_inbox_item_dropped_on_reference_becomes_one(client, conn):
     assert len(db.references(conn)) == 2
 
 
-def test_done_inbox_item_becomes_h0(conn):
-    """A finished task without a project is filed under H0, so the timer has no '(no project)' row."""
+def test_done_inbox_item_stays_out_of_h0(conn):
+    """Done is abandoned by another name: a finished inbox item isn't filed anywhere, so it revives into the inbox."""
     t = db.add_task(conn, "loose end")
     new = db.add_task(conn, "loose repeat", recur="weekly")
     db.complete_task(conn, t, date(2026, 10, 22))
     instance = db.complete_task(conn, new, date(2026, 10, 22))
-    assert db.get_task(conn, t)["ground"] == 1
-    assert db.get_task(conn, new)["ground"] == 1
+    assert (db.get_task(conn, t)["ground"], db.get_task(conn, t)["step"]) == (0, None)
     assert db.get_task(conn, instance)["inbox"]  # the next instance still waits in the inbox
-    p = db.add_project(conn, "Kitchen")
-    s = db.add_task(conn, "step", project_id=p)
-    db.complete_task(conn, s, date(2026, 10, 22))
-    assert db.get_task(conn, s)["ground"] == 0
-
-
-# --- areas (H2): notes on Horizons, apart from projects --------------------
 
 def test_projects_have_no_area(client, conn):
     with pytest.raises(ValueError):
@@ -2401,10 +2409,10 @@ def test_nav_partial_has_the_counts(client, conn):
 
 
 def test_every_project_step_and_listed_project_has_a_position(client, conn):
-    """Lists sort by position alone, so nothing may leave one without (abandoned projects aren't listed)."""
+    """Lists sort by position alone, so nothing may leave one without (done and abandoned projects aren't listed)."""
     seed(conn)
     assert not conn.execute("SELECT 1 FROM tasks WHERE project_id IS NOT NULL AND position IS NULL").fetchone()
-    assert not conn.execute("SELECT 1 FROM projects WHERE status != 'abandoned' AND position IS NULL").fetchone()
+    assert not conn.execute("SELECT 1 FROM projects WHERE status NOT IN ('done', 'abandoned') AND position IS NULL").fetchone()
 
 
 def test_the_task_pages_project_link_stands_out(client, conn):
@@ -2689,7 +2697,6 @@ def test_someday_tasks_are_searchable(client, conn):
     html = client.get("/search?q=grammar").get_data(as_text=True)
     assert "<h2>Someday / maybe</h2>" in html and f"/tasks/{t}" in html
     assert any(s["url"] == f"/tasks/{t}" and s["kind"] == "someday" for s in client.get("/search/suggest?q=italian").json)
-
 
 
 def test_suggest_and_search_list_a_repeat_once(client, conn):

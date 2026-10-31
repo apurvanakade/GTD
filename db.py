@@ -255,14 +255,13 @@ def reorder_tasks(c, ids):
 
 
 def _reopen_project(c, id):
-    """A done project with an open task isn't done any more: filing into one (pickers list done projects) reopens it.
-    An abandoned one (a step revived) comes back as someday, like a revived project."""
-    p = c.execute("""SELECT id, status FROM projects WHERE status IN ('done', 'abandoned')
+    """A done or abandoned project with an open task (a step revived) isn't closed any more: it comes back as
+    someday, like a revived project."""
+    p = c.execute("""SELECT id FROM projects WHERE status IN ('done', 'abandoned')
         AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,)).fetchone()
     if p:
-        status = "active" if p["status"] == "done" else "someday"
-        c.execute("UPDATE projects SET status = ?, completed_at = NULL, position = ? WHERE id = ?",
-                  (status, _top(c, "projects", "status = ?", status), p["id"]))
+        c.execute("UPDATE projects SET status = 'someday', completed_at = NULL, position = ? WHERE id = ?",
+                  (_top(c, "projects", "status = ?", "someday"), p["id"]))
 
 
 def _fit_step(fields, current=None, today=None):
@@ -331,10 +330,19 @@ def abandon_task(c, id, now=None):
 
 @atomic
 def revive_task(c, id):
-    """An abandoned task comes back where it was: a later step of its project, an H0 task (next, waiting or someday,
-    as it was), or an inbox item. A done project it belongs to is reopened, since it has an open task again."""
+    """A done or abandoned task (the same but for the name) comes back where it was: a later step of its project, an
+    H0 task (next, waiting or someday, as it was), or an inbox item. A done project it belongs to is reopened, since it
+    has an open task again. A done repeat takes back the next instance its completion made, unless that has time on it."""
+    t = get_task(c, id)
+    if t is None or t["state"] == "open":
+        return
+    if t["state"] == "done" and t["recur"]:
+        c.execute("""DELETE FROM tasks WHERE id = (SELECT n.id FROM tasks n WHERE n.state = 'open' AND n.id > ?
+            AND n.title = ? AND n.recur = ? AND n.project_id IS ? AND n.created_at >= ?
+            AND NOT EXISTS (SELECT 1 FROM time_entries e WHERE e.task_id = n.id) ORDER BY n.id LIMIT 1)""",
+                  (id, t["title"], t["recur"], t["project_id"], t["completed_at"]))
     c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN step ELSE 'later' END,
-        completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
+        completed_at = NULL WHERE id = ?""", (id,))
     _arrive(c, id, None)
     _reopen_project(c, id)
 
@@ -343,15 +351,14 @@ def revive_task(c, id):
 def complete_task(c, id, today, now=None):
     """Mark done (stopping its timer); a recurring task spawns its next instance. Returns the new task id or None.
     A next step's instance comes back as a later step: picking the next action stays a conscious decision.
-    A finished inbox item is filed under H0, so done work (and its time) always has a home."""
+    Like abandoning, it leaves the task where it was (an inbox item stays one), so revive_task() undoes it."""
     t = get_task(c, id)
     if t is None or t["state"] != "open":
         return None
     running = timer_running(c)
     if running and running["task_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
-    if not c.execute("""UPDATE tasks SET state = 'done', completed_at = datetime('now'), ground = ground OR project_id IS NULL,
-            step = CASE WHEN project_id IS NULL THEN coalesce(step, 'next') ELSE step END
+    if not c.execute("""UPDATE tasks SET state = 'done', completed_at = datetime('now')
             WHERE id = ? AND state = 'open'""", (id,)).rowcount:
         return None  # finished meanwhile (a second tap, the phone's Done button): one next instance only
     new_id = None
@@ -534,39 +541,44 @@ def delete_project(c, id):
     return True
 
 
+CLOSED = ("done", "abandoned")  # the same but for the name: either closes a project with its open steps
+
+
 @atomic
-def abandon_project(c, id, now=None):
-    """Give up on a project: it and its open steps are abandoned together (one shared completed_at, to the
-    millisecond so no step abandoned on its own matches, tells revive which steps it took down), its timer is
-    stopped and its time kept. It leaves every list for Done."""
+def close_project(c, id, status, steps=None, now=None):
+    """Close a project, done or abandoned: it and its open steps (marked `steps`, else as the project) close together
+    (one shared completed_at, to the millisecond so no step closed on its own matches, tells revive which steps it
+    took down), its timer is stopped and its time kept. Directly, not through complete_task(): a repeat spawns no
+    next one. It leaves every list and picker for Done."""
     p = get_project(c, id)
-    if not p or p["status"] == "abandoned":
+    if not p or p["status"] in CLOSED:
         return
     running = timer_running(c)
     if running and running["project_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
     stamp = c.execute("SELECT strftime('%Y-%m-%d %H:%M:%f', 'now')").fetchone()[0]
-    c.execute("UPDATE tasks SET state = 'abandoned', completed_at = ? WHERE project_id = ? AND state = 'open'", (stamp, id))
-    c.execute("""UPDATE projects SET status = 'abandoned', completed_at = ?, position = NULL WHERE id = ?""", (stamp, id))
+    c.execute("UPDATE tasks SET state = ?, completed_at = ? WHERE project_id = ? AND state = 'open'",
+              (steps or status, stamp, id))
+    c.execute("UPDATE projects SET status = ?, completed_at = ?, position = NULL WHERE id = ?", (status, stamp, id))
     set_project_tickle(c, id, None)
 
 
 @atomic
 def revive_project(c, id):
-    """An abandoned project comes back as someday, with the steps abandoned along with it as later steps."""
+    """A done or abandoned project comes back as someday, with the steps closed along with it as later steps."""
     p = get_project(c, id)
-    if not p or p["status"] != "abandoned":
+    if not p or p["status"] not in CLOSED:
         return
     c.execute("""UPDATE tasks SET state = 'open', step = 'later', completed_at = NULL
-        WHERE project_id = ? AND state = 'abandoned' AND completed_at = ?""", (id, p["completed_at"]))
+        WHERE project_id = ? AND state IN ('done', 'abandoned') AND completed_at = ?""", (id, p["completed_at"]))
     c.execute("""UPDATE projects SET status = 'someday', completed_at = NULL, position = ?
         WHERE id = ?""", (_top(c, "projects", "status = ?", "someday"), id))
 
 
-def abandoned_projects(c, limit=100):
-    """Abandoned projects, newest first."""
-    return c.execute("SELECT * FROM projects WHERE status = 'abandoned' ORDER BY completed_at DESC, id DESC LIMIT ?",
-                     (limit,)).fetchall()
+def closed_projects(c, status, limit=100):
+    """Done (or abandoned) projects, newest first."""
+    return c.execute("SELECT * FROM projects WHERE status = ? ORDER BY completed_at DESC, id DESC LIMIT ?",
+                     (status, limit)).fetchall()
 
 
 REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at,
@@ -645,18 +657,6 @@ def set_project_outcome(c, id, outcome):
 
 
 @atomic
-def reach_outcome(c, id, steps, now=None):
-    """A project's outcome is reached: it's done, and its open steps are marked `steps` (done or abandoned) with it,
-    one shared completed_at, its timer stopped. Directly, not through complete_task(): a repeat spawns no next one."""
-    running = timer_running(c)
-    if running and running["project_id"] == id:
-        timer_stop(c, now or datetime.now(timezone.utc))
-    c.execute("UPDATE tasks SET state = ?, completed_at = datetime('now') WHERE project_id = ? AND state = 'open'",
-              (steps, id))
-    update_project(c, id, status="done")
-
-
-@atomic
 def reorder_projects(c, status, ids):
     """Number the projects with this status in the given order; other projects' ids are ignored."""
     c.executemany("UPDATE projects SET position = ? WHERE id = ? AND status = ?",
@@ -675,13 +675,15 @@ def open_steps(c, status="active"):
 def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=None):
     """Finished (or, with state="abandoned", abandoned) tasks, newest first; optionally only one project's,
     or only H0 (ground=1) / non-H0 (ground=0), or only those finished since a UTC datetime('now') stamp. Without a
-    project, an abandoned project's steps are left out: Done lists the project instead."""
+    project, the steps a closed project took down with it are left out (Done lists the project instead), but not
+    from the look back: done work is done work."""
     where, args = "t.state = ?", [state]
     if since:
         where += " AND t.completed_at >= ?"
         args.append(since)
     if project_id is None:
-        where += " AND coalesce(p.status, '') != 'abandoned'"
+        if not since:
+            where += " AND NOT (coalesce(p.status IN ('done', 'abandoned'), 0) AND t.completed_at = p.completed_at)"
     else:
         where += " AND t.project_id = ?"
         args.append(project_id)
@@ -703,15 +705,13 @@ def done_since(c, since):
 
 
 def project_groups(c):
-    """Every project, for pickers (the task dropdown, Inbox's drop panel): [(label, projects, offers "＋ New…")]:
-    the open ones (active, then waiting, then someday, each in its list's own order; even with none, a new project
-    can start there), then done ones if any."""
-    rows = c.execute("""SELECT * FROM projects WHERE status != 'abandoned'
+    """Every open project, for pickers (the task dropdown, Inbox's drop panel): [(label, projects, offers "＋ New…")]:
+    active, then waiting, then someday, each in its list's own order; even with none, a new project can start there.
+    Done and abandoned ones are closed: revive one to file into it."""
+    rows = c.execute("""SELECT * FROM projects WHERE status NOT IN ('done', 'abandoned')
         ORDER BY position, id""").fetchall()
     rank = {"active": 0, "waiting": 1, "someday": 2}
-    live = sorted((p for p in rows if p["status"] in rank), key=lambda p: rank[p["status"]])  # stable: keeps the drag order
-    done = [p for p in rows if p["status"] == "done"]
-    return [("Projects", live, True)] + [("Done", done, False)] * bool(done)
+    return [("Projects", sorted(rows, key=lambda p: rank[p["status"]]), True)]  # stable: keeps the drag order
 
 
 def stalled_projects(c):

@@ -18,12 +18,12 @@
       {% if running %}<span class="clock" data-seconds="{{ seconds|int }}">{{ seconds|hms }}</span>
       {% elif seconds %}<span class="clock">{{ seconds|hm }}</span>{% endif %}
     </span>{% endif %}
-    {% if t.state == 'abandoned' %}
+    {% if t.state != 'open' %}{# done or abandoned: the same but for the name #}
     <button formaction="{{ url_for('revive', id=t.id) }}" class="icon" title="Bring it back" aria-label="Revive">↺</button>
     <button formaction="{{ url_for('delete', id=t.id) }}" formtarget="_top" class="icon danger" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this task for good?')">✕</button>
     {% else %}
-    {% if t.state == 'open' %}<button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Done" aria-label="Done">✓</button>
-    {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" formtarget="_top" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}{% endif %}
+    <button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Done" aria-label="Done">✓</button>
+    {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" formtarget="_top" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}
     <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
     {% endif %}
   </div>
@@ -31,7 +31,7 @@
   <p class="autosave hint" aria-live="polite"></p>
   <div class="fields">
     <label>Project
-      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
+      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status in ('done', 'abandoned')) }}
       {%- if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
     </label>
     {# An inbox item, waiting to be filed, has no step; an H0 task is next, waiting or someday, a project's next,

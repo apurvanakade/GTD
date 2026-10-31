@@ -26,10 +26,16 @@
   </span>
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
-  {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}
+  {% if closed %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}
   {% if set_step and not closed %}{% set to = 'later' if t.step == 'next' else 'next' %}
   <form method="post" action="{{ url_for('make_' ~ to, id=t.id) }}" class="set-step"><button>Make {{ to }}</button></form>{% endif %}
 </li>
+{% endmacro %}
+
+{# A done or abandoned project's row (Done, Projects' completed): its date and Revive, the same for either. #}
+{% macro closed_project(p) %}
+<li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>
+  <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to someday / maybe, with its steps">Revive</button></form></li>
 {% endmacro %}
 
 {# A task list (Inbox, Waiting, Someday), dragged by ⠿ to reorder (/tasks/order) or onto the drop panel. #}
@@ -77,10 +83,10 @@
 <label class="tickler" title="Tickler: out of sight until this date, then back in the Inbox">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
 {% endmacro %}
 
-{# The one project list (db.project_groups(): the open projects, then Done), as the task dropdown here
-   and as Inbox's drop panel in project_targets(). The open ones start with "＋ New project…" (value __new__),
+{# The one project list (db.project_groups(): the open projects), as the task dropdown here
+   and as Inbox's drop panel in project_targets(). It starts with "＋ New project…" (value __new__),
    which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
-   task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
+   task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
 {% macro project_select(selected=none, h0=True, keep=none, targets=False) %}
 {#- targets: the drop panel's whole list (Process's "file to…"): H0's someday / maybe and Reference too. #}
 <select name="project_id" aria-label="{{ 'File to' if targets else 'Project' }}"{% if targets %} class="quick" title="File it now (f)"{% endif %}>
