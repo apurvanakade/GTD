@@ -659,7 +659,7 @@ def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
 
 def test_waiting_lists_projects_then_tasks_and_drags_projects(page, live, conn):
     """Waiting projects, then the waiting tasks; each list drags to reorder."""
-    db.add_project(conn, "Visa", status="waiting")
+    db.set_project_outcome(conn, db.add_project(conn, "Visa", status="waiting"), "visa issued")
     page.goto(live + "/waiting")
     assert page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts() == ["Visa", "Waiting proj"]
     assert page.locator("ul[data-reorder] > li.task > .name > a.title").all_inner_texts() == ["parcel from Ann", "quote from Bob"]

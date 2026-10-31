@@ -432,7 +432,7 @@ def counts(c, today):
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'") + one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
-        "flagged": one(f"SELECT count(*) FROM ({PROJECT_SELECT} WHERE p.status = 'active') WHERE warning IS NOT NULL"),
+        "flagged": one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL"),
     }
 
 
@@ -573,14 +573,14 @@ REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = 
   (SELECT k.tickle_on FROM project_tickles k WHERE k.project_id = p.id) AS tickle_on"""
 
 
-# A project with its last review, tickler date and desired outcome; `stalled` (active with no next action); and
-# `warning`, why an active project shows ⚠ (no next action, no desired outcome, or both), else NULL.
+# A project with its last review, tickler date and desired outcome; `stalled` (active with no next action); `vague`
+# (active or waiting, i.e. committed, with no desired outcome); and `warning`, why it shows ⚠ (either or both), else NULL.
 PROJECT_SELECT = f"""SELECT *, CASE WHEN stalled AND vague THEN 'No next action, no desired outcome'
     WHEN stalled THEN 'No next action' WHEN vague THEN 'No desired outcome' END AS warning
   FROM (SELECT p.*, {REVIEWED}, o.outcome,
     (p.status = 'active' AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.project_id = p.id AND n.state = 'open'
       AND n.step = 'next')) AS stalled,
-    (p.status = 'active' AND o.outcome IS NULL) AS vague
+    (p.status IN ('active', 'waiting') AND o.outcome IS NULL) AS vague
   FROM projects p LEFT JOIN project_outcomes o ON o.project_id = p.id) p"""
 
 

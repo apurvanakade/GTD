@@ -37,6 +37,7 @@ def seed(c):
     active = db.add_project(c, "Kitchen", notes="tiles\nand grout")
     stalled = db.add_project(c, "Stalled")
     waiting = db.add_project(c, "Waiting proj", status="waiting")
+    db.set_project_outcome(c, waiting, "permit granted")
     someday = db.add_project(c, "Someday proj", status="someday")
     done = db.add_project(c, "Done proj")  # marked done once its step is
     db.add_task(c, "inbox item", notes="from email")

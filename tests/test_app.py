@@ -105,6 +105,11 @@ def test_project_outcome(client, conn):
     assert "grades submitted" in client.get("/review?step=projects").get_data(as_text=True)
     client.post(f"/projects/{pid}", data={"outcome": ""})  # cleared: vague again
     assert flag() == "No desired outcome"
+    db.update_project(conn, pid, status="waiting")  # still committed: still ⚠
+    assert flag() == "No desired outcome" and db.counts(conn, TODAY)["flagged"] == 1
+    db.update_project(conn, pid, status="someday")  # not committed: no outcome needed
+    assert flag() is None and db.counts(conn, TODAY)["flagged"] == 0
+    db.update_project(conn, pid, status="active")
     db.set_project_outcome(conn, pid, "grades submitted")
     conn.commit()
 
@@ -2516,7 +2521,7 @@ def test_review_projects_step(client, conn):
     fresh = db.add_project(conn, "fresh")
     db.set_project_outcome(conn, fresh, "fresh start")
     db.add_task(conn, "call", step="next", project_id=fresh)
-    db.add_project(conn, "parked", status="waiting")
+    db.set_project_outcome(conn, db.add_project(conn, "parked", status="waiting"), "reply in")
     c = card(client.get("/review?step=projects").get_data(as_text=True), "projects")
     assert re.findall(r'href="/projects/\d+"[^>]*>(?:⚠ )?([^<]*)</a>', c) == ["vague", "stuck", "fresh", "parked", "seen"]
     assert '"No next action">⚠ stuck' in c and '"No desired outcome">⚠ vague' in c
