@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, someday_row with context %}
+{% from "_task.html" import row with context %}
 {% block title %}Search{% endblock %}
 {% block heading %}<h1>Search{% if q %} <small>“{{ q }}”</small>{% endif %}</h1>{% endblock %}
 {% block body %}
@@ -23,7 +23,7 @@
 <h2>H0</h2>
 <ul class="tasks">{% for t in h0 %}{{ row(t) }}{% endfor %}</ul>
 {% endif %}
-{% for step, label in [('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later')] %}
+{% for step, label in [('next', 'Next'), ('waiting', 'Waiting'), ('later', 'Later'), ('someday', 'Someday / maybe')] %}
 {% set tasks = r.tasks|selectattr('step', 'equalto', step)|rejectattr('id', 'in', h0|map(attribute='id')|list)|list %}
 {% if tasks %}
 <h2>{{ label }}</h2>
@@ -46,15 +46,11 @@
   {% endfor %}
 </ul>
 {% endif %}
-{% if r.someday %}
-<h2>Someday / maybe</h2>
-<ul class="tasks">{% for s in r.someday %}{{ someday_row(s, slots=False) }}{% endfor %}</ul>
-{% endif %}
 {% if r.done %}
 <h2>Done</h2>
 <ul class="tasks">{% for t in r.done %}{{ row(t) }}{% endfor %}</ul>
 {% endif %}
-{% if not (r.projects or r.tasks or r.horizons or r.references or r.someday or r.done) %}<p class="empty">Nothing matches.</p>{% endif %}
+{% if not (r.projects or r.tasks or r.horizons or r.references or r.done) %}<p class="empty">Nothing matches.</p>{% endif %}
 {% else %}
 <p class="empty">Type in the search box above.</p>
 {% endif %}

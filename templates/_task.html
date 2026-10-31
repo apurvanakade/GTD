@@ -12,7 +12,7 @@
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
-    {% if not project and t.project_id and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' and not closed %}<span>later</span>{% endif %}
+    {% if not project and t.project_id and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step in ('later', 'someday') and not closed %}<span>{{ t.step }}</span>{% endif %}
     {# The date and repeat slots are always there, empty when unused, so the columns line up down the list. #}
     {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>
     {% else %}<span class="date">{{ t.due_date if t.due_date and not closed }}</span>{% endif %}
@@ -73,15 +73,13 @@
 {# The one project list (db.project_groups(): each open area, then Done), as the task dropdown here
    and as Inbox's drop panel in project_targets(). Each area starts with its own "＋ New project…" (value
    __new__:<area id>), which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
-   task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there.
-   someday=True (the task page): each area also offers "Someday / maybe" (__someday__:<area id>), as the drop panel does. #}
-{% macro project_select(selected=none, h0=True, keep=none, someday=False) %}
+   task of an abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
+{% macro project_select(selected=none, h0=True, keep=none) %}
 <select name="project_id" aria-label="Project">
   <option value="">project…</option>
   {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
   {% for label, ps, area in project_groups %}<optgroup label="{{ label }}">
     {% if area %}<option value="__new__:{{ area }}">＋ New project…</option>{% endif %}
-    {% if area and someday %}<option value="__someday__:{{ area }}">Someday / maybe</option>{% endif %}
     {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{{ ' · ' ~ p.status if p.status in ('waiting', 'someday') }}</option>{% endfor %}
   </optgroup>{% endfor %}
   {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
@@ -89,14 +87,14 @@
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">
 {% endmacro %}
 
-{# The drop panel's targets: H0, Reference, then the one project list, each area with its own someday / maybe;
-   `current` (a project id, or 'h0') is where the page's tasks already are, so it isn't offered. #}
+{# The drop panel's targets: H0, its someday / maybe, Reference, then the one project list; `current` (a project id,
+   'h0' or 'someday') is where the page's tasks already are, so it isn't offered. #}
 {% macro project_targets(current=none) %}
 {% if current != 'h0' %}<div class="target" data-project="h0">H0 · ground level (no project)</div>{% endif %}
+{% if current != 'someday' %}<div class="target maybe" data-project="someday" title="Not committed to: an H0 someday task">Someday / maybe</div>{% endif %}
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
 {% for label, ps, area in project_groups %}<section class="group"><h3>{{ label }}</h3>
-  {% if area %}<div class="target new" data-project="__new__" data-area="{{ area }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project in {{ label }}" autocomplete="off"></div>
-  <div class="target maybe" data-project="someday" data-area="{{ area }}" title="Not committed to: a someday item here">Someday / maybe</div>{% endif %}
+  {% if area %}<div class="target new" data-project="__new__" data-area="{{ area }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project in {{ label }}" autocomplete="off"></div>{% endif %}
   {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status in ('waiting', 'someday') %} <span class="meta">{{ p.status }}</span>{% endif %}</div>{% endfor %}</section>{% endfor %}
 {% endmacro %}
 
@@ -109,6 +107,14 @@
 <aside class="drop-panel" data-move="{{ url_for('task_move') }}" data-key="{{ key }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}>
   <button type="button" class="unpin" title="Hide the projects" aria-label="Hide the projects">✕</button>{{ project_targets(current) }}</aside>
 <script src="{{ url_for('static', filename='move.js') }}"></script>
+{% endmacro %}
+
+{# Someday's add line: no area makes an H0 someday task, an area a someday project there. #}
+{% macro someday_area_select() %}
+<select name="area_id" aria-label="Kind" title="A single item, or a project in an area">
+  <option value="">single item</option>
+  <optgroup label="project in">{% for a in areas %}<option value="{{ a.id }}">{{ a.title }}</option>{% endfor %}</optgroup>
+</select>
 {% endmacro %}
 
 {# The open areas (the context's `areas`), for a new project's add line and a project's page. `keep`: the project's
@@ -138,27 +144,15 @@
 {# A tickler date still to come: faint, like the last review. #}
 {% macro until(tickle_on) %}{% if tickle_on and tickle_on > today %}<span class="until" title="Out of sight until then">until {{ tickle_on }}</span>{% endif %}{% endmacro %}
 
-{# A someday item as a row (Someday, an area's page, search). Among project cards (`slots`), empty ⠿ and ▸ slots line
-   its title up with theirs, and it shows when the review last saw it; in search (no slots) just the title. #}
-{% macro someday_row(s, slots=True) %}
-<li class="task maybe">
-  {% if slots %}<span class="grip slot" aria-hidden="true">⠿</span><span class="peek slot" aria-hidden="true"></span>{% endif %}
-  <a class="title" href="{{ url_for('someday_view', id=s.id) }}">{{ s.title }}</a>
-  {{ until(s.tickle_on) }}{% if slots %}<span class="reviewed" title="Last reviewed">{{ s.reviewed_at|ago }}</span>{% endif %}
-</li>
-{% endmacro %}
-
 {# Projects and Someday: one compact group per area (db.by_area()). Dragging a project into another group moves it to
-   that area (the reorder JS in static/app.js). On Someday, an area's items (`items`) follow its projects. #}
-{% macro area_groups(groups, steps, status, empty, items=[]) %}
+   that area (the reorder JS in static/app.js). #}
+{% macro area_groups(groups, steps, status, empty) %}
 {% if groups %}<div class="area-groups">
   {% for area, ps in groups %}<section class="area-group">
     <h2 class="area-head"><a href="{{ url_for('horizon_view', id=area.id) }}">{{ area.title }}</a></h2>
     <ul class="tasks cards" data-reorder="{{ url_for('projects_order', status=status) }}" data-area="{{ area.id }}">
       {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
     </ul>
-    {% set mine = items|selectattr('area_id', 'equalto', area.id)|list %}
-    {% if mine %}<ul class="tasks cards maybes">{% for s in mine %}{{ someday_row(s) }}{% endfor %}</ul>{% endif %}
   </section>{% endfor %}
 </div>
 {% else %}<ul class="tasks cards"><li class="empty">{{ empty }}</li></ul>{% endif %}

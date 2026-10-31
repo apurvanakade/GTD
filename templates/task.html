@@ -29,19 +29,21 @@
   <p class="autosave hint" aria-live="polite"></p>
   <div class="fields">
     <label>Project
-      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned', someday=t.state == 'open') }}
+      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status == 'abandoned') }}
       {%- if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
     </label>
-    {# An inbox item, waiting to be filed, has no step; an H0 task is next or waiting, a project's also later. #}
+    {# An inbox item, waiting to be filed, has no step; an H0 task is next, waiting or someday, a project's next,
+       waiting or later. #}
     {% if t.step and t.state == 'open' %}<label>Step
       <select name="step">
-        {% for s in (['next', 'waiting', 'later'] if t.project_id else ['next', 'waiting']) %}<option{% if s == t.step %} selected{% endif %}>{{ s }}</option>{% endfor %}
+        {% for s in (['next', 'waiting', 'later'] if t.project_id else ['next', 'waiting', 'someday']) %}<option{% if s == t.step %} selected{% endif %}>{{ s }}</option>{% endfor %}
       </select>
     </label>{% endif %}
   </div>
   <div class="fields">
     {#- Each .when hint shows how its box reads, as you type (static/app.js, /parse/<kind>). #}
-    <label>Due {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
+    {#- A someday task's date is its tickler: out of sight until then, then back in the Inbox. #}
+    <label>{{ 'Tickler' if t.step == 'someday' else 'Due' }} {{ date_input(t.due_date) }} <span class="hint when" data-parse="due"></span></label>
     <label>Repeats <input name="recur" value="{{ t.recur or '' }}" placeholder="weekly, every 2 weeks after done…">
       <span class="hint when" data-parse="recur"></span></label>
     <label>Remind {{ date_input(t.remind_at|local_minute, 'tomorrow 9am, fri 14:00…', name='remind_at', label='Remind',

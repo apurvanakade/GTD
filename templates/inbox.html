@@ -4,11 +4,11 @@
 {% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', marks=True) }}
-{# Someday items and projects whose tickler date has come: back to be decided on their page (activate, a new date,
-   no date, or let go). They don't drag. #}
+{# Someday tasks and projects whose tickler date has come: back to be decided on their page (commit to it, a new
+   date, no date, or let go). They don't drag. #}
 {% if tickled %}<ul class="tasks tickled">{% for x in tickled %}
   <li class="task"><span class="check" title="Back from someday / maybe: its tickler date has come">↩</span><span class="name"><a class="title" href="{{ someday_url(x) }}">{{ x.title }}</a>
-    <span class="proj">{{ x.area_title }} · someday{{ ' project' if x.kind == 'project' }}</span></span>
+    <span class="proj">{{ x.area_title ~ ' · someday project' if x.kind == 'project' else 'H0 · someday' }}</span></span>
     <span class="meta"><span class="date" title="Tickler date">{{ x.tickle_on }}</span></span></li>
 {% endfor %}</ul>{% endif %}
 {% if tasks %}

@@ -67,9 +67,6 @@ def seed(c):
     db.archive_area(c, term)
     db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
     db.add_reference(c, "Packing", notes="- [ ] passport\n- [x] charger")  # a checklist
-    db.add_someday(c, "learn Italian", notes="evenings", area_id=area)
-    db.add_someday(c, "sail", area_id=area, tickle_on=TODAY.isoformat())  # tickled: back in the Inbox
-    db.add_someday(c, "write a book", area_id=area, tickle_on="2026-12-01")  # out of sight until then
     db.set_project_tickle(c, someday, "2027-01-01")
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
@@ -82,5 +79,9 @@ def seed(c):
     db.add_task(c, "given-up step", step="next", project_id=dropped)
     db.abandon_project(c, dropped)
     db.add_task(c, "parcel from Ann", ground=1, step="waiting", due_date="2026-10-27")  # H0, waiting
+    italian = db.add_task(c, "learn Italian", notes="evenings", ground=1, step="someday")  # H0, someday
+    db.add_task(c, "sail", ground=1, step="someday", due_date=TODAY.isoformat())  # tickled: back in the Inbox
+    db.add_task(c, "write a book", ground=1, step="someday", due_date="2026-12-01")  # out of sight until then
+    db.mark_reviewed(c, italian, NOW - timedelta(days=3), table="task")
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
             "dropped": dropped, "area": area, "empty_area": empty, "archived_area": term}

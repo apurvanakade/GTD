@@ -64,7 +64,7 @@ function capture() {
   inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
 }
 document.querySelector('.add-inbox').addEventListener('click', capture);
-// A field marked data-submit (the project page's status and area, a someday item's area, Activate and tickler date)
+// A field marked data-submit (the project page's status, area and tickler date)
 // saves its form as soon as it's changed; a text box waits while its 📅 picker is open.
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
 // it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
@@ -215,7 +215,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     if (list !== from) {
       body.set('moved', dragged.dataset.id);
       body.set('area_id', list.dataset.area);
-      // The area it left is empty now (no projects, no someday items or waiting tasks): drop its group.
+      // The area it left is empty now (no projects or waiting tasks): drop its group.
       if (!rows(from).length && !from.closest('.area-group')?.querySelector('ul:not([data-reorder]) > li')) (from.closest('.area-group') || from).remove();
     }
     dragged = from = null;

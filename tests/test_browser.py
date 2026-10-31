@@ -334,9 +334,10 @@ def test_slash_on_inbox_focuses_its_add_box(page, live):
 def test_task_rows_are_one_height(page, live, conn):
     """A Make next or Activate button mustn't make its row taller than the others."""
     add_project(conn, "Plain dream", status="someday", area_id=next(a["id"] for a in db.areas(conn) if a["title"] == "Home"))
-    for url, n in (("/projects/1", 3), ("/someday", 2)):  # the someday cards are compact, so compared among themselves
+    # The project cards are compact, so compared among themselves (Someday's H0 task rows are task rows).
+    for url, n, rows in (("/projects/1", 3, "ul.tasks"), ("/someday?tickled=1", 2, "ul.tasks.cards")):
         page.goto(live + url)
-        heights = page.locator("ul.tasks > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
+        heights = page.locator(f"{rows} > li.task").evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
         assert len(heights) >= n and max(heights) - min(heights) < 1, (url, heights)
 
 
@@ -801,7 +802,7 @@ def test_timer_button_always_shows(page, live):
 
 
 def test_all_clear_lists_show_a_big_check(page, live, conn):
-    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks"); conn.execute("DELETE FROM someday")
+    conn.execute("DELETE FROM time_entries"); conn.execute("DELETE FROM tasks")
     conn.execute("UPDATE projects SET status = 'active' WHERE status = 'waiting'"); conn.commit()  # nothing waiting either
     for url in ("/inbox", "/next", "/h0", "/waiting"):
         page.goto(live + url)
@@ -832,7 +833,7 @@ def test_projects_and_someday_are_tight_lists(page, live, conn):
     add_project(conn, "Boat", status="someday", area_id=home)
     add_project(conn, "Deck", status="waiting", area_id=home)
     style = lambda loc, prop: loc.evaluate(f"e => getComputedStyle(e).{prop}")
-    for url in ("/projects", "/waiting", "/someday"):
+    for url in ("/projects", "/waiting", "/someday?tickled=1"):
         page.goto(live + url)
         group = page.locator("section.area-group", has=page.locator("h2.area-head", has_text="Home"))
         rows = group.locator("ul > li.task")
@@ -1092,7 +1093,7 @@ def test_tick_off_refreshes_the_nav_and_keeps_the_tab_lit(page, live):
     assert page.locator("nav a.on").get_attribute("href") == "/next"
 
 
-# --- notes toolbar and checklists; someday items --------------------------------------------------------------
+# --- notes toolbar and checklists; someday / maybe --------------------------------------------------------------
 
 def notes_text(page):
     return page.locator("textarea[name=notes]").input_value().replace("\r\n", "\n")
@@ -1157,45 +1158,47 @@ def test_checklists_tick_continue_and_reset(page, live, conn):
     assert page.locator(".md-tools [data-tool=untick]").is_hidden()
 
 
-def test_dragging_an_inbox_row_onto_an_areas_someday(page, live, conn):
-    home = next(a["id"] for a in db.areas(conn) if a["title"] == "Home")
+def test_dragging_an_inbox_row_onto_someday(page, live, conn):
     page.goto(live + "/inbox")
     with page.expect_response(lambda r: r.url.endswith("/tasks/move")) as saved:
-        drag_to_panel(page, row(page, "inbox item"), f'[data-project="someday"][data-area="{home}"]')
+        drag_to_panel(page, row(page, "inbox item"), '[data-project="someday"]')
     assert saved.value.status == 204
     page.wait_for_function("![...document.querySelectorAll('li.task a.title')].some(a => a.textContent === 'inbox item')")
-    s = db.someday_items(conn)[0]
-    assert (s["title"], s["notes"], s["area_id"]) == ("inbox item", "from email", home)
+    t = next(t for t in db.someday_tasks(conn) if t["title"] == "inbox item")
+    assert (t["notes"], t["ground"], t["step"]) == ("from email", 1, "someday")
 
 
-def test_someday_item_activate_and_tickler(page, live, conn):
-    sid = next(s["id"] for s in db.someday_items(conn) if s["title"] == "learn Italian")
-    page.goto(live + f"/someday/{sid}")
+def test_dragging_a_someday_task_onto_h0_commits_to_it(page, live, conn):
+    tid = next(t["id"] for t in db.someday_tasks(conn) if t["title"] == "learn Italian")
+    page.goto(live + "/someday")
+    with page.expect_response(lambda r: r.url.endswith("/tasks/move")) as saved:
+        drag_to_panel(page, row(page, "learn Italian"), '[data-project="h0"]')
+    assert saved.value.status == 204
+    page.wait_for_function("![...document.querySelectorAll('li.task a.title')].some(a => a.textContent === 'learn Italian')")
+    assert (db.get_task(conn, tid)["step"], db.get_task(conn, tid)["due_date"]) == ("next", "2026-10-22")
+
+
+def test_a_someday_projects_tickler_box(page, live, conn):
+    page.goto(live + "/projects/4")  # "Someday proj"
     box = page.locator(".title-line input[name=tickle_on]")  # a quiet control on the title line
     assert not page.locator(".tickler .hint").is_visible()  # its reading shows only while editing
     box.fill("nov 15")
-    page.wait_for_function("document.querySelector('.hint.when').textContent === '→ Sun Nov 15'")
+    page.wait_for_function("document.querySelector('.tickler .hint.when').textContent === '→ Sun Nov 15'")
     assert page.locator(".tickler .hint").is_visible()
     with page.expect_navigation():
         box.press("Tab")  # leaving the box saves it
-    assert db.get_someday(conn, sid)["tickle_on"] == "2026-11-15"
-    with page.expect_navigation():
-        page.locator("select[name=activate]").select_option("project")
-    p = db.projects(conn)[0]
-    assert p["title"] == "learn Italian" and page.url.endswith(f"/projects/{p['id']}")
-    assert db.get_someday(conn, sid) is None
+    assert db.get_project(conn, 4)["tickle_on"] == "2026-11-15"
 
 
 def test_enter_in_a_tickler_box_saves_once(page, live, conn):
-    sid = next(s["id"] for s in db.someday_items(conn) if s["title"] == "learn Italian")
-    page.goto(live + f"/someday/{sid}")
+    page.goto(live + "/projects/4")
     posts = []
-    page.on("request", lambda r: r.method == "POST" and f"/someday/{sid}" in r.url and posts.append(r))
+    page.on("request", lambda r: r.method == "POST" and r.url.endswith("/projects/4") and posts.append(r))
     page.locator("input[name=tickle_on]").fill("nov 15")
     with page.expect_navigation():
         page.locator("input[name=tickle_on]").press("Enter")
     page.wait_for_timeout(300)
-    assert len(posts) == 1 and db.get_someday(conn, sid)["tickle_on"] == "2026-11-15"
+    assert len(posts) == 1 and db.get_project(conn, 4)["tickle_on"] == "2026-11-15"
 
 
 def test_notes_editor_edge_cases(page, live, conn):

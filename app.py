@@ -81,7 +81,6 @@ def stopped_timer():
 
 
 NEW = "__new__"  # project_select's "＋ New project…" option, one per area: __new__:<area id> (_task.html)
-SOMEDAY = "__someday__"  # the task page's "Someday / maybe" option, one per area: __someday__:<area id>
 
 
 def form_value(name):
@@ -106,8 +105,7 @@ def task_fields_from_form(current=None):
         fields["notes"] = fields["notes"] or ""
     new_project = form_value("new_project")
     raw = request.form.get("project_id")
-    if raw is not None and not (raw.startswith(NEW) and not new_project) and not raw.startswith(SOMEDAY):
-        # "＋ New project…" with no name: unchanged; "Someday / maybe" isn't a project (task_view() deals with it)
+    if raw is not None and not (raw.startswith(NEW) and not new_project):  # "＋ New project…" with no name: unchanged
         # The picker offers "h0": ground level, a deliberate choice of no project.
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
@@ -119,7 +117,7 @@ def task_fields_from_form(current=None):
             fields["ground"] = 0
         else:
             flash(f"A project needs an area: “{new_project}” wasn't created. Pick “＋ New project…” under an area.")
-    if request.form.get("step") in ("next", "waiting", "later"):  # a project's or H0's step; inbox items drop it
+    if request.form.get("step") in ("next", "waiting", "later", "someday"):  # a project's or H0's step; inbox items drop it
         fields["step"] = request.form["step"]
     for name, parse in (("due_date", parse_due), ("recur", parse_recur)):
         if fields.get(name):
@@ -204,8 +202,8 @@ def tickle_from_form(fields):
 
 @app.template_global()
 def someday_url(x):
-    """A row of db.tickled() or db.someday_to_review(): an item's page or a project's."""
-    return url_for("someday_view" if x["kind"] == "item" else "project_view", id=x["id"])
+    """A row of db.tickled() or db.someday_to_review(): a task's page or a project's."""
+    return url_for("task_view" if x["kind"] == "task" else "project_view", id=x["id"])
 
 
 def orphaned(project_id, ground):
@@ -258,9 +256,9 @@ def inbox():
 @app.post("/tasks/move")
 def task_move():
     """The drop panel on every task list: move the dropped open tasks (one row, or several shift-selected, in page
-    order) to another project (or H0, a new project, Reference, or an area's someday / maybe), all or none. A task lands as a later step, since
-    the project picks its next (in H0, a next action); a waiting task stays waiting. Dropped where it already is, nothing changes. Called by
-    fetch, which updates the page itself."""
+    order) to another project (or H0, H0's someday / maybe, a new project, Reference), all or none. A task lands as
+    a later step, since the project picks its next (in H0, a next action); a waiting task stays waiting. Dropped where
+    it already is, nothing changes. Called by fetch, which updates the page itself."""
     c = conn()
     tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
     if not tasks or not all(t and t["state"] == "open" for t in tasks):  # e.g. a stale tab: finished since
@@ -268,18 +266,22 @@ def task_move():
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
         db.task_to_reference(c, [t["id"] for t in tasks], now())
         return "", 204
-    if request.form.get("project_id") == "someday":  # not committed to: a someday item in the area dropped on
-        area_id = area_from(request.form.get("area_id")) or abort(400)
-        db.task_to_someday(c, [t["id"] for t in tasks], area_id, now())
-        return "", 204
+    maybe = request.form.get("project_id") == "someday"  # not committed to: an H0 someday task
     with db.transaction(c):
-        fields = {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
+        fields = {"project_id": None, "ground": 1} if maybe else \
+            {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
         if orphaned(fields.get("project_id"), fields.get("ground")):
             abort(400)
         for t in reversed(tasks):  # each goes to the top of its project: the last first keeps the page's order
-            if fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"]):
+            if (fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"])
+                    and maybe == (t["step"] == "someday")):
                 continue
-            step = {"step": "waiting" if t["step"] == "waiting" else "later"} if fields.get("project_id") else {}  # H0: _fit_step()
+            if maybe:
+                step = {"step": "someday"}
+            elif fields.get("project_id"):
+                step = {"step": "waiting" if t["step"] == "waiting" else "later"}
+            else:  # into H0: a next action (_fit_step()), unless it's waiting there already
+                step = {"step": "waiting" if t["step"] == "waiting" else "next"}
             db.update_task(c, t["id"], today=today(), **fields, **step)
     return "", 204
 
@@ -379,73 +381,37 @@ def waiting_add():
 
 @app.route("/someday")
 def someday():
+    """Someday projects by area, after H0's someday tasks. What's tickled to a later date is out of sight until then,
+    unless ?tickled=1 asks for it."""
     c = conn()
-    projects, items = db.projects(c, "someday"), db.someday_items(c)
-    # What's tickled to a later date is out of sight until then, unless ?tickled=1 asks for it.
+    projects, tasks = db.projects(c, "someday"), db.someday_tasks(c)
     later = lambda x: x["tickle_on"] and x["tickle_on"] > today().isoformat()
-    tickled = sum(map(bool, map(later, [*projects, *items])))
+    tickled = sum(map(bool, map(later, [*projects, *tasks])))
     show = request.args.get("tickled") == "1"
     if not show:
-        projects, items = [p for p in projects if not later(p)], [i for i in items if not later(i)]
-    return render_template("someday.html", groups=db.by_area(c, projects, items), items=items,
+        projects, tasks = [p for p in projects if not later(p)], [t for t in tasks if not later(t)]
+    return render_template("someday.html", groups=db.by_area(c, projects), tasks=tasks,
                            steps=db.open_steps(c, "someday"), tickled=tickled, show_tickled=show,
-                           tickled_url=toggle_url(show, "tickled"))
+                           tickled_url=toggle_url(show, "tickled"), project_groups=db.project_groups(c))
 
 
 @app.post("/someday/add")
 def someday_add():
-    """Someday's add line (and the review's new ideas): an item, or with kind=project a someday project; in an area."""
-    if request.form.get("kind") == "project":
+    """Someday's add line (and the review's new ideas): with an area a someday project there, else an H0 someday task."""
+    if area_from(request.form.get("area_id")):
         add_project_from_form("someday")
-    elif title := form_value("title"):
-        area_id = area_from(request.form.get("area_id"))
-        if area_id:
-            db.add_someday(conn(), title, area_id=area_id)
-        else:
-            flash(f"Pick an area for “{title}”.")
+    elif form_value("title"):
+        fields = task_fields_from_form()
+        db.add_task(conn(), fields.pop("title"), today=today(), ground=1, step="someday",
+                    **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
     return back("someday")
 
 
-@app.route("/someday/<int:id>", methods=["GET", "POST"])
-def someday_view(id):
-    """A someday item's page. Title and notes are autosave's; the area and tickler date save when changed. Activating
-    turns it into an active project in its area, or an inbox task to be filed, and opens that."""
-    c = conn()
-    s = db.get_someday(c, id)
-    if not s:  # activated or let go, say, and reached again with Back
-        flash("That someday item is gone: activated or let go.")
-        return redirect(url_for("someday"))
-    if request.method == "POST":
-        how = request.form.get("activate") or ""
-        if how == "project":
-            return redirect(url_for("project_view", id=db.activate_someday(c, id, today(), "project")))
-        if how == "task" or how.startswith("step:"):  # an inbox task, or a step of a project in its area
-            into = how.partition(":")[2]
-            try:
-                tid = db.activate_someday(c, id, today(), int(into) if into.isdigit() else None)
-            except ValueError:
-                abort(400)
-            return redirect(url_for("task_view", id=tid))
-        fields = tickle_from_form({})
-        if area_id := area_from(request.form.get("area_id")):
-            fields["area_id"] = area_id
-        db.update_someday(c, id, **fields)
-        return back("someday")
-    projects = next((ps for _, ps, area in db.project_groups(c) if area == s["area_id"]), [])
-    return render_template("someday_item.html", s=s, projects=projects)
-
-
-@app.post("/someday/<int:id>/delete")
-def someday_delete(id):
-    db.delete_someday(conn(), id)
-    return redirect(url_for("someday"))
-
-
-@app.post("/someday/<int:id>/reviewed")
-def someday_reviewed(id):
-    """The review's someday step: this item has been looked at now."""
-    db.get_someday(conn(), id) or abort(404)
-    db.mark_item_reviewed(conn(), id, now())
+@app.post("/tasks/<int:id>/reviewed")
+def task_reviewed(id):
+    """The review's someday step: this H0 someday task has been looked at now."""
+    db.get_task(conn(), id) or abort(404)
+    db.mark_reviewed(conn(), id, now(), table="task")
     return back("review")
 
 
@@ -530,7 +496,7 @@ def review():
 
 
 def unseen(rows):
-    """How many of these (projects, someday items) the review hasn't looked at in the last week."""
+    """How many of these (projects, someday tasks) the review hasn't looked at in the last week."""
     return sum(not (r["reviewed_at"] and (today() - date.fromisoformat(local_date(r["reviewed_at"]))).days < 7)
                for r in rows)
 
@@ -580,16 +546,13 @@ def search_suggest():
         if kind == "task":
             out.append({"title": r["title"], "url": url_for("task_view", id=r["id"]),
                          "kind": r["state"] if r["state"] != "open" else "H0" if r["ground"] and r["step"] == "next"
-                                 else "inbox" if r["inbox"] else r["step"],
+                                 else "inbox" if r["inbox"] else r["step"],  # waiting, later, someday
                          "meta": r["project_title"] or ""})
         elif kind == "project":
             out.append({"title": r["title"], "url": url_for("project_view", id=r["id"]), "kind": "project",
                         "meta": "" if r["status"] == "active" else r["status"]})
         elif kind == "reference":
             out.append({"title": r["title"], "url": url_for("reference_view", id=r["id"]), "kind": "reference",
-                        "meta": ""})
-        elif kind == "someday":
-            out.append({"title": r["title"], "url": url_for("someday_view", id=r["id"]), "kind": "someday",
                         "meta": ""})
         else:
             url = url_for("horizon_view", id=r["id"]) if r["level"] in ("goal", "area") else url_for("horizons_view", level=r["level"])
@@ -603,12 +566,6 @@ def search_suggest():
 def task_view(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
-    if request.method == "POST" and (request.form.get("project_id") or "").startswith(SOMEDAY):
-        # Not committed to after all: a someday item in the area picked, which opens; the task goes (db.retire_task()).
-        area_id = area_from(request.form["project_id"].partition(":")[2]) or abort(400)
-        if t["state"] != "open":
-            abort(400)
-        return redirect(url_for("someday_view", id=db.task_to_someday(c, [id], area_id, now())))
     if request.method == "POST":
         # Title and notes are autosave's, with its conflict check: a select posting this stale form leaves them.
         fields = {k: v for k, v in task_fields_from_form(t).items() if k not in ("title", "notes")}
@@ -1121,9 +1078,7 @@ def horizon_view(id):
     if h["level"] != "area":
         return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]])
     # An area's page is its hub: its projects by status, and an add line for a new one.
-    # (label, projects, someday items): its items join its someday projects.
-    lists = [(label, db.projects(c, status, area_id=id), db.someday_items(c, id) if status == "someday" else [])
-             for label, status in AREA_LISTS]
+    lists = [(label, db.projects(c, status, area_id=id)) for label, status in AREA_LISTS]
     show = request.args.get("done") == "1"
     return render_template("horizon.html", h=h, label=HORIZON_TITLES["area"], lists=lists, steps=db.open_steps(c, None, area_id=id),
                            empty=db.area_empty(c, id),
@@ -1138,7 +1093,7 @@ AREA_LISTS = (("Active", "active"), ("Waiting", "waiting"), ("Someday / maybe", 
 def horizon_delete(id):
     h = db.get_horizon(conn(), id) or abort(404)
     if not db.delete_horizon(conn(), id):
-        flash("Only an area holding no project or someday item can be deleted: move them first.")
+        flash("Only an area holding no project can be deleted: move them first.")
         return redirect(url_for("horizon_view", id=id))
     return redirect(url_for("horizons_view", level=h["level"]))
 
@@ -1150,7 +1105,7 @@ def area_archive(id):
     if h["archived_at"]:
         db.unarchive_area(conn(), id)
     elif not db.archive_area(conn(), id):
-        flash("Finish, move or abandon its projects, and move its someday items, first.")
+        flash("Finish, move or abandon its projects first.")
     else:
         flash(f"Archived “{h['title']}”: it's on Done.")
     return back()
@@ -1159,7 +1114,7 @@ def area_archive(id):
 
 # --- autosave --------------------------------------------------------------
 
-@app.route("/autosave/<any(tasks, projects, horizons, reference, someday):kind>/<int:id>", methods=["GET", "POST"])
+@app.route("/autosave/<any(tasks, projects, horizons, reference):kind>/<int:id>", methods=["GET", "POST"])
 def autosave(kind, id):
     """A record page's title and notes save themselves (static/autosave.js). Each change comes with the text the
     page last saw (`base_<field>`); 409 with the current text when someone else changed it since."""
