@@ -1129,7 +1129,7 @@ def test_dragging_a_someday_task_onto_h0_commits_to_it(page, live, conn):
         drag_to_panel(page, row(page, "learn Italian"), '[data-project="h0"]')
     assert saved.value.status == 204
     page.wait_for_function("![...document.querySelectorAll('li.task a.title')].some(a => a.textContent === 'learn Italian')")
-    assert (db.get_task(conn, tid)["step"], db.get_task(conn, tid)["due_date"]) == ("next", "2026-10-22")
+    assert (db.get_task(conn, tid)["step"], db.get_task(conn, tid)["due_date"]) == ("next", None)
 
 
 def test_a_someday_projects_tickler_box(page, live, conn):

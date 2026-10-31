@@ -214,7 +214,7 @@ def test_h0_tasks_are_next_or_waiting(client, conn):
     assert db.get_task(conn, tid)["step"] == "next"
     client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
     parcel = conn.execute("SELECT * FROM tasks WHERE title = 'parcel'").fetchone()
-    assert (parcel["ground"], parcel["step"], parcel["due_date"]) == (1, "waiting", "2026-10-22")  # dated, like all H0
+    assert (parcel["ground"], parcel["step"]) == (1, "waiting")
     h0 = client.get("/h0").get_data(as_text=True)
     assert ">later<" in h0 and ">waiting<" not in h0 and ">parcel<" not in h0
     assert len(db.h0_actions(conn)) == 4 and db.counts(conn, TODAY)["waiting"] == 2
@@ -1832,7 +1832,7 @@ def test_ntfy_publishes_title_context_link_and_buttons(client, conn, monkeypatch
 def test_ntfy_names_h0_and_inbox_and_has_no_buttons_without_an_address(client, conn, monkeypatch):
     from app import ntfy
     got = capture_ntfy(monkeypatch, gtd_url="")
-    db.add_task(conn, "water plants", ground=1, today=TODAY, remind_at=db.iso(NOW))
+    db.add_task(conn, "water plants", ground=1, due_date="2026-10-22", remind_at=db.iso(NOW))
     db.add_task(conn, "stray thought", remind_at=db.iso(NOW))
     with app.test_request_context():
         for t in db.due_reminders(conn, NOW):
@@ -2043,7 +2043,7 @@ def test_new_items_go_to_the_top(client, conn):
     undated = [t["title"] for t in db.next_list(conn) if not t["due_date"]]
     assert undated[0] == "fresh next"
     client.post("/h0/add", data={"title": "fresh h0"})
-    assert [t["title"] for t in db.h0_actions(conn) if t["due_date"] == "2026-10-22"][0] == "fresh h0"
+    assert [t["title"] for t in db.h0_actions(conn) if not t["due_date"]][0] == "fresh h0"
     steps = lambda: [t["title"] for t in db.project_tasks(conn, ids["active"])]
     db.reorder_project(conn, ids["active"], [t["id"] for t in db.project_tasks(conn, ids["active"])])
     db.add_task(conn, "fresh step", step="later", project_id=ids["active"])
@@ -2314,34 +2314,27 @@ def test_the_task_pages_project_link_stands_out(client, conn):
     assert f'class="open-project" href="/projects/{pid}"' in client.get(f"/tasks/{tid}").get_data(as_text=True)
 
 
-def test_an_h0_task_is_always_dated(client, conn):
-    """H0 tasks are due today unless given a date: made there, moved there, or their date cleared."""
+def test_h0_tasks_need_no_date(client, conn):
+    """H0 tasks are dated only when given one: made there, moved there, revived, or their date cleared."""
     client.post("/h0/add", data={"title": "h0 added"})
     client.post("/capture", data={"title": "captured", "project_id": "h0"})
     client.post("/next/add", data={"title": "next added", "project_id": "h0"})
-    for title in ("h0 added", "captured", "next added"):
-        assert conn.execute("SELECT due_date FROM tasks WHERE title = ?", (title,)).fetchone()[0] == "2026-10-22", title
+    client.post("/waiting/add", data={"title": "parcel", "project_id": "h0", "due_date": ""})
+    for title in ("h0 added", "captured", "next added", "parcel"):
+        assert conn.execute("SELECT due_date FROM tasks WHERE title = ?", (title,)).fetchone()[0] is None, title
     inbox = db.add_task(conn, "filed")
     client.post("/tasks/move", data={"id": inbox, "project_id": "h0"}, headers={"X-Requested-With": "fetch"})
-    assert db.get_task(conn, inbox)["due_date"] == "2026-10-22"
+    assert db.get_task(conn, inbox)["due_date"] is None
     picked = db.add_task(conn, "picked")
     client.post(f"/tasks/{picked}", data={"project_id": "h0"})
-    assert db.get_task(conn, picked)["due_date"] == "2026-10-22"
+    assert db.get_task(conn, picked)["due_date"] is None
     dated = db.add_task(conn, "dated", ground=1, due_date="2026-11-05", today=TODAY)
     client.post(f"/tasks/{dated}", data={"due_date": ""}, headers={"X-Requested-With": "fetch"})
-    assert db.get_task(conn, dated)["due_date"] == "2026-10-22"
-    client.post(f"/tasks/{dated}", data={"due_date": "fri"}, headers={"X-Requested-With": "fetch"})
-    assert db.get_task(conn, dated)["due_date"] == "2026-10-23"
-
-
-def test_the_db_dates_h0_tasks_and_leaves_others_alone(conn):
-    assert db.get_task(conn, db.add_task(conn, "g", ground=1, today=TODAY))["due_date"] == "2026-10-22"
-    assert db.get_task(conn, db.add_task(conn, "i", today=TODAY))["due_date"] is None
-    tid = db.add_task(conn, "x", ground=1, due_date="2026-12-01", today=TODAY)
-    db.abandon_task(conn, tid)
-    conn.execute("UPDATE tasks SET due_date = NULL WHERE id = ?", (tid,))  # an old undated one
-    db.revive_task(conn, tid, today=TODAY)
-    assert db.get_task(conn, tid)["due_date"] == "2026-10-22"
+    assert db.get_task(conn, dated)["due_date"] is None
+    db.abandon_task(conn, dated)
+    db.revive_task(conn, dated)
+    assert db.get_task(conn, dated)["due_date"] is None
+    assert "No date" in client.get("/h0").get_data(as_text=True)
 
 
 def test_several_tasks_move_together(client, conn):
@@ -2490,15 +2483,14 @@ def test_h0_tasks_can_be_someday(client, conn):
     html = client.get(f"/tasks/{t}").get_data(as_text=True)
     assert "<option selected>someday</option>" in html and ">Tickler <" in html.replace("\n", "")
     # Becoming someday drops a date already come (it would be back in the Inbox at once), keeps one to come.
-    n = db.add_task(conn, "call", ground=1, today=TODAY)
-    assert db.get_task(conn, n)["due_date"] == TODAY.isoformat()  # an H0 next action is dated
+    n = db.add_task(conn, "call", ground=1, due_date=TODAY.isoformat(), today=TODAY)
     client.post(f"/tasks/{n}", data={"step": "someday"})
     assert (db.get_task(conn, n)["step"], db.get_task(conn, n)["due_date"]) == ("someday", None)
     later = db.add_task(conn, "paint", ground=1, due_date="2026-12-01", today=TODAY)
     db.update_task(conn, later, step="someday", today=TODAY)
     assert db.get_task(conn, later)["due_date"] == "2026-12-01"
-    client.post(f"/tasks/{n}", data={"step": "next"})  # committed to: an H0 next action, dated
-    assert (db.get_task(conn, n)["step"], db.get_task(conn, n)["due_date"]) == ("next", TODAY.isoformat())
+    client.post(f"/tasks/{n}", data={"step": "next"})  # committed to: an H0 next action, still undated
+    assert (db.get_task(conn, n)["step"], db.get_task(conn, n)["due_date"]) == ("next", None)
     # Someday is H0's only: a project step can't be, and one filed from someday is a later step.
     p = db.add_project(conn, "Boat")
     assert db.get_task(conn, db.add_task(conn, "x", project_id=p, step="someday"))["step"] == "later"

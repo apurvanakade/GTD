@@ -611,7 +611,7 @@ def delete(id):
 
 @app.post("/tasks/<int:id>/revive")
 def revive(id):
-    db.revive_task(conn(), id, today=today())
+    db.revive_task(conn(), id)
     flash("Revived.")
     return back()
 

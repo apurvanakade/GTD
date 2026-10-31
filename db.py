@@ -190,7 +190,7 @@ def _top(c, table, where, arg):
 
 @atomic
 def add_task(c, title, today=None, **fields):
-    """`today` dates an H0 task given no due date (_fit_step())."""
+    """`today` is for _fit_step()."""
     if fields.get("project_id") and "position" not in fields:  # a new step goes to the top, under the next action
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}, today=today))
@@ -202,7 +202,7 @@ def add_task(c, title, today=None, **fields):
 @atomic
 def update_task(c, id, today=None, **fields):
     """Returns the titles of project tasks demoted to later because this one became next.
-    `today` dates an H0 task left without a due date (_fit_step())."""
+    `today` is for _fit_step()."""
     current = get_task(c, id)
     if current and fields.get("project_id") and fields["project_id"] != current["project_id"] and "position" not in fields:
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])  # filed: top of its project
@@ -227,9 +227,9 @@ def _reopen_project(c, id):
 def _fit_step(fields, current=None, today=None):
     """An inbox item has no step, and drops any it's given. An H0 task is next, waiting or someday: next unless
     told or already one of the others (a later step arriving from a project is next). One joining a project leaves
-    H0 and becomes a later step unless told otherwise, or already waiting. An H0 next or waiting task is always
-    dated: left without a due date, it's due today (`today`, else the system's date). A someday one's date is its
-    tickler, so one becoming someday drops a date that has already come, or it would be back in the Inbox at once."""
+    H0 and becomes a later step unless told otherwise, or already waiting. A someday H0 task's date is its tickler,
+    so one becoming someday drops a date that has already come (`today`, else the system's date), or it would be
+    back in the Inbox at once."""
     project_id = fields["project_id"] if "project_id" in fields else current and current["project_id"]
     ground = fields["ground"] if "ground" in fields else current and current["ground"]
     if not project_id and not ground:
@@ -240,9 +240,7 @@ def _fit_step(fields, current=None, today=None):
         fields["step"] = step if step in ("waiting", "someday") else "next"
         due = fields["due_date"] if "due_date" in fields else current and current["due_date"]
         day = (today or date.today()).isoformat()
-        if fields["step"] != "someday" and not due:
-            fields["due_date"] = day
-        elif fields["step"] == "someday" and due and due <= day and current and current["step"] != "someday":
+        if fields["step"] == "someday" and due and due <= day and current and current["step"] != "someday":
             fields["due_date"] = None
         return fields
     if "project_id" in fields:
@@ -298,13 +296,11 @@ def abandon_task(c, id, now=None):
 
 
 @atomic
-def revive_task(c, id, today=None):
+def revive_task(c, id):
     """An abandoned task comes back where it was: a later step of its project, an H0 task (next, waiting or someday,
-    as it was; next and waiting due today if undated), or an inbox item. A done project it belongs to is reopened, since it has an open task
-    again."""
+    as it was), or an inbox item. A done project it belongs to is reopened, since it has an open task again."""
     c.execute("""UPDATE tasks SET state = 'open', step = CASE WHEN project_id IS NULL THEN step ELSE 'later' END,
-        due_date = CASE WHEN ground AND step != 'someday' AND due_date IS NULL THEN ? ELSE due_date END,
-        completed_at = NULL WHERE id = ? AND state = 'abandoned'""", ((today or date.today()).isoformat(), id))
+        completed_at = NULL WHERE id = ? AND state = 'abandoned'""", (id,))
     _reopen_project(c, id)
 
 
