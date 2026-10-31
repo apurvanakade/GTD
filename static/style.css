@@ -124,8 +124,8 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .capture-dialog { width: min(480px, calc(100vw - 32px)); }
 .help-dialog { max-width: 26rem; }
 /* Process: the item, then one quiet line under a rule: the question and its answers; only a live File is filled. */
-.process { width: min(680px, calc(100vw - 32px)); padding: 10px 16px 14px; }
-.process header { position: absolute; top: 10px; right: 12px; display: flex; align-items: baseline; gap: 4px; z-index: 1; }  /* beside the title, not a line of its own */
+.process { width: min(1000px, calc(100vw - 64px)); padding: 16px 24px 20px; }
+.process header { position: absolute; top: 16px; right: 20px; display: flex; align-items: baseline; gap: 4px; z-index: 1; }  /* beside the title, not a line of its own */
 .process .left { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; margin-right: 4px; }
 /* The item's own task page (?embed=1), to clarify it on the way: title, notes, due, repeats, remind. Sized to fit. */
 .process iframe { display: block; width: 100%; height: 12rem; border: 0; }
@@ -144,6 +144,7 @@ body.embed > :is(nav, .bar, .running-timer), body.embed header.page { display: n
 body.embed main :is(input, textarea, .md-editor) { background: transparent; border-color: transparent; }
 body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-color: var(--line); }
 body.embed .title-line { padding-right: 7rem; }  /* room for Process's count and × */
+body.embed .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
 body.embed .edit .fields .hint.when { display: inline; min-height: 0; }  /* no centering here to keep still */
 :is(.capture-dialog, .help-dialog, .process)::backdrop { background: rgb(0 0 0 / .35); }
 :is(.capture-dialog, .help-dialog) h2 { margin-top: 0; }
