@@ -41,14 +41,18 @@
   {% call card('waiting', 'Chase waiting-fors', 'Nudge the overdue.', counts.waiting) %}
     {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
   {% endcall %}
-  {% call card('projects', 'Review projects', 'Is the next action right? ✓ each one looked at.', unseen(projects)) %}
-    {#- Stalled first, then never reviewed, then the longest ago (db.projects_to_review()). #}
+  {% call card('projects', 'Review projects', 'Do its next actions lead to its outcome? ✓ each one looked at.', unseen(projects)) %}
+    {#- Flagged (⚠) first, then never reviewed, then the longest ago (db.projects_to_review()); each with its outcome
+        and every next action. #}
     {% if projects %}<ul class="plain review-list">{% for p in projects %}<li>
       <form method="post" action="{{ url_for('project_reviewed', id=p.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
-      <a href="{{ url_for('project_view', id=p.id) }}">{% if p.stalled %}⚠ {% endif %}{{ p.title }}</a>
-      {#- its next action; a waiting project without one says so #}
-      <span class="date">{% if p.next_title %}{{ p.next_title }}{% elif p.status == 'waiting' %}waiting{% endif %}</span>
-      <span class="date" title="Last reviewed">{{ p.reviewed_at|ago }}</span></li>{% endfor %}</ul>{% endif %}
+      <a href="{{ url_for('project_view', id=p.id) }}"{% if p.warning %} title="{{ p.warning }}"{% endif %}>{% if p.warning %}⚠ {% endif %}{{ p.title }}</a>
+      {% if p.outcome %}<span class="date">→ {{ p.outcome }}</span>{% endif %}
+      {% if p.status == 'waiting' %}<span class="date">waiting</span>{% endif %}
+      <span class="date" title="Last reviewed">{{ p.reviewed_at|ago }}</span>
+      {% set actions = open_steps.get(p.id, [])|selectattr('step', 'eq', 'next')|list %}
+      {% if actions %}<ul class="nexts">{% for t in actions %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a></li>{% endfor %}</ul>{% endif %}
+    </li>{% endfor %}</ul>{% endif %}
   {% endcall %}
   {% call card('checklists', 'Checklists', 'Run through any that apply.') %}
     {% if checklists %}<ul class="plain">{% for r in checklists %}<li><a href="{{ url_for('reference_view', id=r.id) }}">{{ r.title }}</a></li>{% endfor %}</ul>{% endif %}

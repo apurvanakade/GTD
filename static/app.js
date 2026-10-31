@@ -209,14 +209,17 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
       e.dataTransfer.effectAllowed = 'move';
     });
     list.addEventListener('dragover', e => {
-      if (!dragged || list !== from || dragged.some(r => 'pinned' in r.dataset)) return;  // the next action only moves out, to another project
+      if (!dragged || list !== from) return;
+      // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
+      // block of both only moves out, to another project.
+      const pinned = li => 'pinned' in li.dataset, pin = pinned(dragged[0]);
+      if (dragged.some(r => pinned(r) !== pin)) return;
       const over = rows(list).find(li => li.contains(e.target));
-      if (!over) return;
+      if (!over || pinned(over) !== pin) return;
       e.preventDefault();
       if (dragged.includes(over)) return;
       const r = over.getBoundingClientRect();
-      // A project's next action is pinned to the top: nothing goes above it.
-      if (e.clientY < r.top + r.height / 2 && !('pinned' in over.dataset)) over.before(...dragged); else over.after(...dragged);
+      if (e.clientY < r.top + r.height / 2) over.before(...dragged); else over.after(...dragged);
     });
     list.addEventListener('drop', e => e.preventDefault());
   });

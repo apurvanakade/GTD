@@ -13,8 +13,8 @@ import recur
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
 # Someday and waiting are project statuses; an abandoned project is given up (on Done, revivable). A task has a state
-# (open, done, or abandoned: deleted but revivable) and, inside a project or H0, a step: an active project has exactly
-# one "next" step, its other open steps are "waiting" or "later"; an H0 task (ground level) is "next", "waiting" or
+# (open, done, or abandoned: deleted but revivable) and, inside a project or H0, a step: an active project has at least
+# one "next" step, each chosen, its other open steps are "waiting" or "later"; an H0 task (ground level) is "next", "waiting" or
 # "someday" (a single someday / maybe item). Inbox items (neither a project nor H0) have no step.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 CREATE TABLE IF NOT EXISTS project_tickles (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   tickle_on TEXT NOT NULL
+);
+-- A project's desired outcome: what done looks like. A table of its own, like project_tickles.
+CREATE TABLE IF NOT EXISTS project_outcomes (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  outcome TEXT NOT NULL
 );
 -- A task's place in the list it's in (Inbox, Next, Waiting, Someday: list_of()), dragged on that page. A table of its
 -- own, not tasks.position, which is a step's place in its project: a waiting step is in both, in different orders.
@@ -211,14 +216,13 @@ def add_task(c, title, today=None, **fields):
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}, today=today))
     _arrive(c, id, None)
     _reopen_project(c, id)
-    _one_next(c, id, was_next=False)
+    _next_to_top(c, id, was_next=False)
     return id
 
 
 @atomic
 def update_task(c, id, today=None, **fields):
-    """Returns the titles of project tasks demoted to later because this one became next.
-    `today` is for _fit_step()."""
+    """`today` is for _fit_step()."""
     current = get_task(c, id)
     if current and fields.get("project_id") and fields["project_id"] != current["project_id"] and "position" not in fields:
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])  # filed: top of its project
@@ -228,7 +232,7 @@ def update_task(c, id, today=None, **fields):
     if current and "remind_at" in fields and fields["remind_at"] != current["remind_at"]:
         c.execute("UPDATE tasks SET reminded_at = NULL WHERE id = ?", (id,))  # a new time is sent again
     _reopen_project(c, id)
-    return _one_next(c, id, was_next=current is not None and current["step"] == "next")
+    _next_to_top(c, id, was_next=current is not None and current["step"] == "next")
 
 
 def list_of(c, id):
@@ -293,24 +297,17 @@ def _fit_step(fields, current=None, today=None):
     return fields
 
 
-def _one_next(c, id, was_next):
-    """A project has at most one next action: if this task is it, the project's other next tasks become later.
-    A task that has just become next moves to the top of its project, the others shifting down.
-    Returns the titles it demoted."""
+def _next_to_top(c, id, was_next):
+    """A step that has just become next moves to the top of its project, the others shifting down in order."""
     t = get_task(c, id)
-    if not t or t["state"] != "open" or t["step"] != "next" or not t["project_id"]:
-        return []
-    others = c.execute("SELECT id, title FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open' AND id != ?",
-                       (t["project_id"], id)).fetchall()
-    c.executemany("UPDATE tasks SET step = 'later' WHERE id = ?", [(o["id"],) for o in others])
-    if not was_next:
-        reorder_project(c, t["project_id"], [id, *(s["id"] for s in project_tasks(c, t["project_id"]) if s["id"] != id)])
-    return [o["title"] for o in others]
+    if was_next or not t or t["state"] != "open" or t["step"] != "next" or not t["project_id"]:
+        return
+    reorder_project(c, t["project_id"], [id, *(s["id"] for s in project_tasks(c, t["project_id"]) if s["id"] != id)])
 
 
-def project_next(c, project_id):
-    return c.execute("SELECT * FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open'",
-                     (project_id,)).fetchone()
+def has_next(c, project_id):
+    return c.execute("SELECT 1 FROM tasks WHERE project_id = ? AND step = 'next' AND state = 'open'",
+                     (project_id,)).fetchone() is not None
 
 
 def get_task(c, id):
@@ -435,7 +432,7 @@ def counts(c, today):
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
                    + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
         "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'") + one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
-        "stalled": one(f"SELECT count(*) FROM ({PROJECT_SELECT} WHERE p.status = 'active') WHERE stalled"),
+        "flagged": one(f"SELECT count(*) FROM ({PROJECT_SELECT} WHERE p.status = 'active') WHERE warning IS NOT NULL"),
     }
 
 
@@ -576,10 +573,15 @@ REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = 
   (SELECT k.tickle_on FROM project_tickles k WHERE k.project_id = p.id) AS tickle_on"""
 
 
-# A project with its last review, tickler date, next action's title, and `stalled` (active with no next action). A
-# project has at most one next action (update_task()), so the join adds no rows.
-PROJECT_SELECT = f"""SELECT p.*, {REVIEWED}, n.title AS next_title, (p.status = 'active' AND n.id IS NULL) AS stalled
-  FROM projects p LEFT JOIN tasks n ON n.project_id = p.id AND n.state = 'open' AND n.step = 'next'"""
+# A project with its last review, tickler date and desired outcome; `stalled` (active with no next action); and
+# `warning`, why an active project shows ⚠ (no next action, no desired outcome, or both), else NULL.
+PROJECT_SELECT = f"""SELECT *, CASE WHEN stalled AND vague THEN 'No next action, no desired outcome'
+    WHEN stalled THEN 'No next action' WHEN vague THEN 'No desired outcome' END AS warning
+  FROM (SELECT p.*, {REVIEWED}, o.outcome,
+    (p.status = 'active' AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.project_id = p.id AND n.state = 'open'
+      AND n.step = 'next')) AS stalled,
+    (p.status = 'active' AND o.outcome IS NULL) AS vague
+  FROM projects p LEFT JOIN project_outcomes o ON o.project_id = p.id) p"""
 
 
 def get_project(c, id):
@@ -612,10 +614,10 @@ def someday_to_review(c, today):
 
 
 def projects_to_review(c):
-    """The weekly review's project step: active and waiting projects, stalled ones first, then least recently
+    """The weekly review's project step: active and waiting projects, flagged ones (⚠) first, then least recently
     reviewed first."""
     rows = _least_reviewed(projects(c) + projects(c, "waiting"))
-    return sorted(rows, key=lambda p: not p["stalled"])
+    return sorted(rows, key=lambda p: not p["warning"])
 
 
 @atomic
@@ -631,6 +633,27 @@ def set_project_tickle(c, id, tickle_on):
         c.execute("INSERT OR REPLACE INTO project_tickles (project_id, tickle_on) VALUES (?, ?)", (id, tickle_on))
     else:
         c.execute("DELETE FROM project_tickles WHERE project_id = ?", (id,))
+
+
+@atomic
+def set_project_outcome(c, id, outcome):
+    """A project's desired outcome; blank clears it."""
+    if outcome := (outcome or "").strip():
+        c.execute("INSERT OR REPLACE INTO project_outcomes (project_id, outcome) VALUES (?, ?)", (id, outcome))
+    else:
+        c.execute("DELETE FROM project_outcomes WHERE project_id = ?", (id,))
+
+
+@atomic
+def reach_outcome(c, id, steps, now=None):
+    """A project's outcome is reached: it's done, and its open steps are marked `steps` (done or abandoned) with it,
+    one shared completed_at, its timer stopped. Directly, not through complete_task(): a repeat spawns no next one."""
+    running = timer_running(c)
+    if running and running["project_id"] == id:
+        timer_stop(c, now or datetime.now(timezone.utc))
+    c.execute("UPDATE tasks SET state = ?, completed_at = datetime('now') WHERE project_id = ? AND state = 'open'",
+              (steps, id))
+    update_project(c, id, status="done")
 
 
 @atomic

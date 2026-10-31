@@ -1,10 +1,10 @@
 {# grip: ⠿ drags the row, to reorder its list or onto the drop panel. On a project page (project=False) the next
-   action is pinned on top: its grip only moves it out. #}
-{% macro row(t, project=True, make_next=False, grip=False) %}
+   actions are pinned on top: they reorder among themselves or move out. set_step: Make next, or a next one's Make later. #}
+{% macro row(t, project=True, set_step=False, grip=False) %}
 {% set closed = t.state != 'open' %}
 {% set pinned = grip and not project and t.step == 'next' and not closed %}
 <li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if pinned %} data-pinned{% endif %}>
-  {% if pinned %}<span class="grip" title="Drag to another project" aria-hidden="true">⠿</span>
+  {% if pinned %}<span class="grip" title="Drag to reorder next actions, or onto a project" aria-hidden="true">⠿</span>
   {% elif grip and not closed %}<span class="grip" title="Drag to reorder, or onto a project" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
@@ -27,8 +27,8 @@
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
   {% if t.state == 'abandoned' %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}
-  {% if make_next %}<form method="post" action="{{ url_for('make_next', id=t.id) }}" class="make-next"><button>Make next</button></form>
-  {% elif grip and not project and not closed %}<span class="make-next slot" aria-hidden="true"><button type="button" tabindex="-1" disabled>Make next</button></span>{% endif %}
+  {% if set_step and not closed %}{% set to = 'later' if t.step == 'next' else 'next' %}
+  <form method="post" action="{{ url_for('make_' ~ to, id=t.id) }}" class="set-step"><button>Make {{ to }}</button></form>{% endif %}
 </li>
 {% endmacro %}
 
@@ -124,14 +124,14 @@
 </select>
 {% endmacro %}
 
-{# A project as a card (Projects, Waiting, Someday): ⠿ to drag, ▸ folds out its open steps, ⚠ when stalled.
+{# A project as a card (Projects, Waiting, Someday): ⠿ to drag, ▸ folds out its open steps, ⚠ when it lacks a next action
+   or a desired outcome (the tooltip says which; else it's the outcome).
    A someday one shows when the weekly review last looked at it, and offers Activate. #}
 {% macro project_card(p, steps) %}
-{% set stalled = p.stalled %}
-<li class="task{{ ' stalled' if stalled }}" data-id="{{ p.id }}"{% if stalled %} title="No next action"{% endif %}>
+<li class="task{{ ' flagged' if p.warning }}" data-id="{{ p.id }}"{% if p.warning or p.outcome %} title="{{ p.warning or p.outcome }}"{% endif %}>
   {% if p.status in ('active', 'waiting', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {{ peek_button() }}
-  <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if stalled %}⚠ {% endif %}{{ p.title }}</a>
+  <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.warning %}⚠ {% endif %}{{ p.title }}</a>
   {% if p.status == 'someday' %}{{ until(p.tickle_on) }}<span class="reviewed" title="Last reviewed">{{ p.reviewed_at|ago }}</span>{% endif %}
   {% if p.status == 'someday' %}<form method="post" action="{{ url_for('project_view', id=p.id) }}" class="row-btn"><button name="status" value="active">Activate</button></form>{% endif %}
   {{ peek_steps(steps.get(p.id, [])) }}

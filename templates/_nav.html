@@ -14,7 +14,7 @@
     <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep == 'inbox' }}">Inbox{{ badge(counts.inbox, 'in the inbox') }}</a>
   </span>
   <span class="group">
-    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{{ badge(counts.stalled, 'stalled', 'warn') }}</a>
+    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep in ('projects_view', 'project_view') }}">Projects{{ badge(counts.flagged, 'need a next action or outcome', 'warn') }}</a>
     <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
     <a href="{{ url_for('reference') }}" class="{{ 'on' if ep in ('reference', 'reference_view') }}">Reference</a>
   </span>

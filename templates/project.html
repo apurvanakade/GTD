@@ -3,18 +3,34 @@
 {% block title %}{{ p.title }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
-{# The title line: status saves as soon as they're picked; title and notes save themselves (autosave.js). #}
+{# The title line: status saves as soon as they're picked; title and notes save themselves (autosave.js). Under it,
+   as its subtitle, the desired outcome (saves on change); its ✓ closes the project, asking first about open steps. #}
 <form method="post" class="project" data-autosave="{{ url_for('autosave', kind='projects', id=p.id) }}">
   <button hidden>Save</button>{# the default, so Enter in the title saves #}
   <div class="title-line">
     <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
-    {% if p.status == 'active' and not has_next %}<span class="warn" title="No next action: pick one with Make next">⚠</span>{% endif %}
+    {% if p.warning %}<span class="warn" title="{{ p.warning }}">⚠</span>{% endif %}
     <select name="status" data-submit aria-label="Status" title="Status: saves when picked">
       {% for s in ['active', 'waiting', 'someday', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>
     {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
     {% if tasks %}{{ pin_button() }}{% endif %}
     {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
+  </div>
+  <div class="title-line outcome">
+    <input name="outcome" value="{{ p.outcome or '' }}" placeholder="Done when…" aria-label="Desired outcome" title="Desired outcome: what done looks like" data-submit>
+    {% if p.outcome and p.status in ('active', 'waiting') %}
+      {% if tasks %}<button type="button" popovertarget="reached" class="icon" title="Outcome reached" aria-label="Outcome reached">✓</button>
+      <div popover id="reached" class="reached">
+        <h2>Outcome reached: {{ tasks|length }} open step{{ 's' if tasks|length > 1 }}</h2>
+        <p class="row">
+          <button formaction="{{ url_for('project_reached', id=p.id) }}" name="steps" value="done" class="primary">Mark done</button>
+          <button formaction="{{ url_for('project_reached', id=p.id) }}" name="steps" value="abandoned">Abandon</button>
+          <button type="button" popovertarget="reached" popovertargetaction="hide">Not yet</button>
+        </p>
+      </div>
+      {% else %}<button formaction="{{ url_for('project_reached', id=p.id) }}" class="icon" title="Outcome reached: mark the project done" aria-label="Outcome reached">✓</button>{% endif %}
+    {% endif %}
   </div>
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
@@ -27,7 +43,7 @@
   <input name="recur" placeholder="repeats: weekly…" aria-label="Repeats">
   <input name="notes" placeholder="notes…" aria-label="Notes">
 {% endcall %}
-<ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, make_next=(t.step in ('later', 'waiting')), grip=True) }}{% endfor %}</ul>
+<ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, set_step=True, grip=True) }}{% endfor %}</ul>
 {% set in_project = true %}{% include "_done_toggle.html" %}
 {% if times %}{{ tally('Time', times, cls='wide', fold=True) }}{% endif %}
 {% if tasks %}{{ move_panel('project', current=p.id) }}{% endif %}

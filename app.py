@@ -329,12 +329,12 @@ def next_view():
 
 
 def add_next_action():
-    """Add the form's task as a next action: a later step if its project already has one, the inbox if orphaned."""
+    """Add the form's task as a next action (beside any its project has), the inbox if orphaned."""
     if not form_value("title"):  # before reading the form, which may create a "＋ New…" project
         return
     fields = task_fields_from_form()
     pid = fields.get("project_id")
-    fields["step"] = "later" if pid and db.project_next(conn(), pid) else "next"
+    fields["step"] = "next"
     orphaned(pid, fields.get("ground"), say="it")
     db.add_task(conn(), fields.pop("title"), today=today(), **fields)
 
@@ -491,6 +491,7 @@ def review():
     weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
     since = datetime.combine(today() - LOOK_BACK, datetime.min.time()).astimezone().astimezone(timezone.utc)
     return render_template("review.html", projects=db.projects_to_review(c),
+                           open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=nexts, recent=db.done_since(c, since.strftime("%Y-%m-%d %H:%M:%S")),
                            checklists=db.checklists(c), unseen=unseen,
@@ -576,7 +577,7 @@ def task_view(id):
             fields.pop("step")  # moved, with the step select untouched: it lands as a move does (db._fit_step())
         if not t["inbox"] and t["state"] == "open":
             orphaned(project_id, ground, say="this")
-        flash_demoted(db.update_task(c, id, today=today(), **fields))
+        db.update_task(c, id, today=today(), **fields)
         if fetched():  # a field saved in the background: just its messages
             return {"flashes": get_flashed_messages()}
         return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
@@ -595,11 +596,6 @@ def task_home(t, **args):
     if t["inbox"]:
         return url_for("inbox", **args)
     return url_for({"waiting": "waiting", "someday": "someday"}.get(t["step"], "next_view"), **args)
-
-
-def flash_demoted(titles):
-    if titles:
-        flash(f"One next action per project: moved {', '.join(f'“{t}”' for t in titles)} to later.")
 
 
 @app.post("/tasks/<int:id>/complete")
@@ -644,7 +640,16 @@ def revive(id):
 def make_next(id):
     c = conn()
     db.get_task(c, id) or abort(404)
-    flash_demoted(db.update_task(c, id, today=today(), step="next"))
+    db.update_task(c, id, today=today(), step="next")
+    return back()
+
+
+@app.post("/tasks/<int:id>/make-later")
+def make_later(id):
+    """A project's next action back to a later step (an H0 task has no later: it stays next)."""
+    c = conn()
+    db.get_task(c, id) or abort(404)
+    db.update_task(c, id, today=today(), step="later")
     return back()
 
 
@@ -696,10 +701,12 @@ def project_view(id):
             if p["status"] == "abandoned" and status in PROJECT_STATUSES:  # revived with its steps, then the status
                 db.revive_project(c, id)
             if status == "done" and db.project_tasks(c, id):
-                flash("Finish, move or delete the project's open tasks first.")
+                flash("Finish, move or abandon its open steps first, or ✓ its outcome.")
             elif status in PROJECT_STATUSES:
                 fields["status"] = status
             db.update_project(c, id, **fields)
+            if "outcome" in request.form:
+                db.set_project_outcome(c, id, request.form["outcome"])
             tickle = tickle_from_form()
             if tickle and fields.get("status", p["status"]) == "someday":  # someday projects only
                 db.set_project_tickle(c, id, tickle["tickle_on"])
@@ -708,9 +715,23 @@ def project_view(id):
         if fields.get("status") == "someday" != p["status"]:
             flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()
-    return render_template("project.html", p=p, tasks=db.project_tasks(c, id), has_next=bool(db.project_next(c, id)),
+    return render_template("project.html", p=p, tasks=db.project_tasks(c, id),
                            project_groups=db.project_groups(c), deletable=db.project_deletable(c, id),
                            times=db.step_totals(c, id, now()), **completed(abandoned=True, project_id=id))
+
+
+@app.post("/projects/<int:id>/reached")
+def project_reached(id):
+    """✓ on a project's outcome: it's done, its open steps marked done or abandoned (`steps`), as asked."""
+    c = conn()
+    p = db.get_project(c, id) or abort(404)
+    steps = request.form.get("steps", "done")
+    if steps not in ("done", "abandoned") or p["status"] not in ("active", "waiting"):
+        abort(400)
+    n = len(db.project_tasks(c, id))
+    db.reach_outcome(c, id, steps, now())
+    flash(f"Done: “{p['title']}”" + (f", {n} open step{'s' * (n > 1)} {'marked done' if steps == 'done' else 'abandoned'}." if n else "."))
+    return back()
 
 
 @app.post("/projects/<int:id>/revive")

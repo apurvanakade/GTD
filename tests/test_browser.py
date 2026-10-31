@@ -258,20 +258,27 @@ def test_theme_toggle_overrides_system_and_persists(page, live):
 
 
 def test_drag_reorders_project_steps(page, live, conn):
+    db.add_task(conn, "order grout", step="next", project_id=1)  # a second next action
     page.goto(live + "/projects/1")
     titles = lambda: page.locator("ul[data-reorder] li.task a.title").all_inner_texts()
-    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
+    drag = lambda a, b: row(page, a).locator(".grip").drag_to(row(page, b), target_position={"x": 5, "y": 2})
+    assert titles() == ["order grout", "buy tiles", "quote from Bob", "lay tiles"]
     with page.expect_response(lambda r: r.url.endswith("/order")) as saved:
-        row(page, "lay tiles").locator(".grip").drag_to(row(page, "quote from Bob"), target_position={"x": 5, "y": 2})
+        drag("lay tiles", "quote from Bob")
     assert saved.value.status == 204
-    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
-    assert [t["title"] for t in db.project_tasks(conn, 1)] == ["buy tiles", "lay tiles", "quote from Bob"]
+    order = ["order grout", "buy tiles", "lay tiles", "quote from Bob"]
+    assert titles() == order and [t["title"] for t in db.project_tasks(conn, 1)] == order
     page.reload()
-    assert titles() == ["buy tiles", "lay tiles", "quote from Bob"]
-    # Nothing goes above the next action ("buy tiles").
+    assert titles() == order
+    # The next actions reorder among themselves, on top.
     with page.expect_response(lambda r: r.url.endswith("/order")):
-        row(page, "quote from Bob").locator(".grip").drag_to(row(page, "buy tiles"), target_position={"x": 5, "y": 2})
-    assert titles() == ["buy tiles", "quote from Bob", "lay tiles"]
+        drag("buy tiles", "order grout")
+    order = ["buy tiles", "order grout", "lay tiles", "quote from Bob"]
+    assert titles() == order and [t["title"] for t in db.project_tasks(conn, 1)] == order
+    # Nothing goes above them, and they don't go below the other steps.
+    drag("quote from Bob", "buy tiles")
+    drag("order grout", "quote from Bob")
+    assert titles() == order and [t["title"] for t in db.project_tasks(conn, 1)] == order
 
 
 def test_drag_reorders_a_task_list(page, live, conn):
@@ -673,7 +680,7 @@ def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, l
     drag_to_panel(page, row(page, "lay tiles"), '[data-project="2"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"3\"]')")
     assert (db.get_task(conn, 3)["project_id"], db.get_task(conn, 3)["step"]) == (2, "later")
-    # The next action can't be reordered, but it can go: the page redraws, the project now stalled.
+    # The next action can go too: the page redraws, the project now stalled.
     drag_to_panel(page, row(page, "buy tiles"), '[data-project="2"]')
     page.locator(".title-line > .warn").wait_for()
     assert row(page, "buy tiles").count() == 0 and db.get_task(conn, 2)["project_id"] == 2

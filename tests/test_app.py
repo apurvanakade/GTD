@@ -75,7 +75,7 @@ def test_recurring_next_step_comes_back_as_later(client, conn):
     assert db.next_list(conn) == []
     (new,) = db.project_tasks(conn, pid)
     assert (new["step"], new["due_date"]) == ("later", "2026-10-29")
-    assert db.project_next(conn, pid) is None  # stalled until you pick one
+    assert not db.has_next(conn, pid)  # stalled until you pick one
 
 
 def test_recurring_waiting_step_and_h0_task_keep_their_place(client, conn):
@@ -89,6 +89,55 @@ def test_recurring_waiting_step_and_h0_task_keep_their_place(client, conn):
     assert db.get_task(conn, db.complete_task(conn, hw, TODAY))["step"] == "waiting"
 
 
+def test_project_outcome(client, conn):
+    """Every active project states its desired outcome (⚠ until it does); ✓ on it closes the project, asking what
+    becomes of its open steps."""
+    pid = db.add_project(conn, "Course")
+    db.add_task(conn, "grade", step="next", project_id=pid)
+    flag = lambda: db.get_project(conn, pid)["warning"]
+    assert flag() == "No desired outcome" and db.counts(conn, TODAY)["flagged"] == 1
+    page = client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert 'name="outcome"' in page and 'title="No desired outcome"' in page and "/reached" not in page
+    client.post(f"/projects/{pid}", data={"outcome": " grades submitted "})
+    p = db.get_project(conn, pid)
+    assert (p["outcome"], p["warning"], db.counts(conn, TODAY)["flagged"]) == ("grades submitted", None, 0)
+    assert 'title="grades submitted"' in client.get("/projects").get_data(as_text=True)  # the card's tooltip
+    assert "grades submitted" in client.get("/review?step=projects").get_data(as_text=True)
+    client.post(f"/projects/{pid}", data={"outcome": ""})  # cleared: vague again
+    assert flag() == "No desired outcome"
+    db.set_project_outcome(conn, pid, "grades submitted")
+    conn.commit()
+
+    def course(title, outcome="done"):
+        pid = db.add_project(conn, title)
+        db.set_project_outcome(conn, pid, outcome)
+        steps = [db.add_task(conn, f"{title} {s}", step=s, project_id=pid, **kw)
+                 for s, kw in (("next", {"recur": "weekly", "due_date": "2026-10-22"}), ("later", {}), ("waiting", {}))]
+        conn.commit()
+        return pid, steps
+    states = lambda steps: [db.get_task(conn, t)["state"] for t in steps]
+    # with open steps, ✓ asks: the page offers marking them done or abandoning them
+    page = client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert 'name="steps" value="done"' in page and 'name="steps" value="abandoned"' in page
+    a, a_steps = course("A")
+    db.timer_start(conn, a_steps[0], NOW - timedelta(minutes=5))
+    conn.commit()
+    client.post(f"/projects/{a}/reached", data={"steps": "done"})
+    assert db.get_project(conn, a)["status"] == "done" and states(a_steps) == ["done"] * 3
+    assert db.timer_running(conn) is None
+    assert not db.project_tasks(conn, a)  # a repeating step spawns no next instance
+    b, b_steps = course("B")
+    client.post(f"/projects/{b}/reached", data={"steps": "abandoned"})
+    assert db.get_project(conn, b)["status"] == "done" and states(b_steps) == ["abandoned"] * 3
+    # with none open, ✓ simply closes it
+    c = db.add_project(conn, "C")
+    db.set_project_outcome(conn, c, "done")
+    conn.commit()
+    assert 'name="steps"' not in client.get(f"/projects/{c}").get_data(as_text=True)
+    client.post(f"/projects/{c}/reached")
+    assert db.get_project(conn, c)["status"] == "done"
+
+
 def test_project_cannot_complete_with_open_tasks(client, conn):
     pid = db.add_project(conn, "P")
     tid = db.add_task(conn, "t", step="next", project_id=pid)
@@ -99,21 +148,24 @@ def test_project_cannot_complete_with_open_tasks(client, conn):
     assert db.get_project(conn, pid)["status"] == "done"
 
 
-def test_one_next_action_per_project(client, conn):
+def test_projects_take_several_next_actions(client, conn):
     pid = db.add_project(conn, "P")
     a = db.add_task(conn, "a", step="next", project_id=pid)
-    b = db.add_task(conn, "b", step="next", project_id=pid)  # b takes over
-    assert [db.get_task(conn, i)["step"] for i in (a, b)] == ["later", "next"]
-    client.post(f"/projects/{pid}/tasks", data={"title": "c"})  # project has a next, so c is later
+    b = db.add_task(conn, "b", step="next", project_id=pid)  # a stays next too
+    assert [db.get_task(conn, i)["step"] for i in (a, b)] == ["next", "next"]
+    client.post(f"/projects/{pid}/tasks", data={"title": "c"})  # "next" is chosen: a new step is later
     c = db.get_task(conn, b + 1)
     assert (c["title"], c["step"]) == ("c", "later")
-    client.post(f"/tasks/{a}/make-next")
-    assert [db.get_task(conn, i)["step"] for i in (a, b)] == ["next", "later"]
-    # finishing the next action leaves the project stalled (⚠), for you to pick the next one
-    r = client.post(f"/tasks/{a}/complete", headers={"X-Requested-With": "fetch"})
-    assert r.status_code == 204
-    assert db.project_next(conn, pid) is None and [p["title"] for p in db.stalled_projects(conn)] == ["P"]
-    assert b"Make next" in client.get(f"/projects/{pid}").data
+    client.post(f"/tasks/{c['id']}/make-next")
+    assert [db.get_task(conn, i)["step"] for i in (a, b, c["id"])] == ["next"] * 3
+    client.post(f"/tasks/{b}/make-later")
+    assert db.get_task(conn, b)["step"] == "later" and db.has_next(conn, pid)
+    page = client.get(f"/projects/{pid}").get_data(as_text=True)
+    assert f'action="/tasks/{a}/make-later"' in page and f'action="/tasks/{b}/make-next"' in page
+    # finishing its last next action leaves the project stalled (⚠), for you to pick the next one
+    for t in (a, c["id"]):
+        assert client.post(f"/tasks/{t}/complete", headers={"X-Requested-With": "fetch"}).status_code == 204
+    assert not db.has_next(conn, pid) and [p["title"] for p in db.stalled_projects(conn)] == ["P"]
 
 
 def test_done_then_pick_next(client, conn):
@@ -325,7 +377,7 @@ def test_waiting_steps_can_be_made_next(client, conn):
     html = client.get(f"/projects/{pid}").get_data(as_text=True)
     assert f'action="/tasks/{w}/make-next"' in html
     client.post(f"/tasks/{w}/make-next")
-    assert db.project_next(conn, pid)["id"] == w
+    assert db.get_task(conn, w)["step"] == "next"
 
 
 def test_completed_steps_dont_repeat_their_project_or_step(client, conn):
@@ -362,7 +414,7 @@ def test_nav_counts_are_dots(client, conn):
     db.add_task(conn, "wait", step="waiting", project_id=pid)
     assert nav_badges(client.get("/inbox").get_data(as_text=True)) == {
         "Next": ("s3 hot", "8 due today or overdue"), "Waiting": ("s1", "1 waiting"),
-        "Inbox": ("s2", "4 in the inbox"), "Projects": ("s1 warn", "1 stalled")}
+        "Inbox": ("s2", "4 in the inbox"), "Projects": ("s1 warn", "2 need a next action or outcome")}
 
 
 def bands(html):
@@ -469,8 +521,8 @@ def test_calendar_add(client, conn):
     (t,) = db.tasks_with_step(conn, "next")
     assert (t["title"], t["due_date"]) == ("file taxes", "2027-04-15")
     client.post("/calendar", data={"title": "send forms", "due_date": "2027-04-01", "project_id": str(pid)})
-    assert db.get_task(conn, t["id"])["step"] == "next"  # existing next action is kept
-    assert [x["title"] for x in db.tasks_with_step(conn, "later")] == ["send forms"]
+    assert db.get_task(conn, t["id"])["step"] == "next"  # existing next action is kept, the new one beside it
+    assert sorted(x["title"] for x in db.tasks_with_step(conn, "next")) == ["file taxes", "send forms"]
     client.post("/calendar", data={"title": "loose", "due_date": "2027-04-02"})
     assert [x["title"] for x in db.inbox_tasks(conn)] == ["loose"]
     client.post("/calendar", data={"title": "bins", "due_date": "2027-04-02", "recur": "weekly", "project_id": "h0"})
@@ -646,9 +698,8 @@ def test_make_next_returns_to_the_project(client, conn):
     r = client.post(f"/tasks/{a}/make-next", headers={"Referer": f"/projects/{pid}"})
     assert db.get_task(conn, a)["step"] == "next" and r.headers["Location"] == f"/projects/{pid}"
     b = db.add_task(conn, "b", step="later", project_id=pid)
-    r = client.post(f"/tasks/{b}/make-next", headers={"Referer": f"/projects/{pid}"})
-    assert r.headers["Location"] == f"/projects/{pid}"
-    assert [db.get_task(conn, i)["step"] for i in (a, b)] == ["later", "next"]
+    r = client.post(f"/tasks/{a}/make-later", headers={"Referer": f"/projects/{pid}"})
+    assert db.get_task(conn, a)["step"] == "later" and r.headers["Location"] == f"/projects/{pid}"
 
 
 def test_complete_twice_is_harmless(client, conn):
@@ -1122,18 +1173,23 @@ def test_becoming_next_moves_a_step_to_the_top(client, conn):
     assert titles() == ["d", "c", "a", "b"]
     db.add_task(conn, "e", step="next", project_id=pid)
     assert titles()[0] == "e"
-    db.reorder_project(conn, pid, [b, a, db.project_next(conn, pid)["id"], c, d])
-    assert titles() == ["e", "b", "a", "c", "d"]  # the next action shows first even if dragged down
+    e = db.project_tasks(conn, pid)[0]["id"]
+    db.reorder_project(conn, pid, [b, a, e, c, d])
+    assert titles() == ["e", "c", "d", "b", "a"]  # next actions show first even if dragged down, then the rest
+    db.reorder_project(conn, pid, [c, e, d, b, a])
+    assert titles() == ["c", "e", "d", "b", "a"]  # next actions keep their dragged order among themselves
     db.update_task(conn, a, title="a!")  # saving without touching the step keeps the dragged order
-    db.update_task(conn, db.project_next(conn, pid)["id"], step="next")  # already next: nothing renumbered
-    assert titles() == ["e", "b", "a!", "c", "d"]
+    db.update_task(conn, e, step="next")  # already next: nothing renumbered
+    assert titles() == ["c", "e", "d", "b", "a!"]
 
 
-def test_project_next_action_is_pinned_but_has_a_grip_to_move_it_out(client, conn):
+def test_project_next_actions_are_pinned_on_top(client, conn):
     ids = seed(conn)
+    more = db.add_task(conn, "order grout", step="next", project_id=ids["active"])
     page = client.get(f"/projects/{ids['active']}").get_data(as_text=True)
     rows = re.findall(r'<li class="task[^"]*" data-id="(\d+)"( data-pinned)?>\s*<span class="grip" title="([^"]*)"', page)
-    assert sorted(rows) == [("2", " data-pinned", "Drag to another project"), ("3", "", "Drag to reorder, or onto a project"), ("4", "", "Drag to reorder, or onto a project")]
+    pinned, other = (" data-pinned", "Drag to reorder next actions, or onto a project"), ("", "Drag to reorder, or onto a project")
+    assert rows[:2] == [(str(more), *pinned), ("2", *pinned)] and sorted(rows[2:]) == [("3", *other), ("4", *other)]
 
 
 def test_done_page_lists_finished_tasks_and_projects(client, conn):
@@ -1276,7 +1332,7 @@ def test_add_a_next_action_on_the_next_page(client, conn):
         client.post("/next/add", data={"title": title, "project_id": project})
     status = {t["title"]: t for t in conn.execute("SELECT * FROM tasks").fetchall()}
     assert status["dig"]["step"] == "next"
-    assert status["second"]["step"] == "later"  # Busy already has its one next action
+    assert status["second"]["step"] == "next"  # Next's add line adds a next action, beside Busy's other
     assert status["first"]["step"] == "next"
     assert status["loose"]["project_id"] is None and not status["loose"]["ground"]  # an inbox item, to be processed
     assert status["sweep"]["step"] == "next" and status["sweep"]["ground"]
@@ -1510,7 +1566,7 @@ def test_project_page_rows_line_up(client, conn):
     for row, step in zip(rows, ("next", "later", "waiting")):
         assert f'<span class="step">{step}</span>' in row
         assert row.count('class="date"') == 1
-        assert row.count('class="make-next') == 1
+        assert row.count('class="set-step"') == 1
 
 
 @pytest.mark.parametrize("status, page", [("someday", "/someday"), ("active", "/projects")])
@@ -1628,7 +1684,7 @@ def test_dragging_moves_any_open_task_between_projects(client, conn):
     # A next action lands as a later step: B keeps its own next, A stalls until you pick one.
     assert move(nxt, str(b)) == 204
     assert (db.get_task(conn, nxt)["project_id"], db.get_task(conn, nxt)["step"]) == (b, "later")
-    assert db.get_task(conn, b_next)["step"] == "next" and not db.project_next(conn, a)
+    assert db.get_task(conn, b_next)["step"] == "next" and not db.has_next(conn, a)
     # A waiting step stays waiting, so it stays on the Waiting list.
     assert move(wait, str(b)) == 204
     assert (db.get_task(conn, wait)["project_id"], db.get_task(conn, wait)["step"]) == (b, "waiting")
@@ -2449,15 +2505,23 @@ def test_review_follows_allens_order():
 def test_review_projects_step(client, conn):
     seen = db.add_project(conn, "seen")
     db.add_task(conn, "paint", step="next", project_id=seen)
+    db.add_task(conn, "sand", step="next", project_id=seen)
+    db.add_task(conn, "prime", step="later", project_id=seen)
+    db.set_project_outcome(conn, seen, "fence painted")
     db.mark_reviewed(conn, seen, NOW - timedelta(days=1))
     stuck = db.add_project(conn, "stuck")
+    db.set_project_outcome(conn, stuck, "unstuck")
+    vague = db.add_project(conn, "vague")
+    db.add_task(conn, "think", step="next", project_id=vague)
     fresh = db.add_project(conn, "fresh")
+    db.set_project_outcome(conn, fresh, "fresh start")
     db.add_task(conn, "call", step="next", project_id=fresh)
     db.add_project(conn, "parked", status="waiting")
     c = card(client.get("/review?step=projects").get_data(as_text=True), "projects")
-    assert re.findall(r'href="/projects/\d+">(?:⚠ )?([^<]*)</a>', c) == ["stuck", "fresh", "parked", "seen"]
-    assert "⚠ stuck" in c and "paint" in c and "call" in c
-    assert '<span class="count">3</span>' in c  # not looked at this week
+    assert re.findall(r'href="/projects/\d+"[^>]*>(?:⚠ )?([^<]*)</a>', c) == ["vague", "stuck", "fresh", "parked", "seen"]
+    assert '"No next action">⚠ stuck' in c and '"No desired outcome">⚠ vague' in c
+    assert "→ fence painted" in c and all(t in c for t in ("paint", "sand", "call")) and "prime" not in c  # next actions only
+    assert '<span class="count">4</span>' in c  # not looked at this week
     assert f'action="/projects/{stuck}/reviewed"' in c
 
 
@@ -2496,7 +2560,6 @@ def test_projects_know_when_they_are_stalled(conn):
     parked = db.add_project(conn, "parked", status="waiting")
     rows = {p["title"]: p for p in db.projects(conn) + db.projects(conn, "waiting")}
     assert (rows["stuck"]["stalled"], rows["going"]["stalled"], rows["parked"]["stalled"]) == (1, 0, 0)
-    assert rows["going"]["next_title"] == "paint"
     assert [p["id"] for p in db.stalled_projects(conn)] == [stuck]
     assert db.get_project(conn, parked)["stalled"] == 0
 

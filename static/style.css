@@ -104,9 +104,12 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .primary:hover { filter: brightness(1.08); }
 .danger, .danger:hover { color: var(--danger); }
 .icon { min-width: 34px; text-align: center; padding-left: 6px; padding-right: 6px; }
-.big { font-size: 1.4rem; font-weight: 650; border-color: transparent; background: transparent; padding-left: 0; }
-.big:hover { border-color: var(--line); }
-.big:focus { border-color: var(--accent); padding-left: 10px; }
+.big, .outcome input { border-color: transparent; background: transparent; padding-left: 0; }
+.big { font-size: 1.4rem; font-weight: 650; }
+.big:hover, .outcome input:hover { border-color: var(--line); }
+.big:focus, .outcome input:focus { border-color: var(--accent); padding-left: 10px; }
+/* A project's desired outcome: the title's subtitle, muted until edited. */
+.outcome input:not(:focus) { color: var(--muted); }
 .end { margin-left: auto; }
 
 /* Top bar: + capture, search, theme. Identical on every page. */
@@ -120,7 +123,7 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
 .theme-toggle { flex: none; }
-.capture-dialog, .help-dialog, .process, .task-dialog { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
+.capture-dialog, .help-dialog, .process, .task-dialog, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
 .capture-dialog { width: min(480px, calc(100vw - 32px)); }
 .help-dialog { max-width: 26rem; }
 /* Process: the item, then one quiet line under a rule: the question and its answers; only a live File is filled. */
@@ -149,8 +152,8 @@ body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-col
 body.embed .title-line { padding-right: 7rem; }  /* room for the overlay's × (and Process's count) */
 body.embed .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
 body.embed .edit .fields .hint.when { display: inline; min-height: 0; }  /* no centering here to keep still */
-:is(.capture-dialog, .help-dialog, .process, .task-dialog)::backdrop { background: rgb(0 0 0 / .35); }
-:is(.capture-dialog, .help-dialog) h2 { margin-top: 0; }
+:is(.capture-dialog, .help-dialog, .process, .task-dialog, .reached)::backdrop { background: rgb(0 0 0 / .35); }
+:is(.capture-dialog, .help-dialog, .reached) h2 { margin-top: 0; }
 .suggest {
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
@@ -250,7 +253,7 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 
 /* A record page's first line: the big title, then its few controls as quiet selects and icons. */
 .title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
-.title-line .big { flex: 1 1 240px; width: auto; min-width: 0; }
+.title-line :is(.big, .outcome input) { flex: 1 1 240px; width: auto; min-width: 0; }
 .title-line select { background: transparent; border-color: transparent; color: var(--muted); padding: 4px 6px; font-size: var(--fs-m); }
 .title-line select:hover { border-color: var(--line); color: var(--fg); }
 .title-line > .warn { cursor: help; }
@@ -300,7 +303,7 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .task .remind { font-size: var(--fs-xs); filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task form { margin: 0; }
 .task.overdue .date { color: var(--danger); font-weight: 600; }
-.task.stalled .title { color: var(--warn); }
+.task.flagged .title { color: var(--warn); }
 .task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
 .task:hover .grip { opacity: 1; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
@@ -311,7 +314,8 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .until + .reviewed { margin-left: 0; }
 /* The review's projects and someday steps: ✓, title, then faint details. */
 .plain.review-list { list-style: none; padding-left: 0; }
-.review-list li { display: flex; align-items: center; gap: 8px; }
+.review-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+.review-list .nexts { flex-basis: 100%; list-style: none; margin: 0 0 6px; padding-left: calc(34px + 8px); font-size: var(--fs-s); }
 .review-list form { display: contents; }
 .review-list .date { color: var(--muted); font-size: var(--fs-s); }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
@@ -330,18 +334,17 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
-.task .start button, .task .timing button, .task .make-next button, .task .row-btn button {
+.task .start button, .task .timing button, .task .set-step button, .task .row-btn button {
   padding: 0 6px; font-size: var(--fs-xs); line-height: 20px; color: var(--muted);
 }
 /* ▶ (.start) always shows, so the timer starts from anywhere. */
 .task .start button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
-.task :is(.make-next, .row-btn) button { color: var(--accent); border-color: var(--line); }
-/* A project's steps: the step word and Make next show on hover. */
-.tasks.by-step > .task :is(.step, .make-next button) { opacity: 0; }
-.tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .make-next button) { opacity: 1; }
-/* Holds Make next's width on rows without it, so a project page's dates line up. */
-.task .slot { visibility: hidden; }
+.task :is(.set-step, .row-btn) button { color: var(--accent); border-color: var(--line); }
+/* A project's steps: the step word and Make next / Make later show on hover, one width so the dates line up. */
+.tasks.by-step > .task :is(.step, .set-step button) { opacity: 0; }
+.tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .set-step button) { opacity: 1; }
+.task .set-step button { min-width: 6.5em; }
 
 /* Decks (Review, Horizons): one card at a time, a rail of dots to move between them. Review's past weeks: a streak. */
 .deck { list-style: none; padding-left: 0; }

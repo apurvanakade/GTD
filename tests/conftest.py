@@ -57,6 +57,7 @@ def seed(c):
     db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
     db.add_reference(c, "Packing", notes="- [ ] passport\n- [x] charger")  # a checklist
     db.set_project_tickle(c, someday, "2027-01-01")
+    db.set_project_outcome(c, active, "Kitchen retiled")  # "Stalled" has none: ⚠ for both reasons
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
     db.timer_start(c, 7, NOW - timedelta(minutes=10))  # "call mum", still running
