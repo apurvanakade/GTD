@@ -18,26 +18,26 @@
 {% if step == 'creative' %}{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ someday_kind_select() }}{% endcall %}{% endif %}
 <ol class="deck review">
   {#- Get clear #}
-  {% call card('collect', 'Collect loose ends', 'Desktop, downloads, email, notes, tabs → Inbox.') %}{% endcall %}
-  {% call card('inbox', 'Inbox to zero', 'File, do or drop each.', counts.inbox) %}
+  {% call card('collect', 'Collect loose ends', 'Gather what\'s lying around: desktop, downloads, email, notes, open tabs, paper, the last two weeks of your calendar. Capture every loose end into the Inbox; don\'t decide anything yet.') %}{% endcall %}
+  {% call card('inbox', 'Inbox to zero', 'Decide each item, top first: trash, someday, reference, a project, do it now if under two minutes, or make it a next action or a waiting-for.', counts.inbox) %}
     {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox', process=1) }}">Process inbox →</a></p>{% endif %}
   {% endcall %}
-  {% call card('sweep', 'Mind sweep', 'Capture every open loop.') %}{% endcall %}
+  {% call card('sweep', 'Mind sweep', 'Empty your head: run through work, home, people, money, health, errands. Capture every open loop, however small, then process it like the Inbox.') %}{% endcall %}
   {#- Get current #}
-  {% call card('overdue', 'Overdue', 'Do, reschedule or drop.', overdue|length) %}
+  {% call card('overdue', 'Overdue', 'Each of these missed its date. Do it now, give it a realistic new date, or drop it.', overdue|length) %}
     {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
-  {% call card('nexts', 'Scan next actions', 'Tick off done, drop dead.', nexts|length) %}
+  {% call card('nexts', 'Scan next actions', 'Read every next action. Tick off what\'s done, drop what\'s dead, and reword any that isn\'t a concrete step you could start now.', nexts|length) %}
     {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}
     <p><a class="button" href="{{ url_for('next_view') }}">Next actions →</a></p>
   {% endcall %}
-  {% call card('ahead', 'Look ahead', 'What needs prep now?') %}
+  {% call card('ahead', 'Look ahead', 'Look over the next two or three weeks. Capture any prep they need (booking, buying, drafting) as tasks.') %}
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
   {% endcall %}
-  {% call card('waiting', 'Chase waiting-fors', 'Nudge the overdue.', counts.waiting) %}
+  {% call card('waiting', 'Chase waiting-fors', 'Check what has arrived. Nudge whoever is late, and give the rest a follow-up date.', counts.waiting) %}
     {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
   {% endcall %}
-  {% call card('projects', 'Review projects', 'Do its next actions lead to its outcome? ✓ each one looked at.', unseen(projects)) %}
+  {% call card('projects', 'Review projects', 'Read each outcome: do its next actions still lead there? Add what\'s missing, close what\'s finished, then ✓ it.', unseen(projects)) %}
     {#- Flagged (⚠) first, then never reviewed, then the longest ago (db.projects_to_review()); each with its outcome
         and every next action. #}
     {% if projects %}<ul class="plain review-list">{% for p in projects %}<li>
@@ -50,19 +50,19 @@
       {% if actions %}<ul class="nexts">{% for t in actions %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a></li>{% endfor %}</ul>{% endif %}
     </li>{% endfor %}</ul>{% endif %}
   {% endcall %}
-  {% call card('checklists', 'Checklists', 'Run through any that apply.') %}
+  {% call card('checklists', 'Checklists', 'Open any that fit this week (travel, bills, …) and work through it, capturing what it turns up.') %}
     {% if checklists %}<ul class="plain">{% for r in checklists %}<li><a href="{{ url_for('reference_view', id=r.id) }}">{{ r.title }}</a></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
   {#- Get creative #}
-  {% call card('someday', 'Scan someday / maybe', 'Commit to what\'s ready; ✓ each one looked at.', unseen(someday)) %}
+  {% call card('someday', 'Scan someday / maybe', 'Read each idea. Commit to what\'s ready, drop what no longer appeals, set a tickler for later, then ✓ it.', unseen(someday)) %}
     {#- H0 someday tasks and someday projects, never reviewed first, then the longest ago; tickled to later out of sight (db.someday_to_review()). #}
     {% if someday %}<ul class="plain review-list">{% for x in someday %}<li>
       <form method="post" action="{{ url_for('project_reviewed' if x.kind == 'project' else 'task_reviewed', id=x.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
       <a href="{{ someday_url(x) }}">{{ x.title }}</a> <span class="date" title="Last reviewed">{{ x.reviewed_at|ago }}</span></li>{% endfor %}</ul>
     <p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
   {% endcall %}
-  {% call card('creative', 'New ideas', 'Anything bold to park? Add it above.') %}{% endcall %}
-  {% call card('horizons', 'Check horizons', 'Anything missing?') %}
+  {% call card('creative', 'New ideas', 'Think big: new projects, things to learn, places to go. Park each idea above; nothing is committed yet.') %}{% endcall %}
+  {% call card('horizons', 'Check horizons', 'Read your purpose, vision, goals and areas. Does any lack a project, or does a project serve none of them? Capture what you find.') %}
     <p><a class="button" href="{{ url_for('horizons_view') }}">Horizons →</a></p>
   {% endcall %}
 </ol>

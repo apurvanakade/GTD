@@ -358,7 +358,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .deck > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
 .deck h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
 .deck h2 + .hint { margin: 2px 0 0; font-size: var(--fs-s); }
-.review h2 + .hint { margin-left: calc(1.3em + 10px); }
+.review h2 + .hint { margin-left: calc(1.3em + 10px); max-width: 60ch; }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
 .deck .count.clear { color: var(--muted); }
 .review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }
