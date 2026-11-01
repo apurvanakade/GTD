@@ -58,6 +58,8 @@ input, textarea, select, button, .button {
   font: inherit; color: var(--fg); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
 }
+/* A transparent select's open list falls back to the browser's white; give its options the theme's colors. */
+option, optgroup { color: var(--fg); background: var(--card); }
 input, textarea { width: 100%; }
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
 textarea { resize: vertical; }
