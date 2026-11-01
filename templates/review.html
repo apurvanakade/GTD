@@ -35,7 +35,12 @@
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
   {% endcall %}
   {% call card('waiting', 'Chase waiting-fors', 'Check what has arrived. Nudge whoever is late, and give the rest a follow-up date.', counts.waiting) %}
-    {% if counts.waiting %}<p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
+    {#- Waiting's own list: waiting projects, then waiting tasks with their follow-up dates. #}
+    {% if counts.waiting %}<ul class="plain">
+      {%- for p in waiting_projects %}<li><a href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a> <span class="date">project</span></li>{% endfor %}
+      {%- for t in waiting %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date{{ ' overdue' if t.due_date and t.due_date < today }}">{{ t.due_date or '' }}</span></li>{% endfor %}
+    </ul>
+    <p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
   {% endcall %}
   {% call card('projects', 'Review projects', 'Read each outcome: do its next actions still lead there? Add what\'s missing, close what\'s finished, then ✓ it.', unseen(projects)) %}
     {#- Flagged (⚠) first, then never reviewed, then the longest ago (db.projects_to_review()); each with its outcome

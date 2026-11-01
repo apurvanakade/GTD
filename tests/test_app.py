@@ -1,12 +1,14 @@
 import os
 import re
 import sqlite3
+import time
 from datetime import date, datetime, timedelta
 
 import pytest
 
 import dates
 import db
+import extcal
 import recur
 from app import HORIZON_STEPS, REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
@@ -476,6 +478,73 @@ def test_next_folds_into_due_bands(client, conn):
     assert bands(html)[-1] == ("nodate", False, ["loose end"])  # empty bands aren't shown (no No date above)
 
 
+ICS = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:1
+SUMMARY:Standup
+DTSTART:20261019T140000Z
+DTEND:20261019T143000Z
+RRULE:FREQ=WEEKLY;BYDAY=MO,WE
+LOCATION:Room 3
+END:VEVENT
+BEGIN:VEVENT
+UID:2
+SUMMARY:Conference
+DTSTART;VALUE=DATE:20261022
+DTEND;VALUE=DATE:20261024
+END:VEVENT
+BEGIN:VEVENT
+UID:3
+SUMMARY:Called off
+STATUS:CANCELLED
+DTSTART:20261022T150000Z
+DTEND:20261022T160000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:4
+SUMMARY:Late show
+DTSTART:20261023T000000Z
+DTEND:20261023T040000Z
+END:VEVENT
+END:VCALENDAR
+"""
+
+
+@pytest.fixture
+def new_york(monkeypatch):
+    """Local time is the VM's zone, so event times are deterministic."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_calendar_shows_external_events(client, conn, monkeypatch, new_york):
+    fetched = []
+    monkeypatch.setattr(extcal, "fetch", lambda url: fetched.append(url) or (ICS if "ok" in url else 1 / 0))
+    monkeypatch.setattr(extcal, "_feeds", {})
+    monkeypatch.setitem(app.config, "CALENDARS", extcal.parse_config("My_Cal=webcal://ok.test/a.ics Work=https://bad.test"))
+    db.add_task(conn, "dentist", step="next", ground=1, due_date="2026-10-22")
+    html = client.get("/calendar?w=2026-10-22").data.decode()
+    days = {d: cell for d, cell in re.findall(r'<td data-date="([\d-]+)"(.*?)</td>', html, re.S)}
+    assert fetched == ["https://ok.test/a.ics", "https://bad.test"]
+    assert days["2026-10-19"].count("> Standup<") == 1 and days["2026-10-21"].count("> Standup<") == 1  # the repeat
+    assert "Standup" not in days["2026-10-20"]
+    assert "<b>10:00</b> Standup" in days["2026-10-19"]  # in local time
+    assert 'title="My Cal · Standup · 10:00–10:30 · Room 3"' in html
+    assert "Conference" in days["2026-10-22"] and "Conference" in days["2026-10-23"]  # all day, DTEND exclusive
+    assert "Conference" not in days["2026-10-24"]
+    assert days["2026-10-22"].index("Conference") < days["2026-10-22"].index("Late show") \
+        < days["2026-10-22"].index("dentist")  # all-day, then timed, then tasks
+    assert "Late show" not in days["2026-10-23"]  # 20:00–24:00 local stays on its day
+    assert "Called off" not in html
+    assert re.search(r'class="x-1">Work <i class="warn" title="Couldn.{1,5}t fetch: ZeroDivisionError', html)
+    client.get("/calendar?w=2026-10-22")
+    assert len(fetched) == 2  # cached
+
+
 def test_calendar_colors_tasks_by_kind(client, conn):
     some = db.add_project(conn, "Dreams", status="someday")
     act = db.add_project(conn, "Act")
@@ -671,6 +740,10 @@ def test_review_next_actions_list_all(client, conn):
     nexts = card(client.get("/review").get_data(as_text=True), "nexts")
     assert all(t in nexts for t in ("renew visa", "pay deposit", "call hotel", "book flights"))
     assert "pack bags" not in nexts and "water plants" not in nexts
+    db.add_task(conn, "reply from Ann", step="waiting", ground=1, due_date="2026-10-30")
+    db.add_project(conn, "Permit", status="waiting")
+    waiting = card(client.get("/review").get_data(as_text=True), "waiting")
+    assert "reply from Ann" in waiting and "2026-10-30" in waiting and "Permit" in waiting  # the waiting list itself
 
 
 def test_task_form_edges(client, conn):

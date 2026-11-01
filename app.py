@@ -14,6 +14,7 @@ from flask import (Flask, abort, flash, g, get_flashed_messages, make_response, 
 
 import dates
 import db
+import extcal
 import recur
 
 HORIZON_LEVELS = [
@@ -27,6 +28,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("GTD_SECRET", os.urandom(16))
 NTFY_URL = os.environ.get("NTFY_URL")  # the ntfy topic reminders are POSTed to; unset (dev, tests): none are sent
 GTD_URL = (os.environ.get("GTD_URL") or "").rstrip("/")  # the app's own address, so a reminder opens its task
+CALENDARS = extcal.parse_config(os.environ.get("GTD_CALENDARS"))  # [(name, ics url)] shown on the calendar
 
 
 def conn():
@@ -492,6 +494,7 @@ def review():
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=db.next_actions(c, today()),
+                           waiting_projects=db.projects(c, "waiting"), waiting=db.tasks_with_step(c, "waiting"),
                            checklists=db.checklists(c), unseen=unseen,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 
@@ -817,6 +820,8 @@ def calendar_view():
     by_day = defaultdict(list)  # iso date -> [task]; a repeat shows only on its due date, no future copies
     for t in db.dated_tasks(conn(), start, end):
         by_day[t["due_date"]].append(t)
+    calendars = app.config.get("CALENDARS", CALENDARS)
+    events, cal_errors = extcal.events(calendars, start, end)
     weeks = [[start + timedelta(days=7 * w + i) for i in range(7)] for w in range(((end - start).days + 1) // 7)]
     if week:
         prev, next_ = ((week + timedelta(days=d)).isoformat() for d in (-7, 7))
@@ -824,7 +829,8 @@ def calendar_view():
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
     resp = make_response(render_template(
         "calendar.html", first=first, week=week, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
-        by_day=by_day, prev=prev, next=next_,
+        by_day=by_day, events=events, calendars=[name for name, _ in calendars], cal_errors=dict(cal_errors),
+        prev=prev, next=next_,
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", "week" if week else "month", max_age=365 * 86400, samesite="Lax")
     return resp

@@ -13,6 +13,8 @@
 /* Task kinds: the calendar's colors and legend dots, the only colored stripes in the app. */
 .k-next { --k: #2563eb; } .k-later { --k: #a8a29e; }
 .k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
+/* External calendars' events (GTD_CALENDARS), by feed: read-only, so no tint, only the stripe. */
+.x-0 { --k: #0d9488; } .x-1 { --k: #65a30d; } .x-2 { --k: #64748b; }
 /* Next folds into due bands; dates and ↻ show on hover, except an overdue date. */
 .band { margin-top: 14px; }
 .band > summary { font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
@@ -307,7 +309,7 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
 .task .remind { font-size: var(--fs-xs); filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task form { margin: 0; }
-.task.overdue .date { color: var(--danger); font-weight: 600; }
+.task.overdue .date, .date.overdue { color: var(--danger); font-weight: 600; }
 .task.flagged .title { color: var(--warn); }
 .task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
 .task:hover .grip { opacity: 1; }
@@ -395,6 +397,8 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
   background: color-mix(in srgb, var(--k, var(--line)) 10%, transparent);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.cal .ev.ext { background: none; color: var(--muted); cursor: default; }
+.cal .ev.ext b { font-weight: 600; color: var(--fg); }
 .cal .ev.overdue { color: var(--danger); }
 .cal .ev.dragging { opacity: .4; }
 .cal td.drop { background: color-mix(in srgb, var(--accent) 12%, transparent); }
