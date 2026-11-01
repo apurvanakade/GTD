@@ -459,9 +459,8 @@ def done():
 
 
 # The weekly review's steps, in Allen's order (get clear, get current, get creative); review.html has one card per key.
-REVIEW_STEPS = ("collect", "inbox", "sweep", "overdue", "nexts", "past", "ahead", "waiting", "projects",
+REVIEW_STEPS = ("collect", "inbox", "sweep", "overdue", "nexts", "ahead", "waiting", "projects",
                 "checklists", "someday", "creative", "horizons")
-LOOK_BACK = timedelta(days=14)  # the review's look back: tasks finished this long ago and since
 
 
 @app.template_filter()
@@ -478,7 +477,6 @@ def long_date(iso):
 @app.route("/review")
 def review():
     c = conn()
-    nexts = [t for t in db.next_actions(c, today()) if not (t["due_date"] and t["due_date"] >= today().isoformat())]
     checked = db.review_checked(c)
     step = request.args.get("step")
     if step not in REVIEW_STEPS:  # the first step still to do
@@ -490,11 +488,10 @@ def review():
     for d in past:
         by_week.setdefault(date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday()), d)
     weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
-    since = datetime.combine(today() - LOOK_BACK, datetime.min.time()).astimezone().astimezone(timezone.utc)
     return render_template("review.html", projects=db.projects_to_review(c),
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
-                           nexts=nexts, recent=db.done_since(c, since.strftime("%Y-%m-%d %H:%M:%S")),
+                           nexts=db.next_actions(c, today()),
                            checklists=db.checklists(c), unseen=unseen,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 

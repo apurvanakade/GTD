@@ -660,18 +660,17 @@ def test_delete_empty_project_only(client, conn):
     assert db.get_project(conn, empty) is None and r.headers["Location"] == "/projects"
 
 
-def test_review_next_actions_skip_scheduled(client, conn):
+def test_review_next_actions_list_all(client, conn):
     pid = db.add_project(conn, "Trip")
     db.add_task(conn, "book flights", step="next", project_id=pid, due_date="2026-12-01")
     db.add_task(conn, "pack bags", step="later", project_id=pid)
     db.add_task(conn, "renew visa", step="next", project_id=db.add_project(conn, "Visa"))
-    db.add_task(conn, "call hotel", step="next", project_id=db.add_project(conn, "Hotel"),
-                due_date="2026-10-22")  # due today: still left out, or the review never ends
-    db.add_task(conn, "pay deposit", step="next", project_id=db.add_project(conn, "Deposit"),
-                due_date="2026-10-21")  # overdue: kept
+    db.add_task(conn, "call hotel", step="next", project_id=db.add_project(conn, "Hotel"), due_date="2026-10-22")
+    db.add_task(conn, "pay deposit", step="next", project_id=db.add_project(conn, "Deposit"), due_date="2026-10-21")
+    db.add_task(conn, "water plants", step="next", ground=1, recur="weekly", due_date="2026-10-25")  # repeat not yet due
     nexts = card(client.get("/review").get_data(as_text=True), "nexts")
-    assert "renew visa" in nexts and "pay deposit" in nexts  # listed like orphans
-    assert "book flights" not in nexts and "call hotel" not in nexts
+    assert all(t in nexts for t in ("renew visa", "pay deposit", "call hotel", "book flights"))
+    assert "pack bags" not in nexts and "water plants" not in nexts
 
 
 def test_task_form_edges(client, conn):
@@ -2511,7 +2510,7 @@ def test_a_someday_projects_tickler_date(client, conn):
 
 
 def test_review_follows_allens_order():
-    assert REVIEW_STEPS == ("collect", "inbox", "sweep", "overdue", "nexts", "past", "ahead", "waiting", "projects",
+    assert REVIEW_STEPS == ("collect", "inbox", "sweep", "overdue", "nexts", "ahead", "waiting", "projects",
                             "checklists", "someday", "creative", "horizons")
 
 
@@ -2538,10 +2537,7 @@ def test_review_projects_step(client, conn):
     assert f'action="/projects/{stuck}/reviewed"' in c
 
 
-def test_review_look_back_checklists_and_new_ideas(client, conn):
-    t = db.add_task(conn, "sent the forms", ground=1)
-    db.complete_task(conn, t, TODAY)
-    assert "sent the forms" in card(client.get("/review?step=past").get_data(as_text=True), "past")
+def test_review_checklists_and_new_ideas(client, conn):
     pack = db.add_reference(conn, "Packing", notes="- [ ] passport\n- [x] charger")
     db.add_reference(conn, "Plumber", notes="call Sam - [ ] not a line")
     assert [r["title"] for r in db.checklists(conn)] == ["Packing"]
@@ -2552,14 +2548,6 @@ def test_review_look_back_checklists_and_new_ideas(client, conn):
     assert 'action="/someday/add"' not in client.get("/review?step=someday").get_data(as_text=True)
     r = client.post("/someday/add", data={"title": "learn Italian"}, headers={"Referer": "/review?step=creative"})
     assert r.location.endswith("/review?step=creative") and db.someday_tasks(conn)[0]["title"] == "learn Italian"
-
-
-def test_look_back_lists_a_repeat_once(client, conn):
-    t = db.add_task(conn, "Vitamins", recur="daily", due_date="2026-10-20", ground=1)
-    for _ in range(3):
-        t = db.complete_task(conn, t, TODAY)
-    c = card(client.get("/review?step=past").get_data(as_text=True), "past")
-    assert c.count(">Vitamins<") == 1 and "×3" in c
 
 
 def test_a_checklist_line_may_end_at_its_box(conn):

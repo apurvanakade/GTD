@@ -31,10 +31,6 @@
     {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}
     <p><a class="button" href="{{ url_for('next_view') }}">Next actions →</a></p>
   {% endcall %}
-  {% call card('past', 'Look back', 'Done these two weeks: anything to follow up?') %}
-    {#- A repeat once, with how many times (db.done_since()). #}
-    {% if recent %}<ul class="plain">{% for t, n in recent %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>{% if n > 1 %} <span class="date" title="Done {{ n }} times">×{{ n }}</span>{% endif %} <span class="date">{{ t.completed_at|local_date }}</span></li>{% endfor %}</ul>{% endif %}
-  {% endcall %}
   {% call card('ahead', 'Look ahead', 'What needs prep now?') %}
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
   {% endcall %}

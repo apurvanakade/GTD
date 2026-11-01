@@ -672,18 +672,13 @@ def open_steps(c, status="active"):
     return steps
 
 
-def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=None):
+def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
     """Finished (or, with state="abandoned", abandoned) tasks, newest first; optionally only one project's,
-    or only H0 (ground=1) / non-H0 (ground=0), or only those finished since a UTC datetime('now') stamp. Without a
-    project, the steps a closed project took down with it are left out (Done lists the project instead), but not
-    from the look back: done work is done work."""
+    or only H0 (ground=1) / non-H0 (ground=0). Without a project, the steps a closed project took down with it are
+    left out (Done lists the project instead)."""
     where, args = "t.state = ?", [state]
-    if since:
-        where += " AND t.completed_at >= ?"
-        args.append(since)
     if project_id is None:
-        if not since:
-            where += " AND NOT (coalesce(p.status IN ('done', 'abandoned'), 0) AND t.completed_at = p.completed_at)"
+        where += " AND NOT (coalesce(p.status IN ('done', 'abandoned'), 0) AND t.completed_at = p.completed_at)"
     else:
         where += " AND t.project_id = ?"
         args.append(project_id)
@@ -692,16 +687,6 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=N
         args.append(ground)
     return c.execute(f"{TASK_SELECT} WHERE {where} ORDER BY t.completed_at DESC, t.id DESC LIMIT ?",
                      (*args, limit)).fetchall()
-
-
-def done_since(c, since):
-    """Tasks finished since a UTC datetime('now') stamp, newest first, as (task, times): a repeat's instances count
-    as one row, the latest, so a daily task doesn't fill the review's look back."""
-    rows = {}
-    for t in done_tasks(c, limit=-1, since=since):
-        task, n = rows.get(_repeat_key(t), (t, 0))
-        rows[_repeat_key(t)] = (task, n + 1)
-    return list(rows.values())
 
 
 def project_groups(c):
