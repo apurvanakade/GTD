@@ -168,8 +168,9 @@ document.addEventListener('click', e => {
   document.querySelectorAll('button.peek').forEach(b => peek(b, open));
   all.textContent = open ? 'Collapse all' : 'Expand all';
 });
-// Light / dark toggle; the pick overrides the system setting and is remembered.
-document.querySelector('.theme-toggle')?.addEventListener('click', () => {
+// Light / dark toggle (in the nav, which refreshNav() replaces, so delegated); the pick overrides the system setting and is remembered.
+document.addEventListener('click', e => {
+  if (!e.target.closest('.theme-toggle')) return;
   const root = document.documentElement;
   const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
   root.dataset.theme = dark ? 'light' : 'dark';

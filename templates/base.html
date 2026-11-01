@@ -24,7 +24,6 @@
     <input type="search" name="q" value="{{ q|default('') }}" placeholder="Search  ( f )" aria-label="Search" autocomplete="off" required>
     <div class="suggest" hidden></div>
   </form>
-  <button type="button" class="theme-toggle icon" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
 </div>
 {% if timer %}
 <form class="running-timer" method="post" action="{{ url_for('timer_stop') }}">

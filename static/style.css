@@ -34,7 +34,7 @@ h1 { font-size: 1.5rem; margin: 0; font-weight: 650; letter-spacing: -.01em; }
 h1 small { color: var(--muted); font-weight: normal; font-size: 1rem; }
 h2 { font-size: var(--fs-s); margin: 28px 0 6px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 
-/* Nav: three groups of daily tabs, then the muted weekly-review pages on the right. */
+/* Nav: three groups of daily tabs, then the muted weekly-review pages and ◐ on the right. */
 nav {
   display: flex; align-items: center; overflow-x: auto; padding: 14px 0 10px; position: sticky; top: 0; z-index: 5; background: var(--bg);
   transition: transform .2s;
@@ -47,6 +47,7 @@ nav a:hover { color: var(--fg); }
 nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
 nav .aux { display: flex; gap: 2px; margin-left: auto; padding-left: 16px; }
 nav .aux a { font-size: .85em; }
+nav .theme-toggle { flex: none; margin-left: 6px; color: var(--muted); }
 nav .badge { display: inline-block; border-radius: 50%; background: var(--muted); vertical-align: 2px; margin-left: 2px; }
 nav .badge.s1 { width: 6px; height: 6px; } nav .badge.s2 { width: 8px; height: 8px; } nav .badge.s3 { width: 10px; height: 10px; vertical-align: 1px; }
 nav .badge.hot { background: var(--danger); } nav .badge.warn { background: var(--warn); }
@@ -112,7 +113,7 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .outcome input:not(:focus) { color: var(--muted); }
 .end { margin-left: auto; }
 
-/* Top bar: + capture, search, theme. Identical on every page. */
+/* Top bar: + capture, search. Identical on every page. */
 .bar { display: flex; gap: 6px; align-items: center; }
 .add-inbox {
   width: 34px; height: 34px; padding: 0; border-radius: 50%; font-size: 1.3rem; line-height: 1;
@@ -122,7 +123,6 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search { flex: 1 1 0; min-width: 120px; position: relative; }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
-.theme-toggle { flex: none; }
 .capture-dialog, .help-dialog, .process, .task-dialog, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
 .capture-dialog { width: min(480px, calc(100vw - 32px)); }
 .help-dialog { max-width: 26rem; }

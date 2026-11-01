@@ -257,7 +257,8 @@ def test_theme_toggle_overrides_system_and_persists(page, live):
     assert bg() != light
     page.reload()
     assert page.evaluate("document.documentElement.dataset.theme") == "dark"
-    page.locator(".theme-toggle").click()
+    page.evaluate("refreshNav()")  # the toggle sits in the nav, which a change made in place replaces
+    page.locator("nav .theme-toggle").click()
     assert bg() == light
 
 
