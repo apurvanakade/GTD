@@ -442,10 +442,11 @@ def counts(c, today):
         "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + one(f"SELECT count(*) FROM ({TICKLED})", today.isoformat()),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
         "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
-        "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'")
-                   + one("SELECT count(*) FROM projects WHERE status = 'waiting'"),
-        "someday": one("SELECT count(*) FROM projects WHERE status = 'someday'") + one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
-        "flagged": one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL"),
+        "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'"),
+        "someday": one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
+        # Per project tab: the projects lacking a next action or a desired outcome (someday ones never are).
+        "flagged": {s: one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL AND status = ?", s)
+                    for s in ("active", "waiting")},
     }
 
 
@@ -697,13 +698,12 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=N
 
 
 def project_groups(c):
-    """Every open project, for pickers (the task dropdown, Inbox's drop panel): [(label, projects, offers "＋ New…")]:
-    active, then waiting, then someday, each in its list's own order; even with none, a new project can start there.
-    Done and abandoned ones are closed: revive one to file into it."""
-    rows = c.execute("""SELECT * FROM projects WHERE status NOT IN ('done', 'abandoned')
-        ORDER BY position, id""").fetchall()
-    rank = {"active": 0, "waiting": 1, "someday": 2}
-    return [("Projects", sorted(rows, key=lambda p: rank[p["status"]]), True)]  # stable: keeps the drag order
+    """Every open project, for pickers (the task dropdown, the drop panel): [(label, projects, its "＋ New…" value)],
+    one group per project tab (Active, Waiting, Someday), each in its tab's drag order; even with none, a new project
+    can start in each: `__new__`, `__new__waiting`, `__new__someday` (task_fields_from_form() in app.py). Done and
+    abandoned ones are closed: revive one to file into it."""
+    return [(s.capitalize(), c.execute("SELECT * FROM projects WHERE status = ? ORDER BY position, id", (s,)).fetchall(),
+             "__new__" + ("" if s == "active" else s)) for s in ("active", "waiting", "someday")]
 
 
 def stalled_projects(c):

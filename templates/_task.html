@@ -83,48 +83,54 @@
 <label class="tickler" title="Tickler: out of sight until this date, then back in the Inbox">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
 {% endmacro %}
 
-{# The one project list (db.project_groups(): the open projects), as the task dropdown here
-   and as Inbox's drop panel in project_targets(). It starts with "＋ New project…" (value __new__),
+{# The drop panel's task targets, in the nav's order: H0 with that step (task_move() in app.py). #}
+{% set task_targets = [('h0', 'Next'), ('waiting', 'Waiting'), ('someday', 'Someday')] %}
+
+{# The one project list (db.project_groups(): the open projects, one group per project tab), as the task dropdown here
+   and as the drop panel in project_targets(). Each group starts with "＋ New project…" (value __new__, __new__waiting,
+   __new__someday: a project of that status),
    which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
    task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
 {% macro project_select(selected=none, h0=True, keep=none, targets=False) %}
-{#- targets: the drop panel's whole list (Process's "file to…"): H0's someday / maybe and Reference too. #}
+{#- targets: the drop panel's whole list (Process's "file to…"): the task tabs and Reference too. Otherwise one H0,
+    whose step the task's step select picks. #}
 <select name="project_id" aria-label="{{ 'File to' if targets else 'Project' }}"{% if targets %} class="quick" title="File it now (f)"{% endif %}>
   <option value="">{{ 'file to…' if targets else 'project…' }}</option>
-  {% if h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
-  {% if targets %}<option value="someday">Someday / maybe</option><option value="reference">Reference</option>{% endif %}
+  {% if targets %}<optgroup label="Tasks (no project)">{% for key, label in task_targets %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</optgroup>
+  {% elif h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
   {% for label, ps, new in project_groups %}<optgroup label="{{ label }}">
-    {% if new %}<option value="__new__">＋ New project…</option>{% endif %}
-    {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}{{ ' · ' ~ p.status if p.status in ('waiting', 'someday') }}</option>{% endfor %}
+    <option value="{{ new }}">＋ New project…</option>
+    {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
   </optgroup>{% endfor %}
+  {% if targets %}<option value="reference">Reference</option>{% endif %}
   {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
 </select>
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">
 {% endmacro %}
 
-{# The drop panel's targets: H0, its someday / maybe, Reference, then the one project list; `current` (a project id,
-   'h0' or 'someday') is where the page's tasks already are, so it isn't offered. #}
+{# The drop panel's targets, as the nav: the task tabs, the project tabs' projects, then Reference; `current` (a
+   project id, 'waiting' or 'someday') is where the page's tasks already are, so it isn't offered. #}
 {% macro project_targets(current=none) %}
-{% if current != 'h0' %}<div class="target" data-project="h0">H0 · ground level (no project)</div>{% endif %}
-{% if current != 'someday' %}<div class="target maybe" data-project="someday" title="Not committed to: an H0 someday task">Someday / maybe</div>{% endif %}
-<div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
+<section class="group"><h3>Tasks (no project)</h3>
+  {% for key, label in task_targets if key != current %}<div class="target" data-project="{{ key }}" title="H0: no project, on purpose">{{ label }}</div>{% endfor %}</section>
 {% for label, ps, new in project_groups %}<section class="group"><h3>{{ label }}</h3>
-  {% if new %}<div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>{% endif %}
-  {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}{% if p.status in ('waiting', 'someday') %} <span class="meta">{{ p.status }}</span>{% endif %}</div>{% endfor %}</section>{% endfor %}
+  <div class="target new" data-project="{{ new }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
+  {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}</div>{% endfor %}</section>{% endfor %}
+<div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
 {% endmacro %}
 
 {# Every task list's drop panel (static/move.js): it slides in while an open row is dragged, or stays while pinned by
-   the header's Projects button (pin_button()); dropping a row on a target moves the task there. `key` names the page
+   the header's File to button (pin_button()); dropping a row on a target moves the task there. `key` names the page
    for remembering the pin; `reload`: the page redraws after a move instead of dropping the row (Waiting, where a
    moved waiting step stays). #}
-{% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the projects open to drop on">Projects</button>{% endmacro %}
+{% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the places to file to open">File to</button>{% endmacro %}
 {% macro move_panel(key, current=none, reload=False, stays=none) %}
 <aside class="drop-panel" data-move="{{ url_for('task_move') }}" data-key="{{ key }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>
-  <button type="button" class="unpin" title="Hide the projects" aria-label="Hide the projects">✕</button>{{ project_targets(current) }}</aside>
+  <button type="button" class="unpin" title="Hide the panel" aria-label="Hide the panel">✕</button>{{ project_targets(current) }}</aside>
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}
 
-{# Someday's add line: a single item (an H0 someday task) or a someday project. #}
+{# The review's new ideas: a single item (an H0 someday task) or a someday project. #}
 {% macro someday_kind_select() %}
 <select name="kind" aria-label="Kind" title="A single item, or a project">
   <option value="">single item</option>
@@ -132,7 +138,7 @@
 </select>
 {% endmacro %}
 
-{# A project as a card (Projects, Waiting, Someday): ⠿ to drag, ▸ folds out its open steps, ⚠ when it lacks a next action
+{# A project as a card (the project tabs): ⠿ to drag, ▸ folds out its open steps, ⚠ when it lacks a next action
    or a desired outcome (the tooltip says which; else it's the outcome).
    A someday one shows when the weekly review last looked at it, and offers Activate. #}
 {% macro project_card(p, steps) %}
@@ -149,7 +155,7 @@
 {# A tickler date still to come: faint, like the last review. #}
 {% macro until(tickle_on) %}{% if tickle_on and tickle_on > today %}<span class="until" title="Out of sight until then">until {{ tickle_on }}</span>{% endif %}{% endmacro %}
 
-{# Projects, Waiting and Someday: one list of tight project rows, dragged to reorder (static/app.js). #}
+{# The project tabs: one list of tight project rows, dragged to reorder (static/app.js). #}
 {% macro project_list(ps, steps, status, empty) %}
 {% if ps %}<ul class="tasks" data-reorder="{{ url_for('projects_order', status=status) }}">
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}

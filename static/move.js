@@ -1,5 +1,5 @@
 // The drop panel on every task list (move_panel() in _task.html): it slides in while an open row is dragged, or
-// stays while pinned by the header's Projects button; dropping the row on a project (or H0, its "Someday / maybe",
+// stays while pinned by the header's File to button; dropping the row on a task tab (Next, Waiting, Someday: H0), a project (or
 // Reference, "＋ New…") moves the task there (/tasks/move). A row's ⠿ grip drags it (app.js), so the same drag
 // reorders its list or moves it out. Shift-click selects rows (Esc clears); dragging
 // a selected row moves them all.
@@ -70,7 +70,7 @@
     const t = e.target.closest('.target');
     if (!t || !dragged) return;
     e.preventDefault();
-    if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
+    if (!t.dataset.project.startsWith('__new__')) return move(dragged, {project_id: t.dataset.project});
     // The panel stays open for the name; Enter moves it into a new project, Esc or clicking away cancels.
     naming = {rows: dragged, target: t};
     body.classList.add('naming');
@@ -83,7 +83,7 @@
       if (e.key === 'Escape') { e.preventDefault(); close(); }
       if (e.key === 'Enter' && name.value.trim()) {
         e.preventDefault();
-        move(naming.rows, {new_project: name.value.trim()});
+        move(naming.rows, {project_id: naming.target.dataset.project, new_project: name.value.trim()});  // its status
         close();
       }
     });

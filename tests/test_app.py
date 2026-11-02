@@ -97,20 +97,20 @@ def test_project_outcome(client, conn):
     pid = db.add_project(conn, "Course")
     db.add_task(conn, "grade", step="next", project_id=pid)
     flag = lambda: db.get_project(conn, pid)["warning"]
-    assert flag() == "No desired outcome" and db.counts(conn, TODAY)["flagged"] == 1
+    assert flag() == "No desired outcome" and db.counts(conn, TODAY)["flagged"] == {"active": 1, "waiting": 0}
     page = client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True)
     assert 'name="outcome"' in page and 'title="No desired outcome"' in page and "/reached" not in page
     client.post(f"/projects/{pid}", data={"outcome": " grades submitted "})
     p = db.get_project(conn, pid)
-    assert (p["outcome"], p["warning"], db.counts(conn, TODAY)["flagged"]) == ("grades submitted", None, 0)
+    assert (p["outcome"], p["warning"], db.counts(conn, TODAY)["flagged"]) == ("grades submitted", None, {"active": 0, "waiting": 0})
     assert 'title="grades submitted"' in client.get("/projects").get_data(as_text=True)  # the card's tooltip
     assert "grades submitted" in client.get("/review?step=projects").get_data(as_text=True)
     client.post(f"/projects/{pid}", data={"outcome": ""})  # cleared: vague again
     assert flag() == "No desired outcome"
-    db.update_project(conn, pid, status="waiting")  # still committed: still ⚠
-    assert flag() == "No desired outcome" and db.counts(conn, TODAY)["flagged"] == 1
+    db.update_project(conn, pid, status="waiting")  # still committed: still ⚠, on its own tab
+    assert flag() == "No desired outcome" and db.counts(conn, TODAY)["flagged"] == {"active": 0, "waiting": 1}
     db.update_project(conn, pid, status="someday")  # not committed: no outcome needed
-    assert flag() is None and db.counts(conn, TODAY)["flagged"] == 0
+    assert flag() is None and db.counts(conn, TODAY)["flagged"] == {"active": 0, "waiting": 0}
     db.update_project(conn, pid, status="active")
     db.set_project_outcome(conn, pid, "grades submitted")
     conn.commit()
@@ -191,7 +191,7 @@ def test_done_stays_on_the_page(client, conn):
 def test_waiting_and_someday_projects_hide_their_tasks(client, conn):
     pid = db.add_project(conn, "P")
     db.add_task(conn, "a", step="next", project_id=pid)
-    for status, page in (("waiting", "/waiting"), ("someday", "/someday")):
+    for status, page in (("waiting", "/projects/waiting"), ("someday", "/projects/someday")):
         client.post(f"/projects/{pid}", data={"title": "P", "status": status})
         assert db.next_actions(conn, TODAY) == [] and db.stalled_projects(conn) == []
         assert b"P</a>" in client.get(page).data
@@ -281,20 +281,40 @@ def test_h0_task_moving_into_a_project(client, conn):
     back = db.add_task(conn, "back", project_id=pid, step="later")
     client.post("/tasks/move", data={"id": back, "project_id": "h0"}, headers=FETCH)
     assert db.get_task(conn, back)["step"] == "next"
+    # The panel's task targets set the H0 step they name: Waiting makes it waiting, Next a next action even if waiting.
+    client.post("/tasks/move", data={"id": [back, first], "project_id": "waiting"}, headers=FETCH)
+    assert [(db.get_task(conn, i)["ground"], db.get_task(conn, i)["step"]) for i in (back, first)] == [(1, "waiting")] * 2
+    client.post("/tasks/move", data={"id": wait, "project_id": "h0"}, headers=FETCH)
+    assert (db.get_task(conn, wait)["ground"], db.get_task(conn, wait)["step"]) == (1, "next")
 
 
-def test_waiting_lists_projects_then_tasks(client, conn):
+def test_every_tab_lists_one_kind(client, conn):
+    """Waiting and Someday list tasks only; waiting and someday projects have tabs of their own."""
     wp = db.add_project(conn, "Visa", status="waiting")
+    sp = db.add_project(conn, "Boat", status="someday")
     kitchen = db.add_project(conn, "Kitchen")
     db.add_task(conn, "quote", project_id=kitchen, step="waiting")
     db.add_task(conn, "tiles", project_id=kitchen, step="later")
     db.add_task(conn, "parcel", ground=1, step="waiting")
+    db.add_task(conn, "learn Italian", ground=1, step="someday")
     html = client.get("/waiting").get_data(as_text=True).split('class="drop-panel"')[0]
-    assert html.index("Visa") < html.index("parcel") < html.index("quote") and ">tiles<" not in html  # H0's tasks first
-    assert 'data-reorder="/projects/order/waiting"' in html
-    other = db.add_project(conn, "Passport", status="waiting")
-    client.post("/projects/order/waiting", data={"ids": f"{other},{wp}"})
+    assert html.index("parcel") < html.index("quote") and ">tiles<" not in html  # H0's tasks first
+    assert f'href="/projects/{wp}"' not in html and "/projects/order/" not in html and "peek-all" not in html
+    html = client.get("/someday").get_data(as_text=True).split('class="drop-panel"')[0]
+    assert ">learn Italian<" in html and f'href="/projects/{sp}"' not in html and 'name="kind"' not in html
+    assert "peek-all" not in html
+    for status, pid, other in (("waiting", wp, "Boat"), ("someday", sp, "Visa")):
+        html = client.get(f"/projects/{status}").get_data(as_text=True)
+        assert f'href="/projects/{pid}"' in html and f'href="/projects/{wp + sp - pid}"' not in html, status
+        assert ">parcel<" not in html, status
+        assert f'data-reorder="/projects/order/{status}"' in html and "peek-all" in html, status
+        assert f'name="status" value="{status}"' in html and "<select name=\"status\"" not in html, status
+    passport = db.add_project(conn, "Passport", status="waiting")
+    client.post("/projects/order/waiting", data={"ids": f"{passport},{wp}"})
     assert [p["title"] for p in db.projects(conn, "waiting")] == ["Passport", "Visa"]
+    # The add line makes a project of the page's own status.
+    r = client.post("/projects", data={"title": "Dinghy", "status": "someday"}, headers={"Referer": "/projects/someday"})
+    assert r.location == "/projects/someday" and db.projects(conn, "someday")[0]["title"] == "Dinghy"
 
 
 def test_steps_only_exist_in_projects_and_h0(conn):
@@ -361,10 +381,10 @@ def test_calendar_remembers_the_view(client):
 
 
 def nav_badges(html):
-    """{tab: (classes, tooltip)} for the nav's count dots."""
+    """{tab's URL: (classes, tooltip)} for the nav's count dots."""
     nav = html.split("<nav", 1)[1].split("</nav>", 1)[0]
-    return {tab: (cls, title) for tab, cls, title in
-            re.findall(r'>(\w+) <b class="badge ([^"]*)" title="([^"]*)" aria-label="\d+"></b></a>', nav)}
+    return {url: (cls, title) for url, cls, title in
+            re.findall(r'href="([^"]*)"[^>]*>\w+ <b class="badge ([^"]*)" title="([^"]*)" aria-label="\d+"></b></a>', nav)}
 
 
 def test_waiting_steps_can_be_made_next(client, conn):
@@ -409,9 +429,12 @@ def test_nav_counts_are_dots(client, conn):
     for i in range(6):
         db.add_task(conn, f"h0 {i}", step="next", ground=1, due_date="2026-10-22")
     db.add_task(conn, "wait", step="waiting", project_id=pid)
+    db.add_project(conn, "Visa", status="waiting")  # no outcome: flagged on its own tab, not a waiting task
+    db.add_project(conn, "Boat", status="someday")
     assert nav_badges(client.get("/inbox").get_data(as_text=True)) == {
-        "Next": ("s3 hot", "8 due today or overdue"), "Waiting": ("s1", "1 waiting"),
-        "Inbox": ("s2", "4 in the inbox"), "Projects": ("s1 warn", "2 need a next action or outcome")}
+        "/next": ("s3 hot", "8 due today or overdue"), "/waiting": ("s1", "1 waiting"),
+        "/inbox": ("s2", "4 in the inbox"), "/projects": ("s1 warn", "2 need a next action or outcome"),
+        "/projects/waiting": ("s1 warn", "1 need a desired outcome")}
 
 
 def bands(html):
@@ -743,7 +766,8 @@ def test_review_next_actions_list_all(client, conn):
     db.add_task(conn, "reply from Ann", step="waiting", ground=1, due_date="2026-10-30")
     db.add_project(conn, "Permit", status="waiting")
     waiting = card(client.get("/review").get_data(as_text=True), "waiting")
-    assert "reply from Ann" in waiting and "2026-10-30" in waiting and "Permit" in waiting  # the waiting list itself
+    assert "reply from Ann" in waiting and "2026-10-30" in waiting  # Waiting's own list: tasks only
+    assert "Permit" not in waiting and "Permit" in card(client.get("/review").get_data(as_text=True), "projects")
 
 
 def test_task_form_edges(client, conn):
@@ -1078,8 +1102,8 @@ def test_every_record_opens_only_in_a_frame(client, conn):
         == (f"/waiting?task={waiting}", f"/someday?task={someday}", f"/done?task={done}")
     lists = {p["status"]: p["id"] for s in ("waiting", "someday", "done") for p in
              (db.projects(conn, s) if s != "done" else db.closed_projects(conn, "done"))}
-    assert home(f"/projects/{lists['waiting']}") == f"/waiting?project={lists['waiting']}"
-    assert home(f"/projects/{lists['someday']}") == f"/someday?project={lists['someday']}"
+    assert home(f"/projects/{lists['waiting']}") == f"/projects/waiting?project={lists['waiting']}"
+    assert home(f"/projects/{lists['someday']}") == f"/projects/someday?project={lists['someday']}"
     assert home(f"/projects/{lists['done']}") == f"/done?project={lists['done']}"
     gid = db.add_horizon(conn, "goal", "Run a marathon")
     rid = db.add_reference(conn, "Wifi")
@@ -1091,7 +1115,7 @@ def test_every_record_opens_only_in_a_frame(client, conn):
     assert '<dialog class="overlay"' not in client.get("/next").get_data(as_text=True)
     up = lambda path: re.search(r'<link rel="up" href="([^"]*)">', client.get(path + "?embed=overlay").get_data(as_text=True))[1]
     assert (up("/tasks/2"), up("/tasks/7"), up("/projects/1"), up(f"/projects/{lists['someday']}")) \
-        == ("/projects/1", "/next", "/projects", "/someday")
+        == ("/projects/1", "/next", "/projects", "/projects/someday")
     assert (up(f"/horizons/{gid}"), up(f"/reference/{rid}")) == ("/horizons?level=goal", "/reference")
     task = client.get("/tasks/2?embed=overlay").get_data(as_text=True)  # "buy tiles", not running
     assert 'class="embed"' in task and "<base" not in task  # its forms and links stay in the frame
@@ -1146,7 +1170,7 @@ def test_project_lists_carry_each_projects_open_steps(client, conn):
     sid = db.add_project(conn, "Boat", status="someday")
     sail = db.add_task(conn, "learn to sail", step="later", project_id=sid)
     conn.commit()
-    for url, tid, title, done in (("/projects", dig, "dig", "buy seeds"), ("/someday", sail, "learn to sail", None)):
+    for url, tid, title, done in (("/projects", dig, "dig", "buy seeds"), ("/projects/someday", sail, "learn to sail", None)):
         html = client.get(url).data.decode()
         steps = re.search(r'<ul class="steps">(.*?)</ul>', html, re.S).group(1)
         assert f'href="/tasks/{tid}"' in steps and title in steps, url
@@ -1493,11 +1517,15 @@ def test_add_a_next_action_on_the_next_page(client, conn):
 
 
 def test_nav_groups_tabs_by_kind_of_list(client):
-    """Working minute by minute, task lists, lists of projects; then the weekly-review pages."""
+    """Working minute by minute, lists of tasks, lists of projects (each tab one kind); then the weekly-review pages
+    and Reference."""
     nav = client.get("/next").data.decode().split("<nav>")[1].split("</nav>")[0]
-    groups = [re.findall(r'<a [^>]*>([A-Za-z0-9]+)', g) for g in re.findall(r'<span class="(?:group|aux)">(.*?)</span>', nav, re.S)]
-    assert groups == [["Timer", "Calendar"], ["Next", "Waiting", "Inbox"], ["Projects", "Someday", "Reference"],
-                      ["Review", "Horizons", "Done"]]
+    groups = [re.findall(r'<a href="([^"]*)"', g) for g in re.findall(r'<span class="(?:group|aux)">(.*?)</span>', nav, re.S)]
+    assert groups == [["/timer", "/calendar"], ["/inbox", "/next", "/waiting", "/someday"],
+                      ["/projects", "/projects/waiting", "/projects/someday"], ["/review", "/horizons", "/done", "/reference"]]
+    assert re.search(r'<small class="caption">Projects</small>\s*<a href="/projects"[^>]*>Active', nav)
+    on = lambda url: re.findall(r'<a href="([^"]*)" class="on"', client.get(url).data.decode().split("</nav>")[0])
+    assert (on("/projects/waiting"), on("/waiting"), on("/projects")) == (["/projects/waiting"], ["/waiting"], ["/projects"])
 
 
 def test_review_is_a_checklist_you_finish(client, conn):
@@ -1713,11 +1741,12 @@ def test_project_page_rows_line_up(client, conn):
         assert row.count('class="set-step"') == 1
 
 
-@pytest.mark.parametrize("status, page", [("someday", "/someday"), ("active", "/projects")])
+@pytest.mark.parametrize("status, page", [("someday", "/projects/someday"), ("waiting", "/projects/waiting"),
+                                          ("active", "/projects")])
 def test_projects_reorder(client, conn, status, page):
     """Project rows keep the order they're dragged to; new ones go first. Other lists are ignored."""
     a, b, c = (db.add_project(conn, t, status=status) for t in ("a", "b", "c"))
-    other = db.add_project(conn, "other", status="waiting")
+    other = db.add_project(conn, "other", status="someday" if status == "waiting" else "waiting")
     assert [p["title"] for p in db.projects(conn, status)] == ["c", "b", "a"]
     before = db.get_project(conn, other)["position"]
     assert client.post(f"/projects/order/{status}", data={"ids": f"{c},{other},{a},{b}"},
@@ -1845,13 +1874,20 @@ def test_dragging_moves_any_open_task_between_projects(client, conn):
 
 
 def test_every_task_list_has_the_drop_panel(client, conn):
+    """The panel follows the nav: the task tabs (Next, Waiting, Someday), the project tabs' projects under their
+    headings, then Reference. Where the page's tasks already are isn't offered."""
     ids = seed(conn)
-    for url in ("/inbox", "/next", "/waiting", f"/projects/{ids['active']}?embed=overlay"):
+    for url, current in (("/inbox", None), ("/next", None), ("/waiting", "waiting"), ("/someday?tickled=1", "someday"),
+                         (f"/projects/{ids['active']}?embed=overlay", str(ids["active"]))):
         html = client.get(url).get_data(as_text=True)
-        assert 'class="drop-panel"' in html and 'class="pin-panel"' in html, url
-    # A project page doesn't offer the project itself.
-    html = client.get(f"/projects/{ids['active']}?embed=overlay").get_data(as_text=True)
-    assert f'data-current="{ids["active"]}"' in html
+        assert 'class="drop-panel"' in html and 'class="pin-panel"' in html and ">File to<" in html, url
+        panel = html.split('class="drop-panel"')[1].split("</aside>")[0]
+        targets = re.findall(r'data-project="([^"]+)"', panel)
+        projects = [t for s, new in (("active", "__new__"), ("waiting", "__new__waiting"), ("someday", "__new__someday"))
+                    for t in [new, *(str(p["id"]) for p in db.projects(conn, s))]]
+        assert targets == [t for t in ["h0", "waiting", "someday", *projects, "reference"] if t != current], url
+        assert re.findall(r"<h3>([\w /()]+)</h3>", panel) == ["Tasks (no project)", "Active", "Waiting", "Someday"], url
+        assert f'data-current="{current}"' in html if current else "data-current" not in html, url
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):
@@ -1868,7 +1904,7 @@ def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn
 def test_someday_activate_sends_only_the_status(client, conn):
     """Activate on Someday mustn't resend the notes the page loaded with, or newer notes get overwritten."""
     pid = db.add_project(conn, "Boat", status="someday", notes="old")
-    html = client.get("/someday").get_data(as_text=True)
+    html = client.get("/projects/someday").get_data(as_text=True)
     form = re.search(r'<form[^>]*action="/projects/%d"[^>]*>(.*?)</form>' % pid, html, re.S).group(1)
     assert 'name="notes"' not in form and 'name="title"' not in form
     db.update_project(conn, pid, notes="newer")
@@ -1906,10 +1942,10 @@ def test_search_lists_projects_and_task_rows(client, conn):
     assert 'class="check"' in done_part and 'class="name"' in done_part  # row(): ✓ and the project after the title
 
 
-def test_waiting_with_only_projects_has_no_empty_tasks_section(client, conn):
-    db.add_project(conn, "Visa", status="waiting")
+def test_waiting_with_only_projects_is_clear(client, conn):
+    pid = db.add_project(conn, "Visa", status="waiting")
     html = client.get("/waiting").get_data(as_text=True)
-    assert "Visa" in html and "<h2>Tasks</h2>" not in html and "empty clear" not in html
+    assert f'href="/projects/{pid}"' not in html and "empty clear" in html
 
 
 def test_review_count_is_not_a_big_title(client, conn):
@@ -1922,7 +1958,7 @@ def test_revive_and_activate_buttons_are_not_make_next(client, conn):
     seed(conn)
     done = client.get("/done").get_data(as_text=True)
     assert re.search(r'class="row-btn"><button[^>]*>Revive', done.split("<h2>Abandoned")[0])  # done rows too
-    assert 'class="row-btn"' in client.get("/someday?tickled=1").get_data(as_text=True)
+    assert 'class="row-btn"' in client.get("/projects/someday?tickled=1").get_data(as_text=True)
 
 
 def test_style_has_no_dead_or_undefined_variables():
@@ -1936,13 +1972,14 @@ def test_style_has_no_dead_or_undefined_variables():
 
 
 def test_project_pickers_are_one_list(client, conn):
-    assert [(label, ps) for label, ps, _ in db.project_groups(conn)] == [("Projects", [])]  # "＋ New…" even with none
+    assert [(label, ps, new) for label, ps, new in db.project_groups(conn)] == [
+        ("Active", [], "__new__"), ("Waiting", [], "__new__waiting"), ("Someday", [], "__new__someday")]  # "＋ New…" even with none
     ids = seed(conn)
     pid = db.add_project(conn, "Another active")
     db.reorder_projects(conn, "active", [pid, ids["active"], ids["stalled"]])  # dragged first on Projects, so first here too
-    # Active then waiting then someday. No done or abandoned one.
+    # Active then waiting then someday, as the nav's project tabs. No done or abandoned one.
     assert [(label, [p["title"] for p in ps]) for label, ps, _ in db.project_groups(conn)] == [
-        ("Projects", ["Another active", "Kitchen", "Stalled", "Waiting proj", "Someday proj"])]
+        ("Active", ["Another active", "Kitchen", "Stalled"]), ("Waiting", ["Waiting proj"]), ("Someday", ["Someday proj"])]
     expected = [(label, [str(p["id"]) for p in ps]) for label, ps, _ in db.project_groups(conn)]
 
     def groups(html, group, item):
@@ -1953,9 +1990,24 @@ def test_project_pickers_are_one_list(client, conn):
     assert groups(task, r'<optgroup label="([\w ]+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
     inbox = client.get("/inbox").data.decode()
     assert groups(inbox, r'<section class="group"><h3>([\w ]+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
-    assert "Someday proj · someday" in task and "Dropped proj" not in task + inbox and "Done proj" not in task + inbox
-    # "＋ New project…" once, in both.
-    assert task.count('value="__new__"') == 1 and inbox.count('data-project="__new__"') == 1
+    assert "· someday" not in task and "Dropped proj" not in task + inbox and "Done proj" not in task + inbox
+    # The task page has one H0 (its step select picks next, waiting or someday); Process's "file to…" has the panel's.
+    assert task.count('value="h0"') == 1 and 'value="waiting"' not in task.split('name="project_id"')[1].split("</select>")[0]
+    quick = inbox.split('class="quick"')[1].split("</select>")[0]
+    assert re.findall(r'<option value="([a-z][a-z0-9]*)"', quick) == ["h0", "waiting", "someday", "reference"]
+    # "＋ New project…" once per group, in both.
+    for new in ("__new__", "__new__waiting", "__new__someday"):
+        assert task.count(f'value="{new}"') == 1 and inbox.count(f'data-project="{new}"') == 1, new
+    # Each makes a project of its group's status: from a drop, the task page, Process's "file to…".
+    a, b = db.add_task(conn, "renew visa"), db.add_task(conn, "boat")
+    assert client.post("/tasks/move", data={"id": a, "project_id": "__new__waiting", "new_project": "Visa"},
+                       headers=FETCH).status_code == 204
+    client.post(f"/tasks/{b}", data={"project_id": "__new__someday", "new_project": "Sailing"})
+    for id, status in ((a, "waiting"), (b, "someday")):
+        t = db.get_task(conn, id)
+        assert (db.get_project(conn, t["project_id"])["status"], t["step"]) == (status, "later"), status
+    client.post(f"/tasks/{b}", data={"project_id": "__new__bogus", "new_project": "Odd"})
+    assert db.get_project(conn, db.get_task(conn, b)["project_id"])["status"] == "active"
 
 
 
@@ -2311,7 +2363,7 @@ def test_closing_a_project_closes_its_open_steps_and_lists_it_on_done(client, co
     assert not db.project_tasks(conn, pid)  # a repeating step spawns no next instance
     assert db.timer_running(conn) is None and len(db.time_entries(conn)) == 1  # stopped, time kept
     # It leaves every list and picker, and Done lists it (not the steps it took down), revivable.
-    assert ">Boat<" not in client.get("/someday").get_data(as_text=True)
+    assert ">Boat<" not in client.get("/projects/someday").get_data(as_text=True)
     assert not [p for _, ps, _ in db.project_groups(conn) for p in ps if p["id"] == pid]
     page = client.get("/done").get_data(as_text=True).split("<h2>Abandoned")[close == "abandoned"]
     assert "Boat" in page and f"/projects/{pid}/revive" in page and ">a<" not in page
@@ -2438,7 +2490,7 @@ def test_projects_waiting_and_someday_are_flat_lists(client, conn):
     seed(conn)
     db.add_project(conn, "Desk")
     db.add_project(conn, "Visa", status="waiting")
-    for url, status in (("/projects", "active"), ("/waiting", "waiting"), ("/someday?tickled=1", "someday")):
+    for url, status in (("/projects", "active"), ("/projects/waiting", "waiting"), ("/projects/someday?tickled=1", "someday")):
         page = client.get(url).get_data(as_text=True)
         assert page.count(f'data-reorder="/projects/order/{status}"') == 1, url
 
@@ -2643,7 +2695,7 @@ def test_someday_projects_keep_when_they_were_last_reviewed(client, conn):
     assert db.get_project(conn, never)["reviewed_at"] == db.iso(NOW)
     c = card(client.get("/review?step=someday").get_data(as_text=True), "someday")
     assert re.findall(r'href="/projects/\d+">([^<]*)</a>', c) == ["old", "fresh", "never"]
-    someday = client.get("/someday").get_data(as_text=True)
+    someday = client.get("/projects/someday").get_data(as_text=True)
     assert 'class="reviewed" title="Last reviewed">5w ago<' in someday and ">today<" in someday
     assert 'class="reviewed"' not in client.get("/projects").get_data(as_text=True)  # someday only
     assert client.post("/projects/999/reviewed").status_code == 404
@@ -2662,7 +2714,7 @@ def test_a_someday_projects_tickler_date(client, conn):
     assert 'name="tickle_on"' in html
     client.post(f"/projects/{p}", data={"status": "someday", "tickle_on": "nov 15"})
     assert db.get_project(conn, p)["tickle_on"] == "2026-11-15"
-    assert "2026-11-15" in client.get("/someday?tickled=1").get_data(as_text=True)
+    assert "2026-11-15" in client.get("/projects/someday?tickled=1").get_data(as_text=True)
     client.post(f"/projects/{p}", data={"status": "someday", "tickle_on": ""})
     assert db.get_project(conn, p)["tickle_on"] is None
     client.post(f"/projects/{p}", data={"status": "active", "tickle_on": "nov 15"})  # active: no tickler
@@ -2733,12 +2785,17 @@ def test_someday_hides_what_is_tickled_to_a_later_date(client, conn):
     later = db.add_project(conn, "Sail round the world", status="someday")
     db.set_project_tickle(conn, later, "2026-11-15")
     html = client.get("/someday").get_data(as_text=True).split('class="drop-panel"')[0]
-    assert "write a book" not in html and "Sail round the world" not in html  # out of sight until their date
+    assert "write a book" not in html  # out of sight until its date
     assert ">sail<" in html  # its date has come: shown (and in the Inbox)
     assert ">learn Italian<" in html
-    assert re.search(r'href="/someday\?tickled=1" title="3 [^"]*">Show tickled<', html)
+    assert re.search(r'href="/someday\?tickled=1" title="1 [^"]*">Show tickled<', html)  # tasks only
     shown = client.get("/someday?tickled=1").get_data(as_text=True)
-    assert "write a book" in shown and "until 2026-11-15" in shown and re.search(r'href="/someday"[^>]*>Hide tickled<', shown)
+    assert "write a book" in shown and re.search(r'href="/someday"[^>]*>Hide tickled<', shown)
+    html = client.get("/projects/someday").get_data(as_text=True)
+    assert "Sail round the world" not in html and ">Someday proj<" not in html
+    assert re.search(r'href="/projects/someday\?tickled=1" title="2 [^"]*">Show tickled<', html)
+    shown = client.get("/projects/someday?tickled=1").get_data(as_text=True)
+    assert "until 2026-11-15" in shown and re.search(r'href="/projects/someday"[^>]*>Hide tickled<', shown)
 
 
 def test_h0_tasks_can_be_someday(client, conn):
@@ -2771,11 +2828,11 @@ def test_someday_add_line_makes_a_task_or_a_project(client, conn):
     assert r.headers["Location"].endswith("/someday")
     t = db.someday_tasks(conn)[0]
     assert (t["title"], t["ground"], t["step"], t["tickle_on"]) == ("learn Italian", 1, "someday", "2026-12-01")
-    client.post("/someday/add", data={"title": "boat", "kind": "project"})
+    client.post("/someday/add", data={"title": "boat", "kind": "project"})  # the review's new ideas
     assert [p["title"] for p in db.projects(conn, "someday")] == ["boat"]
     assert len(db.someday_tasks(conn)) == 1
     html = client.get("/someday?tickled=1").get_data(as_text=True)
-    assert html.index("learn Italian") < html.index(">boat<")
+    assert ">boat<" not in html.split('class="drop-panel"')[0] and 'name="kind"' not in html
     assert f'href="/tasks/{t["id"]}"' in html and 'class="drop-panel"' in html  # drag one to commit to it
 
 
@@ -2835,7 +2892,9 @@ def test_review_someday_step_lists_tasks_and_projects_and_hides_tickled_ones(cli
     back = db.add_task(conn, "back task", ground=1, step="someday", due_date="2026-10-22")
     db.mark_reviewed(conn, back, NOW - timedelta(days=3), table="task")
     c = card(client.get("/review?step=someday").get_data(as_text=True), "someday")
-    assert re.findall(r'href="/(?:tasks|projects)/\d+">([^<]*)</a>', c) == ["never task", "old proj", "back task"]
+    assert re.findall(r'href="/(?:tasks|projects)/\d+">([^<]*)</a>', c) == ["never task", "back task", "old proj"]
+    assert c.index("<h3>Tasks</h3>") < c.index("never task") < c.index("<h3>Projects</h3>") < c.index("old proj")
+    assert 'href="/someday"' in c and 'href="/projects/someday"' in c
     assert "hidden task" not in c and '<span class="count">2</span>' in c
     r = client.post(f"/tasks/{never}/reviewed", headers={"Referer": "/review?step=someday"})
     assert r.location.endswith("/review?step=someday")

@@ -35,9 +35,8 @@
     <p><a class="button" href="{{ url_for('calendar_view') }}">Calendar →</a></p>
   {% endcall %}
   {% call card('waiting', 'Chase waiting-fors', 'Check what has arrived. Nudge whoever is late, and give the rest a follow-up date.', counts.waiting) %}
-    {#- Waiting's own list: waiting projects, then waiting tasks with their follow-up dates. #}
+    {#- Waiting's own list: the waiting tasks with their follow-up dates (waiting projects are in Review projects). #}
     {% if counts.waiting %}<ul class="plain">
-      {%- for p in waiting_projects %}<li><a href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a> <span class="date">project</span></li>{% endfor %}
       {%- for t in waiting %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a> <span class="date{{ ' overdue' if t.due_date and t.due_date < today }}">{{ t.due_date or '' }}</span></li>{% endfor %}
     </ul>
     <p><a class="button" href="{{ url_for('waiting') }}">Waiting →</a></p>{% endif %}
@@ -60,11 +59,16 @@
   {% endcall %}
   {#- Get creative #}
   {% call card('someday', 'Scan someday / maybe', 'Read each idea. Commit to what\'s ready, drop what no longer appeals, set a tickler for later, then ✓ it.', unseen(someday)) %}
-    {#- H0 someday tasks and someday projects, never reviewed first, then the longest ago; tickled to later out of sight (db.someday_to_review()). #}
-    {% if someday %}<ul class="plain review-list">{% for x in someday %}<li>
+    {#- H0 someday tasks, then someday projects, as their tabs; each never reviewed first, then the longest ago;
+        tickled to later out of sight (db.someday_to_review()). #}
+    {% for kind, heading, url in [('task', 'Tasks', url_for('someday')), ('project', 'Projects', url_for('projects_view', status='someday'))] %}
+    {% set rows = someday|selectattr('kind', 'eq', kind)|list %}
+    {% if rows %}<h3>{{ heading }}</h3>
+    <ul class="plain review-list">{% for x in rows %}<li>
       <form method="post" action="{{ url_for('project_reviewed' if x.kind == 'project' else 'task_reviewed', id=x.id) }}"><button class="icon" title="Reviewed" aria-label="Mark reviewed">✓</button></form>
       <a href="{{ someday_url(x) }}">{{ x.title }}</a> <span class="date" title="Last reviewed">{{ x.reviewed_at|ago }}</span></li>{% endfor %}</ul>
-    <p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
+    <p><a class="button" href="{{ url }}">Someday {{ heading|lower }} →</a></p>{% endif %}
+    {% endfor %}
   {% endcall %}
   {% call card('creative', 'New ideas', 'Think big: new projects, things to learn, places to go. Park each idea above; nothing is committed yet.') %}{% endcall %}
   {% call card('horizons', 'Check horizons', 'Read your purpose, vision, goals and areas. Does any lack a project, or does a project serve none of them? Capture what you find.') %}

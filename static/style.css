@@ -42,14 +42,15 @@ nav {
   transition: transform .2s;
 }
 body.nav-hidden nav { transform: translateY(-100%); }
-nav .group { display: flex; gap: 2px; }
-nav .group + .group { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--line); }
-nav a { padding: 4px 8px; color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
+nav .group { display: flex; }
+nav .caption { align-self: center; padding: 0 2px; color: var(--muted); opacity: .7; font-size: var(--fs-xs); }  /* names the project tabs */
+nav .group + .group { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--line); }
+nav a { padding: 4px 5px; font-size: var(--fs-m); color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
 nav a:hover { color: var(--fg); }
 nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
-nav .aux { display: flex; gap: 2px; margin-left: auto; padding-left: 16px; }
-nav .aux a { font-size: .85em; }
-nav .theme-toggle { flex: none; margin-left: 6px; color: var(--muted); }
+nav .aux { display: flex; margin-left: auto; padding-left: 8px; }
+nav .aux a { font-size: var(--fs-s); }
+nav .theme-toggle { flex: none; margin-left: 2px; color: var(--muted); }
 nav .badge { display: inline-block; border-radius: 50%; background: var(--muted); vertical-align: 2px; margin-left: 2px; }
 nav .badge.s1 { width: 6px; height: 6px; } nav .badge.s2 { width: 8px; height: 8px; } nav .badge.s3 { width: 10px; height: 10px; vertical-align: 1px; }
 nav .badge.hot { background: var(--danger); } nav .badge.warn { background: var(--warn); }
@@ -246,8 +247,7 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .drop-panel h3 { margin: 0 10px 4px; font-size: var(--fs-m); font-weight: 700; color: var(--fg); }
 .drop-panel .group .target { padding: 5px 10px 5px 20px; margin: 1px 0; }
 .drop-panel .target { padding: 8px 10px; margin: 2px 0; border-radius: 8px; border: 1px dashed transparent; }
-.drop-panel .target .meta { color: var(--muted); font-size: var(--fs-s); }
-.drop-panel .target.new, .drop-panel .target.maybe, .drop-panel .target[data-project="h0"] { color: var(--muted); }
+.drop-panel .target.new, .drop-panel .target[data-project="reference"] { color: var(--muted); }
 .drop-panel .new input { display: none; margin-top: 6px; }
 .drop-panel .new.naming input { display: block; }
 .drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }

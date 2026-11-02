@@ -1,16 +1,13 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, task_list, date_input, project_select, add_form, pin_button, move_panel, project_list with context %}
+{% from "_task.html" import task_list, date_input, project_select, add_form, pin_button, move_panel with context %}
 {% block title %}Waiting for{% endblock %}
-{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}
-  {%- if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
+{% block actions %}{% if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {% call add_form(url_for('waiting_add'), 'Waiting for… (who, what)', marks=True) %}
   {{ project_select() }}
   {{ date_input(placeholder='follow up on…') }}
 {% endcall %}
-{# Waiting projects, then waiting tasks (H0's and project steps); both drag to reorder. #}
-{% if projects %}{{ project_list(projects, steps, 'waiting', '') }}{% endif %}
-{% if tasks %}{{ task_list(tasks) }}{% endif %}
-{% if not (projects or tasks) %}<p class="empty clear">Nothing delegated.</p>{% endif %}
-{% if tasks %}{{ move_panel('waiting', reload=True) }}{% endif %}
+{# Waiting tasks, H0's and project steps, dragged to reorder. Waiting projects have their own tab. #}
+{% if tasks %}{{ task_list(tasks) }}{% else %}<p class="empty clear">Nothing delegated.</p>{% endif %}
+{% if tasks %}{{ move_panel('waiting', current='waiting', reload=True) }}{% endif %}
 {% endblock %}

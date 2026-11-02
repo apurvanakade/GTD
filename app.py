@@ -99,7 +99,7 @@ def stopped_timer():
         return e
 
 
-NEW = "__new__"  # project_select's "＋ New project…" option (_task.html)
+NEW = "__new__"  # project_select's "＋ New project…" options (_task.html): __new__, __new__waiting, __new__someday
 
 
 def form_value(name):
@@ -128,12 +128,13 @@ def task_fields_from_form(current=None):
         fields["notes"] = fields["notes"] or ""
     new_project = form_value("new_project")
     raw = request.form.get("project_id")
-    if raw is not None and not (raw == NEW and not new_project):  # "＋ New project…" with no name: unchanged
+    if raw is not None and not (raw.startswith(NEW) and not new_project):  # "＋ New project…" with no name: unchanged
         # The picker offers "h0": ground level, a deliberate choice of no project.
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
-    if new_project:  # typed into the "new project" box; overrides the dropdown
-        fields["project_id"] = db.add_project(conn(), new_project)
+    if new_project:  # typed into the "new project" box; overrides the dropdown. Its group sets the status.
+        status = (raw or "").removeprefix(NEW)
+        fields["project_id"] = db.add_project(conn(), new_project, status=status if status in PROJECT_STATUSES else "active")
         fields["ground"] = 0
     if request.form.get("step") in ("next", "waiting", "later", "someday"):  # a project's or H0's step; inbox items drop it
         fields["step"] = request.form["step"]
@@ -304,9 +305,9 @@ def inbox():
 @app.post("/tasks/move")
 def task_move():
     """The drop panel on every task list: move the dropped open tasks (one row, or several shift-selected, in page
-    order) to another project (or H0, H0's someday / maybe, a new project, Reference), all or none. A task lands as
-    a later step, since the project picks its next (in H0, a next action); a waiting task stays waiting. Dropped where
-    it already is, nothing changes. Called by fetch, which updates the page itself."""
+    order) to a task tab (H0's Next, Waiting or Someday: that step), a project (a new one too) or Reference, all or
+    none. Into a project a task lands as a later step, since the project picks its next; a waiting task stays
+    waiting. Dropped where it already is, nothing changes. Called by fetch, which updates the page itself."""
     c = conn()
     tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
     if not tasks or not all(t and t["state"] == "open" for t in tasks):  # e.g. a stale tab: finished since
@@ -314,24 +315,23 @@ def task_move():
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
         db.task_to_reference(c, [t["id"] for t in tasks], now())
         return "", 204
-    maybe = request.form.get("project_id") == "someday"  # not committed to: an H0 someday task
+    h0_step = H0_TARGETS.get(request.form.get("project_id"))  # a task tab: that H0 step
     with db.transaction(c):
-        fields = {"project_id": None, "ground": 1} if maybe else \
+        fields = {"project_id": None, "ground": 1} if h0_step else \
             {k: v for k, v in task_fields_from_form().items() if k in ("project_id", "ground")}
         if orphaned(fields.get("project_id"), fields.get("ground")):
             abort(400)
         for t in reversed(tasks):  # each goes to the top of its project: the last first keeps the page's order
-            if (fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"])
-                    and maybe == (t["step"] == "someday")):
+            if fields.get("project_id") == t["project_id"] and bool(fields.get("ground")) == bool(t["ground"]) \
+                    and h0_step in (None, t["step"]):
                 continue
-            if maybe:
-                step = {"step": "someday"}
-            elif fields.get("project_id"):
-                step = {"step": "waiting" if t["step"] == "waiting" else "later"}
-            else:  # into H0: a next action (_fit_step()), unless it's waiting there already
-                step = {"step": "waiting" if t["step"] == "waiting" else "next"}
-            db.update_task(c, t["id"], today=today(), **fields, **step)
+            # Into a project: a later step, unless it's waiting.
+            step = h0_step or ("waiting" if t["step"] == "waiting" else "later")
+            db.update_task(c, t["id"], today=today(), **fields, step=step)
     return "", 204
+
+
+H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the drop panel's task tabs: H0, that step
 
 
 @app.post("/tasks/order")
@@ -405,10 +405,9 @@ def bands(tasks):
 
 @app.route("/waiting")
 def waiting():
-    """Waiting projects, then waiting tasks (H0's and project steps, in one dragged order)."""
+    """Waiting tasks, H0's and project steps, in one dragged order. Waiting projects have their own tab."""
     c = conn()
-    return render_template("waiting.html", projects=db.projects(c, "waiting"), tasks=db.tasks_with_step(c, "waiting"),
-                           steps=db.open_steps(c, "waiting"), project_groups=db.project_groups(c))
+    return render_template("waiting.html", tasks=db.tasks_with_step(c, "waiting"), project_groups=db.project_groups(c))
 
 
 @app.post("/waiting/add")
@@ -420,25 +419,26 @@ def waiting_add():
     return back("waiting")
 
 
+def hide_tickled(rows):
+    """Someday's rows (tasks or projects) without those tickled to a later date, unless ?tickled=1 asks for them,
+    and the template variables for that toggle."""
+    later = lambda x: x["tickle_on"] and x["tickle_on"] > today().isoformat()
+    show = request.args.get("tickled") == "1"
+    return ([x for x in rows if show or not later(x)],
+            {"tickled": sum(map(bool, map(later, rows))), "show_tickled": show, "tickled_url": toggle_url(show, "tickled")})
+
+
 @app.route("/someday")
 def someday():
-    """H0's someday tasks, then someday projects. What's tickled to a later date is out of sight until then,
-    unless ?tickled=1 asks for it."""
-    c = conn()
-    projects, tasks = db.projects(c, "someday"), db.someday_tasks(c)
-    later = lambda x: x["tickle_on"] and x["tickle_on"] > today().isoformat()
-    tickled = sum(map(bool, map(later, [*projects, *tasks])))
-    show = request.args.get("tickled") == "1"
-    if not show:
-        projects, tasks = [p for p in projects if not later(p)], [t for t in tasks if not later(t)]
-    return render_template("someday.html", projects=projects, tasks=tasks,
-                           steps=db.open_steps(c, "someday"), tickled=tickled, show_tickled=show,
-                           tickled_url=toggle_url(show, "tickled"), project_groups=db.project_groups(c))
+    """H0's someday tasks; what's tickled to a later date is out of sight until then. Someday projects have their
+    own tab."""
+    tasks, toggle = hide_tickled(db.someday_tasks(conn()))
+    return render_template("someday.html", tasks=tasks, project_groups=db.project_groups(conn()), **toggle)
 
 
 @app.post("/someday/add")
 def someday_add():
-    """Someday's add line (and the review's new ideas): a someday project (kind=project), else an H0 someday task."""
+    """Someday's add line: an H0 someday task; the review's new ideas can make a someday project (kind=project)."""
     if request.form.get("kind") == "project":
         add_project_from_form("someday")
     elif form_value("title"):
@@ -546,8 +546,7 @@ def review():
     return render_template("review.html", projects=db.projects_to_review(c),
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
-                           nexts=db.next_actions(c, today()),
-                           waiting_projects=db.projects(c, "waiting"), waiting=db.tasks_with_step(c, "waiting"),
+                           nexts=db.next_actions(c, today()), waiting=db.tasks_with_step(c, "waiting"),
                            checklists=db.checklists(c), unseen=unseen,
                            steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
 
@@ -711,31 +710,37 @@ def make_later(id):
 
 # --- projects --------------------------------------------------------------
 
-@app.route("/projects")
-def projects_view():
-    show = request.args.get("done") == "1"
-    return render_template("projects.html", projects=db.projects(conn()), steps=db.open_steps(conn()),
+@app.route("/projects", defaults={"status": "active"})
+@app.route("/projects/<any(waiting, someday):status>")
+def projects_view(status):
+    """A project tab: the active, waiting or someday projects. Active offers the closed ones (?done=1); someday
+    hides what's tickled to a later date (?tickled=1 shows it)."""
+    c = conn()
+    projects, toggle = (hide_tickled if status == "someday" else lambda ps: (ps, {}))(db.projects(c, status))
+    show = status == "active" and request.args.get("done") == "1"
+    return render_template("projects.html", status=status, projects=projects, steps=db.open_steps(c, status),
                            show_done=show, toggle_url=toggle_url(show),
-                           done_projects=[p for s in db.CLOSED for p in db.closed_projects(conn(), s)] if show else [])
+                           done_projects=[p for s in db.CLOSED for p in db.closed_projects(c, s)] if show else [],
+                           **toggle)
 
 
 @app.post("/projects/order/<any(active, waiting, someday):status>")
 def projects_order(status):
-    """The Projects, Waiting and Someday pages' drag-and-drop sends the project ids in their new order."""
+    """A project tab's drag-and-drop sends the project ids in their new order."""
     c = conn()
     db.reorder_projects(c, status, form_ids())
     return ("", 204) if fetched() else back()
 
 
 def add_project_from_form(status="active"):
-    """The add line's new project (Projects, Someday)."""
+    """The add line's new project (a project tab, the review's new ideas)."""
     if title := form_value("title"):
         db.add_project(conn(), title, status=status)
 
 
 @app.post("/projects")
 def project_create():
-    """Projects' add line; its select makes a waiting or someday project at once."""
+    """A project tab's add line: a project of that tab's status (the hidden `status`)."""
     status = request.form.get("status")
     add_project_from_form(status if status in PROJECT_STATUSES else "active")
     return back("projects_view")
@@ -745,8 +750,10 @@ PROJECT_STATUSES = ("active", "waiting", "someday")  # what the status select se
 
 
 def project_list(p, **args):
-    """The list a project is on: Projects, Waiting, Someday, else Done."""
-    return url_for({"active": "projects_view", "waiting": "waiting", "someday": "someday"}.get(p["status"], "done"), **args)
+    """The list a project is on: its project tab, else Done."""
+    if p["status"] in PROJECT_STATUSES:
+        return url_for("projects_view", status=p["status"], **args)
+    return url_for("done", **args)
 
 
 def project_home(p, **args):

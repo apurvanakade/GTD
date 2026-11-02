@@ -13,9 +13,12 @@
 <body{% if embed %} class="embed"{% endif %}>
 {#- In a frame (an overlay, Process) the page is the record alone: no nav, bar, pill or dialogs. #}
 {# One list drives both the key handler and the help overlay. #}
-{% set go_keys = [('t', 'timer_view', 'Timer'), ('c', 'calendar_view', 'Calendar'), ('n', 'next_view', 'Next'),
-  ('w', 'waiting', 'Waiting'), ('i', 'inbox', 'Inbox'), ('p', 'projects_view', 'Projects'), ('s', 'someday', 'Someday'),
-  ('r', 'reference', 'Reference'), ('v', 'review', 'Review'), ('o', 'horizons_view', 'Horizons'), ('d', 'done', 'Done')] %}
+{% set go_keys = [('t', url_for('timer_view'), 'Timer'), ('c', url_for('calendar_view'), 'Calendar'),
+  ('i', url_for('inbox'), 'Inbox'), ('n', url_for('next_view'), 'Next'), ('w', url_for('waiting'), 'Waiting'),
+  ('s', url_for('someday'), 'Someday'), ('p', url_for('projects_view'), 'Active projects'),
+  ('W', url_for('projects_view', status='waiting'), 'Waiting projects'),
+  ('S', url_for('projects_view', status='someday'), 'Someday projects'), ('r', url_for('reference'), 'Reference'),
+  ('v', url_for('review'), 'Review'), ('o', url_for('horizons_view'), 'Horizons'), ('d', url_for('done'), 'Done')] %}
 {% if not embed %}
 {% include "_nav.html" %}
 {# The bar is identical on every page so switching tabs never moves it. #}
@@ -54,7 +57,7 @@
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next review step</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close an overlay, a dialog or the search suggestions</dd>
     <dt><kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd></dt><dd>At the end of a new task's title: due date, repeat, reminder</dd>
-    {% for key, ep_name, label in go_keys %}<dt><kbd>{{ key }}</kbd></dt><dd>Go to {{ label }}</dd>{% endfor %}
+    {% for key, url, label in go_keys %}<dt><kbd>{{ key }}</kbd></dt><dd>Go to {{ label }}</dd>{% endfor %}
   </dl>
   {#- A bookmarklet: from any web page, a popup of /capture (capture.html) with the page's link on offer. #}
   <p class="bookmarklet"><a href="javascript:void window.open('{{ app_url }}/capture?url='+encodeURIComponent(location.href)+'&amp;title='+encodeURIComponent(document.title),'gtd-capture','popup,width=480,height=280')" title="Drag to the bookmarks bar">＋ GTD</a> — drag to the bookmarks bar</p>
@@ -84,7 +87,7 @@
   {% block body %}{% endblock %}
 </main>
 <script>
-const GO = {{ '{' }}{% for key, ep_name, label in go_keys %}{{ key|tojson }}: {{ url_for(ep_name)|tojson }},{% endfor %}{{ '}' }};
+const GO = {{ '{' }}{% for key, url, label in go_keys %}{{ key|tojson }}: {{ url|tojson }},{% endfor %}{{ '}' }};
 </script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 <script src="{{ url_for('static', filename='notes.js') }}"></script>

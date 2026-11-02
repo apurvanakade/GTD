@@ -235,7 +235,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
 // Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
-// on Projects, Waiting and Someday; the new order is saved in the background. Shift-selected rows (move.js) go as a
+// on the project tabs (active, waiting, someday); the new order is saved in the background. Shift-selected rows (move.js) go as a
 // block, if they're all in this list.
 (() => {
   let dragged = null, from = null, before = null, out = false;  // dragged: the rows on the move, in page order
