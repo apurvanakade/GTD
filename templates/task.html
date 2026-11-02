@@ -4,9 +4,9 @@
 {% block heading %}{% endblock %}
 {% block body %}
 {# Title and notes save themselves (autosave.js); every other field saves when it's changed (static/app.js). #}
-{#- In a frame (embed: its overlay, or Process), the form stays in the frame; only ✓→ and delete-for-good leave it, for
+{#- Always in a frame (its overlay, or Process): the form stays in the frame; only ✓→ and delete-for-good leave it, for
     the page. data-inbox tells Process the item is still to be processed. #}
-<form method="post" class="edit"{% if embed %} target="_self"{% endif %}{% if t.inbox %} data-inbox{% endif %} data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
+<form method="post" class="edit"{% if t.inbox %} data-inbox{% endif %} data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
   <button hidden>Save</button>{# the default, so Enter in a field saves #}
   {% set running = timer and timer.task_id == t.id %}
   <div class="title-line">

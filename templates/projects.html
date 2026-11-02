@@ -3,7 +3,11 @@
 {% block title %}Projects{% endblock %}
 {% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}{% endblock %}
 {% block body %}
-{{ add_form(url_for('project_create'), 'New project – describe the outcome') }}
+{% call add_form(url_for('project_create'), 'New project – describe the outcome') %}
+  <select name="status" aria-label="Status" title="Active, or straight to waiting or someday / maybe">
+    {% for s in ['active', 'waiting', 'someday'] %}<option>{{ s }}</option>{% endfor %}
+  </select>
+{% endcall %}
 {{ project_list(projects, steps, 'active', 'No active projects.') }}
 <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
 {% if show_done %}

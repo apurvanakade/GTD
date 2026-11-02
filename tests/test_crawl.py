@@ -157,7 +157,8 @@ def test_every_link_works(client, conn):
     html_pages = [u for u, p in pages.items() if p]
     assert len(html_pages) > 25, html_pages  # the crawl really reached the app
     for must in ("/inbox", "/next", "/waiting", "/someday", "/review", "/calendar", "/horizons",
-                 "/projects/1", "/projects/4", "/tasks/1?embed=task", "/horizons/3"):
+                 "/projects/1?embed=overlay", "/projects/4?embed=overlay", "/tasks/1?embed=overlay",
+                 "/horizons/3?embed=overlay"):
         assert must in pages, must
 
 
@@ -245,15 +246,15 @@ def test_saving_an_edit_page_unchanged_changes_nothing(client, conn):
     columns = lambda row: {k: row[k] for k in row.keys()}
     for (tid,) in conn.execute("SELECT id FROM tasks WHERE state != 'done'").fetchall():
         before = columns(db.get_task(conn, tid))
-        submit_unchanged(client, f"/tasks/{tid}?embed=task")
+        submit_unchanged(client, f"/tasks/{tid}?embed=overlay")
         assert columns(db.get_task(conn, tid)) == before, before["title"]
     for (pid,) in conn.execute("SELECT id FROM projects").fetchall():
         before = columns(db.get_project(conn, pid))
-        submit_unchanged(client, f"/projects/{pid}")
+        submit_unchanged(client, f"/projects/{pid}?embed=overlay")
         assert columns(db.get_project(conn, pid)) == before, before["title"]
     for (hid,) in conn.execute("SELECT id FROM horizons").fetchall():
         before = columns(db.get_horizon(conn, hid))
-        submit_unchanged(client, f"/horizons/{hid}")
+        submit_unchanged(client, f"/horizons/{hid}?embed=overlay")
         assert columns(db.get_horizon(conn, hid)) == before, before["title"]
 
 

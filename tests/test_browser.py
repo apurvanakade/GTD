@@ -93,10 +93,11 @@ def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
 
 
 def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
-    page.goto(live + "/tasks/2?embed=task")
+    page.goto(live + "/tasks/2?embed=overlay")
     page.get_by_role("button", name="Done and open project").click()
-    page.wait_for_url("**/projects/*")
-    assert page.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
+    page.wait_for_url("**/projects?project=1")  # Projects, with its overlay
+    frame = page.frame_locator("dialog.overlay iframe")
+    assert frame.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
     assert db.get_task(conn, 2)["state"] == "done"
 
 
@@ -105,9 +106,30 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.click(".add-inbox")
     assert page.locator(".capture-dialog").evaluate("d => d.open")
     page.fill(".capture-dialog input[name=title]", "from the dialog")
-    with page.expect_navigation():
-        page.keyboard.press("Enter")
+    page.evaluate("window.mark = 1")
+    page.keyboard.press("Enter")  # added in the background: the page stays
+    page.wait_for_selector(".flashes >> text=Added to inbox: from the dialog")
+    box = page.locator(".flash").bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)  # pointed at, it goes
+    page.wait_for_selector(".flashes", state="detached")
+    assert not page.locator(".capture-dialog").evaluate("d => d.open") and page.evaluate("window.mark") == 1
     assert any(t["title"] == "from the dialog" for t in db.inbox_tasks(conn))
+    # ⌘/ captures while typing, in an overlay's notes too; the overlay stays open under it.
+    row(page, "vacuum").locator(".title").click()
+    task_overlay(page)
+    page.frame_locator("dialog.overlay iframe").locator(".md-editor").click()
+    page.keyboard.press("Meta+/")
+    page.wait_for_function("document.querySelector('.capture-dialog').open")
+    page.keyboard.type("while typing")
+    page.keyboard.press("Enter")
+    page.wait_for_function("!document.querySelector('.capture-dialog').open")
+    assert page.locator("dialog.overlay").evaluate("d => d.open")
+    assert any(t["title"] == "while typing" for t in db.inbox_tasks(conn))
+    page.mouse.click(5, 5)  # beside it, on the backdrop: closed
+    page.wait_for_selector("dialog.overlay", state="detached")
+    page.click(".add-inbox")
+    page.mouse.click(5, 5)  # so does any dialog
+    assert not page.locator(".capture-dialog").evaluate("d => d.open")
 
 
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
@@ -125,7 +147,7 @@ def test_on_a_touch_screen_the_calendar_button_is_the_native_picker(browser, liv
     page = ctx.new_page()
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.goto(live + "/tasks/2?embed=task")
+    page.goto(live + "/tasks/2?embed=overlay")
     assert page.evaluate("matchMedia('(pointer: coarse)').matches")
     page.fill("input[name=due_date]", "2026-11-03")
     field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
@@ -142,7 +164,7 @@ def test_on_a_touch_screen_the_calendar_button_is_the_native_picker(browser, liv
 
 
 def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, conn):
-    page.goto(live + "/tasks/2?embed=task")
+    page.goto(live + "/tasks/2?embed=overlay")
     page.fill("input[name=due_date]", "")
     field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
     field.locator(".pick").click()  # showPicker() needs this real click's user activation
@@ -167,7 +189,7 @@ def test_running_timer_clock_ticks(page, live):
 
 def test_task_page_timer_is_by_the_title_and_ticks(page, live):
     page.clock.install(time=NOW)
-    page.goto(live + "/tasks/7?embed=task")  # "call mum", running
+    page.goto(live + "/tasks/7?embed=overlay")  # "call mum", running
     timer = page.locator(".title-line .task-timer")
     stop, title = timer.get_by_role("button", name="Stop the timer"), page.locator("input.big").bounding_box()
     box = stop.bounding_box()
@@ -175,7 +197,7 @@ def test_task_page_timer_is_by_the_title_and_ticks(page, live):
     before = timer.locator(".clock").inner_text()
     page.clock.run_for(3000)
     assert timer.locator(".clock").inner_text() != before
-    page.goto(live + "/tasks/2?embed=task")  # "buy tiles", not running
+    page.goto(live + "/tasks/2?embed=overlay")  # "buy tiles", not running
     with page.expect_navigation():
         page.locator(".title-line .task-timer").get_by_role("button", name="Start the timer").click()
     assert page.locator(".title-line .task-timer").get_by_role("button", name="Stop the timer").is_visible()
@@ -264,7 +286,7 @@ def test_theme_toggle_overrides_system_and_persists(page, live):
 
 def test_drag_reorders_project_steps(page, live, conn):
     db.add_task(conn, "order grout", step="next", project_id=1)  # a second next action
-    page.goto(live + "/projects/1")
+    page.goto(live + "/projects/1?embed=overlay")
     titles = lambda: page.locator("ul[data-reorder] li.task a.title").all_inner_texts()
     drag = lambda a, b: row(page, a).locator(".grip").drag_to(row(page, b), target_position={"x": 5, "y": 2})
     assert titles() == ["order grout", "buy tiles", "quote from Bob", "lay tiles"]
@@ -379,7 +401,7 @@ def test_search_suggestions_keyboard(page, live):
 
 
 def test_add_line_reveals_its_extra_fields_on_focus(page, live):
-    page.goto(live + "/projects/1")
+    page.goto(live + "/projects/1?embed=overlay")
     more = page.locator("main form.add .add-more")
     assert more.is_hidden()
     page.locator("main form.add input[name=title]").focus()
@@ -387,7 +409,7 @@ def test_add_line_reveals_its_extra_fields_on_focus(page, live):
 
 
 def test_new_option_reveals_the_name_box(page, live):
-    page.goto(live + "/tasks/2?embed=task")
+    page.goto(live + "/tasks/2?embed=overlay")
     box = page.locator("input[name=new_project]")
     assert box.is_hidden()
     page.select_option("select[name=project_id]", "__new__")  # "＋ New project…": no save yet, it needs a name
@@ -438,7 +460,7 @@ def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
 
 def test_notes_render_markdown_and_save_what_you_typed(page, live, conn):
     pid = db.add_reference(conn, "Markdown", notes="# Head\nsee **bold** and https://example.com")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     ed = page.locator(".md-editor")
     assert page.locator("textarea[name=notes]").is_hidden()
     assert ed.locator(".h1").inner_text() == "Head"
@@ -458,7 +480,7 @@ def test_notes_render_markdown_and_save_what_you_typed(page, live, conn):
 
 def test_notes_editor_undo(page, live, conn):
     pid = db.add_reference(conn, "Undo", notes="abc")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     ed = page.locator(".md-editor")
     ed.click()
     page.keyboard.press("ControlOrMeta+End")
@@ -488,7 +510,7 @@ def test_due_bands_remember_only_clicks(page, live, conn):
 
 def test_title_and_notes_save_themselves(page, live, conn):
     pid = db.add_reference(conn, "Auto", notes="abc")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     page.locator(".md-editor").click()
     page.keyboard.press("ControlOrMeta+End")
     page.keyboard.type("def")
@@ -501,7 +523,7 @@ def test_title_and_notes_save_themselves(page, live, conn):
 
 def test_autosave_conflict_keep_mine_and_merge(page, live, conn):
     pid = db.add_reference(conn, "Clash", notes="one\ntwo")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     db.update_reference(conn, pid, notes="one\nTHEIRS")
     page.locator(".md-editor").click()
     page.keyboard.press("ControlOrMeta+End")
@@ -524,7 +546,7 @@ def test_autosave_conflict_keep_mine_and_merge(page, live, conn):
 
 def test_coming_back_to_the_tab_loads_edits_made_elsewhere(page, live, conn):
     pid = db.add_project(conn, "Elsewhere", notes="old")
-    page.goto(live + f"/projects/{pid}")
+    page.goto(live + f"/projects/{pid}?embed=overlay")
     db.update_project(conn, pid, notes="new from phone")
     page.evaluate("dispatchEvent(new Event('focus'))")
     page.wait_for_function("document.querySelector('.md-editor').textContent === 'new from phone'")
@@ -680,7 +702,7 @@ def test_waiting_lists_projects_then_tasks_and_drags_projects(page, live, conn):
 
 
 def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, live, conn):
-    page.goto(live + "/projects/1")
+    page.goto(live + "/projects/1?embed=overlay")
     assert page.locator('.drop-panel [data-project="1"]').count() == 0  # not its own project
     drag_to_panel(page, row(page, "lay tiles"), '[data-project="2"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"3\"]')")
@@ -744,9 +766,9 @@ def test_capture_keys_do_nothing_while_help_is_open(page, live):
 
 
 def task_overlay(page):
-    """The task open in its overlay (app.js): its title, once its frame has loaded."""
-    page.wait_for_selector("dialog.task-dialog[open]")
-    return page.frame_locator("dialog.task-dialog iframe").locator("input.big").input_value()
+    """The record open in the top overlay (app.js): its title, once its frame has loaded."""
+    page.wait_for_selector("dialog.overlay[open]")
+    return page.locator("dialog.overlay").last.frame_locator("iframe").locator("input.big").input_value()
 
 
 def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
@@ -756,22 +778,41 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.evaluate("window.mark = 1")  # gone after a reload
     row(page, "vacuum").locator(".title").click()
     assert task_overlay(page) == "vacuum" and page.url == live + "/next"
-    frame = page.frame_locator("dialog.task-dialog iframe")
+    frame = page.frame_locator("dialog.overlay iframe")
     frame.locator("input.big").focus()
     page.keyboard.press("Escape")  # in the frame
-    page.wait_for_selector("dialog.task-dialog[open]", state="detached")
+    page.wait_for_selector("dialog.overlay[open]", state="detached")
     assert page.evaluate("window.mark") == 1
     row(page, "vacuum").locator(".title").click()
     task_overlay(page)
     frame.locator("input.big").fill("vacuum all")  # saved on closing, before the page reloads
     with page.expect_navigation():
-        page.locator("dialog.task-dialog .close").click()
+        page.locator("dialog.overlay .close").click()
     assert db.get_task(conn, 5)["title"] == "vacuum all" and row(page, "vacuum all").count() == 1
+    # /tasks/2, a step: Projects, its project's overlay, the step's over it. Closing each drops its part of the URL.
     page.goto(live + "/tasks/2")
-    assert page.url == live + "/projects/1?task=2" and task_overlay(page) == "buy tiles"
+    assert page.url == live + "/projects?project=1&task=2" and task_overlay(page) == "buy tiles"
+    assert page.locator("dialog.overlay").count() == 2
     page.keyboard.press("Escape")
-    page.wait_for_selector("dialog.task-dialog[open]", state="detached")
-    assert page.url == live + "/projects/1"
+    page.wait_for_function("document.querySelectorAll('dialog.overlay').length === 1")
+    assert page.url == live + "/projects?project=1"
+    # A step opened from its project's overlay stacks over it; its ↗ goes back down to the project, not a second copy.
+    project = page.frame_locator("dialog.overlay iframe")
+    project.locator("li.task", has_text="lay tiles").locator(".title").click()
+    page.wait_for_function("document.querySelectorAll('dialog.overlay').length === 2")
+    page.locator("dialog.overlay").last.frame_locator("iframe").locator("a.open-project").click()
+    page.wait_for_function("document.querySelectorAll('dialog.overlay').length === 1")
+    # Ctrl+↑: a step's parent is its project (opened in its place), the project's is Projects (all closed).
+    page.goto(live + "/next")
+    row(page, "buy tiles").locator(".title").click()
+    task_overlay(page)
+    page.frame_locator("dialog.overlay iframe").locator("input.big").focus()  # typing in a field too
+    page.keyboard.press("Control+ArrowUp")
+    page.wait_for_function("document.querySelector('dialog.overlay iframe')?.src.includes('/projects/1?')")
+    assert page.locator("dialog.overlay").count() == 1 and page.url == live + "/next"
+    page.keyboard.press("Control+ArrowUp")  # at once, before its page is in: waits for it
+    page.wait_for_url(live + "/projects")
+    assert page.locator("dialog.overlay").count() == 0
 
 
 def test_clicking_anywhere_on_a_row_opens_it(page, live):
@@ -784,9 +825,9 @@ def test_clicking_anywhere_on_a_row_opens_it(page, live):
     page.goto(live + "/projects")
     r = row(page, "Kitchen")
     box = r.bounding_box()
-    with page.expect_navigation():
-        page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
-    assert page.url == live + "/projects/1"
+    page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
+    page.wait_for_selector("dialog.overlay[open]")  # a project opens in its overlay too
+    assert page.url == live + "/projects"
 
 
 def test_clicking_a_rows_button_does_not_open_it(page, live):
@@ -804,7 +845,7 @@ def test_horizons_arrow_keys_move_between_levels(page, live):
 
 
 def test_remind_box_previews_how_it_reads(page, live):
-    page.goto(live + "/tasks/7?embed=task")  # "call mum": a reminder still to come
+    page.goto(live + "/tasks/7?embed=overlay")  # "call mum": a reminder still to come
     hint = page.locator(".when[data-parse=remind]")
     page.fill("input[name=remind_at]", "oct 30 at 5pm")
     sync_api.expect(hint).to_have_text("→ Fri Oct 30, 17:00")
@@ -817,7 +858,7 @@ def test_remind_box_previews_how_it_reads(page, live):
 
 
 def test_due_and_repeat_boxes_preview_how_they_read(page, live):
-    page.goto(live + "/tasks/7?embed=task")
+    page.goto(live + "/tasks/7?embed=overlay")
     due, rule = page.locator(".when[data-parse=due]"), page.locator(".when[data-parse=recur]")
     page.fill("input[name=due_date]", "tomorrow")
     sync_api.expect(due).to_have_text("→ Fri Oct 23")
@@ -834,7 +875,7 @@ def test_due_and_repeat_boxes_preview_how_they_read(page, live):
 
 
 def test_remind_button_copies_the_picked_date_and_time_into_the_text_box(page, live, conn):
-    page.goto(live + "/tasks/7?embed=task")  # "call mum": a reminder still to come
+    page.goto(live + "/tasks/7?embed=overlay")  # "call mum": a reminder still to come
     field = page.locator(".date-field", has=page.locator("input[name=remind_at]"))
     field.locator(".pick").click()  # showPicker() needs this real click's user activation
     assert field.locator(".picker").input_value() == page.input_value("input[name=remind_at]").replace(" ", "T")
@@ -883,29 +924,12 @@ def test_nav_hides_and_returns_with_touch_scrolling(browser, live):
     ctx.close()
 
 
-@pytest.mark.parametrize("url", ["/projects/1", "/horizons/3"])
-def test_a_record_page_opens_centered_past_the_nav(page, live, url):
-    page.set_viewport_size({"width": 1200, "height": 700})
-    page.goto(live + url)
-    page.wait_for_function("document.body.classList.contains('nav-hidden')")
-    top = page.locator("input.big").bounding_box()["y"]
-    bottom = page.evaluate("Math.max(...[...document.querySelector('main').children].filter(e => e.tagName !== 'SCRIPT'"
-                           " && getComputedStyle(e).position !== 'fixed').map(e => e.getBoundingClientRect().bottom))")
-    assert page.locator("div.bar").bounding_box()["y"] + page.locator("div.bar").bounding_box()["height"] <= 0  # the search bar too
-    if bottom - top < 700 - 48:  # it fits: centered, as much room above as below
-        assert abs(top - (700 - bottom)) <= 6, (top, bottom)
-    else:  # taller: from near the top
-        assert 0 <= top <= 30, top
-    page.mouse.wheel(0, -50)  # scrolling up shows the nav again
-    page.wait_for_function("!document.body.classList.contains('nav-hidden')")
-
-
 def test_project_status_select_saves_on_pick(page, live, conn):
-    page.goto(live + "/projects/1")
+    page.goto(live + "/projects/1?embed=overlay")
     assert page.get_by_role("button", name="Abandon").count() == 0 and page.get_by_role("button", name="Someday").count() == 0
     with page.expect_navigation():
         page.get_by_label("Status").select_option("someday")
-    assert db.get_project(conn, 1)["status"] == "someday" and page.url == live + "/projects/1"
+    assert db.get_project(conn, 1)["status"] == "someday" and page.url == live + "/projects/1?embed=overlay"
     with page.expect_navigation():
         page.get_by_label("Status").select_option("abandoned")
     assert db.get_project(conn, 1)["status"] == "abandoned"
@@ -915,16 +939,16 @@ def test_project_status_select_saves_on_pick(page, live, conn):
 
 
 def test_task_step_select_saves_on_pick(page, live, conn):
-    page.goto(live + "/tasks/3?embed=task")  # "lay tiles", a later step
+    page.goto(live + "/tasks/3?embed=overlay")  # "lay tiles", a later step
     with page.expect_navigation():
         page.locator("select[name=step]").select_option("waiting")
-    assert db.get_task(conn, 3)["step"] == "waiting" and page.url == live + "/tasks/3?embed=task"
+    assert db.get_task(conn, 3)["step"] == "waiting" and page.url == live + "/tasks/3?embed=overlay"
     assert page.get_by_role("button", name="Save").count() == 0 or not page.get_by_role("button", name="Save").is_visible()
 
 
 def test_project_time_split_folds_out(page, live):
     """A project page shows its total time; the per-step bars only after "Show split"."""
-    page.goto(live + "/projects/1")
+    page.goto(live + "/projects/1?embed=overlay")
     tally = page.locator("details.tally")
     assert tally.locator("h2 b").is_visible() and not tally.locator("ul").is_visible()
     assert tally.locator(".split-toggle").evaluate("e => getComputedStyle(e, '::after').content") == '"Show split"'
@@ -936,7 +960,7 @@ def test_project_time_split_folds_out(page, live):
 
 def test_a_select_saves_typed_notes_before_it_submits(page, live, conn):
     """The server leaves title and notes to autosave, so picking a status mustn't lose what was just typed."""
-    page.goto(live + "/projects/1")
+    page.goto(live + "/projects/1?embed=overlay")
     page.locator(".md-editor").click()
     page.keyboard.press("ControlOrMeta+End")
     page.keyboard.type(" typed")
@@ -947,7 +971,7 @@ def test_a_select_saves_typed_notes_before_it_submits(page, live, conn):
 
 
 def test_enter_in_the_title_saves_without_reloading(page, live, conn):
-    page.goto(live + "/reference/1")
+    page.goto(live + "/reference/1?embed=overlay")
     page.evaluate("window.stayed = true")
     page.locator("form[data-autosave] input[name=title]").fill("Plumber Sam")
     page.locator("form[data-autosave] input[name=title]").press("Enter")
@@ -970,7 +994,7 @@ def notes_text(page):
 
 def test_notes_toolbar_shows_while_editing(page, live, conn):
     pid = db.add_reference(conn, "Tools", notes="abc")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     tools = page.locator(".md-tools")
     assert tools.evaluate("e => getComputedStyle(e).opacity") == "0"
     page.locator(".md-editor").click()
@@ -980,7 +1004,7 @@ def test_notes_toolbar_shows_while_editing(page, live, conn):
 
 def test_notes_toolbar_formats(page, live, conn):
     pid = db.add_reference(conn, "Tools", notes="milk")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     ed, tool = page.locator(".md-editor"), lambda k: page.locator(f".md-tools [data-tool={k}]").click()
     ed.click()
     page.keyboard.press("ControlOrMeta+a")
@@ -1007,7 +1031,7 @@ def test_notes_toolbar_formats(page, live, conn):
 
 def test_checklists_tick_continue_and_reset(page, live, conn):
     pid = db.add_reference(conn, "Packing", notes="- [ ] passport")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     ed = page.locator(".md-editor")
     ed.locator(".box").click()  # ticks without focusing the editor
     assert notes_text(page) == "- [x] passport" and ed.locator(".box.on").count() == 1
@@ -1048,7 +1072,7 @@ def test_dragging_a_someday_task_onto_h0_commits_to_it(page, live, conn):
 
 
 def test_a_someday_projects_tickler_box(page, live, conn):
-    page.goto(live + "/projects/4")  # "Someday proj"
+    page.goto(live + "/projects/4?embed=overlay")  # "Someday proj"
     box = page.locator(".title-line input[name=tickle_on]")  # a quiet control on the title line
     assert not page.locator(".tickler .hint").is_visible()  # its reading shows only while editing
     box.fill("nov 15")
@@ -1060,9 +1084,9 @@ def test_a_someday_projects_tickler_box(page, live, conn):
 
 
 def test_enter_in_a_tickler_box_saves_once(page, live, conn):
-    page.goto(live + "/projects/4")
+    page.goto(live + "/projects/4?embed=overlay")
     posts = []
-    page.on("request", lambda r: r.method == "POST" and r.url.endswith("/projects/4") and posts.append(r))
+    page.on("request", lambda r: r.method == "POST" and "/projects/4?" in r.url and posts.append(r))
     page.locator("input[name=tickle_on]").fill("nov 15")
     with page.expect_navigation():
         page.locator("input[name=tickle_on]").press("Enter")
@@ -1072,7 +1096,7 @@ def test_enter_in_a_tickler_box_saves_once(page, live, conn):
 
 def test_notes_editor_edge_cases(page, live, conn):
     pid = db.add_reference(conn, "Edges", notes="")
-    page.goto(live + f"/reference/{pid}")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
     ed = page.locator(".md-editor")
     ed.click()
     page.keyboard.type("- - -")
@@ -1191,7 +1215,7 @@ def test_a_disabled_repeat_box_isnt_saved_with_the_other_fields(page, live, conn
     tid = db.add_task(conn, "idea", ground=1, step="someday", recur="weekly", due_date="2026-12-01")
     conn.commit()
     page.goto(live + f"/someday?task={tid}")
-    due = page.frame_locator("dialog.task-dialog iframe").locator("main input[name=due_date]")
+    due = page.frame_locator("dialog.overlay iframe").locator("main input[name=due_date]")
     due.fill("")
     with page.expect_response(lambda r: r.request.method == "POST" and f"/tasks/{tid}" in r.url):
         due.press("Tab")
@@ -1201,7 +1225,7 @@ def test_a_disabled_repeat_box_isnt_saved_with_the_other_fields(page, live, conn
 
 def test_an_areas_balance_slider_saves_in_place_on_its_page_and_h2(page, live, conn):
     area = db.horizons(conn)["area"][0]["id"]
-    page.goto(live + f"/horizons/{area}")
+    page.goto(live + f"/horizons/{area}?embed=overlay")
     slider = page.locator(".balance input")
     page.evaluate("window.stay = true")  # gone if the page reloads
     slider.focus()

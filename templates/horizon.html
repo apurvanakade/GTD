@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% from "_balance.html" import balance %}
 {% block title %}{{ h.title }}{% endblock %}
-{% block crumb %}<p class="crumb"><a href="{{ url_for('horizons_view', level=h.level) }}">Horizons</a> · {{ label }}</p>{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
 <form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
@@ -9,7 +8,7 @@
   <div class="title-line">
     <input name="title" value="{{ h.title }}" class="big" aria-label="Title" required>
     {% if h.level in ('goal', 'area') %}
-    <button formaction="{{ url_for('horizon_delete', id=h.id) }}" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this {{ h.level }}?')">✕</button>
+    <button formaction="{{ url_for('horizon_delete', id=h.id) }}" formtarget="_top" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this {{ h.level }}?')">✕</button>
     {% endif %}
   </div>
   {% if h.level == 'area' %}{{ balance(h, balance_words) }}{% endif %}

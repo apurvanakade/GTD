@@ -24,23 +24,12 @@ async function post(url, body) {
   addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
   document.addEventListener('focusin', e => { if (e.target.closest('nav')) show(true); });
 })();
-// A record page (project, task, horizon, reference) opens scrolled past the nav, its body (title to the end of the
-// page) centered in the window, or from the top when taller. Room above the title (main's padding) makes that possible
-// however short the page; a reload or Back keeps the browser's own scroll.
-(() => {
-  const big = document.querySelector('main .big'), main = document.querySelector('main');
-  if (!big || document.body.matches('.embed')) return;  // in a frame, the frame fits the page
-  main.style.paddingTop = '1px';  // measured with some padding, which stops the header's margins collapsing through main
-  const top = el => el.getBoundingClientRect().top + scrollY, start = top(big);
-  const end = Math.max(...[...main.children].filter(el => el.tagName !== 'SCRIPT' && getComputedStyle(el).position !== 'fixed')
-    .map(el => el.getBoundingClientRect().bottom + scrollY));
-  const gap = Math.max(24, (innerHeight - (end - start)) / 2);
-  const pad = Math.max(1, top(main) + 2 + gap - start);  // the scroll must pass the nav and search bar; the nav slides away
-  main.style.paddingTop = pad + 'px';
-  main.style.minHeight = `calc(100vh + ${gap}px)`;  // room to scroll that far
-  const how = performance.getEntriesByType('navigation')[0]?.type;
-  if (how !== 'reload' && how !== 'back_forward') scrollTo({top: start + pad - gap, behavior: 'instant'});
-})();
+// ⌘/ (Ctrl+/) captures from anywhere, typing in a field or in an overlay too; Ctrl+↑ goes up a level (overlays, below).
+// Both work in a frame, for the page around it.
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); top.capture(); }
+  if (e.ctrlKey && e.key === 'ArrowUp') { e.preventDefault(); top.overlays?.up(); }
+});
 document.addEventListener('keydown', e => {
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
   if (document.querySelector('dialog[open]') || document.body.matches('.embed')) return;  // Esc closes a dialog natively; a task's frame goes nowhere
@@ -60,12 +49,42 @@ document.querySelectorAll('details.band').forEach(d => {
   try { const v = localStorage.getItem(key); if (v !== null) d.open = v === '1'; } catch {}
   d.querySelector('summary').addEventListener('click', () => { try { localStorage.setItem(key, d.open ? '0' : '1'); } catch {} });
 });
-// Capture goes to the Inbox page's own box, or elsewhere to the dialog.
+// Capture goes to the Inbox page's own box, or elsewhere (or over an overlay) to the dialog. The dialog adds in the
+// background, so whatever is open under it stays as it was.
 function capture() {
-  const inline = document.querySelector('main .capture input');
-  inline ? inline.select() : document.querySelector('.capture-dialog').showModal();
+  const inline = !document.querySelector('dialog[open]') && document.querySelector('main .capture input');
+  if (inline) return inline.select();
+  const dialog = document.querySelector('.capture-dialog');
+  if (!dialog.open) dialog.showModal();
+  dialog.querySelector('input').select();
 }
 document.querySelector('.add-inbox')?.addEventListener('click', capture);
+document.querySelector('.capture-dialog form')?.addEventListener('submit', async e => {
+  if (e.submitter?.formMethod === 'dialog') return;  // Cancel
+  e.preventDefault();
+  const f = e.target;
+  try {
+    const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams(new FormData(f))});
+    if (!r.ok) throw r.status;
+    f.reset();
+    f.closest('dialog').close();
+    toast((await r.json()).flashes);
+  } catch { return location.reload(); }
+  refreshNav();
+});
+// Any dialog closes on a click beside it, on the backdrop, as with Esc: its 'cancel' event, so a dialog that saves
+// first (an overlay, Process) closes its own way. Pressed and let go there, so a text selection ending outside doesn't.
+(() => {
+  const beside = e => e.target.matches('dialog') && (r => e.clientX < r.left || e.clientX > r.right
+    || e.clientY < r.top || e.clientY > r.bottom)(e.target.getBoundingClientRect());
+  let down = null;
+  document.addEventListener('pointerdown', e => { down = beside(e) ? e.target : null; });
+  document.addEventListener('click', e => {
+    if (!down || down !== e.target || !beside(e)) return;
+    if (down.dispatchEvent(new Event('cancel', {cancelable: true}))) down.close();
+    down = null;
+  });
+})();
 // A field marked data-submit (the project page's status and tickler date)
 // saves its form as soon as it's changed; a text box waits while its 📅 picker is open.
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
@@ -102,6 +121,8 @@ document.querySelectorAll('.balance').forEach(b => {
   input.addEventListener('input', () => { b.classList.remove('unset'); b.querySelector('output').textContent = words[+input.value + 3]; });
   input.addEventListener('change', () => post(b.dataset.url, new URLSearchParams({balance: input.value})));
 });
+// A message goes as soon as it's pointed at, so it's never in the way.
+document.addEventListener('mouseover', e => e.target.closest('.flashes')?.remove());
 // Messages from a background save, shown like the server's.
 function toast(messages) {
   document.querySelector('body > .flashes')?.remove();
@@ -270,7 +291,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
       active = (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
       show();
     }
-    if (e.key === 'Enter') { e.preventDefault(); box.querySelector('a.on').click(); }  // a task opens in its overlay
+    if (e.key === 'Enter') { e.preventDefault(); box.querySelector('a.on').click(); }  // a record opens in its overlay
   });
   input.addEventListener('focus', () => { if (items.length) box.hidden = false; });
   document.addEventListener('pointerdown', e => { if (!form.contains(e.target)) box.hidden = true; });
@@ -327,14 +348,16 @@ document.addEventListener('click', e => {
       || String(getSelection())) return;
   const a = li.querySelector(':scope > .title, :scope > .name > .title');
   if (!a) return;
-  if (e.metaKey || e.ctrlKey) open(a.href); else a.click();  // a task opens in its overlay (below)
+  if (e.metaKey || e.ctrlKey) open(a.href); else a.click();  // a record opens in its overlay (below)
 });
-// Every task opens in an overlay over the page it was clicked on (base.html's dialog.task-dialog), its page in a frame
-// (?embed=task), so closing it is going back. ⌘/Ctrl-click opens a new tab, where /tasks/<id> opens the task's list with
-// it open (?task=<id>, as a reminder's tap does). Closing (×, Esc, a click beside it) saves what's typed first, and
-// reloads the page under it if the task changed (changed(), from the frame), so its lists show it.
+// Every task, project, horizon and reference item opens in an overlay over the page it was clicked on, its page in a
+// frame (?embed=overlay), so closing it is going back. Overlays stack: a step opened from its project's overlay sits on
+// top of it, and a record already open below is gone back to rather than opened twice. ⌘/Ctrl-click opens a new tab,
+// where /tasks/<id> (or /projects/<id>…) opens its list with it open (?task=<id>, as a reminder's tap does). Closing
+// (×, Esc, a click beside it) saves what's typed first, and reloads what's under it (the overlay below, else the page)
+// if the record changed (changed(), from the frame), so it shows the change.
 function changed() { if (frameElement) frameElement.dataset.changed = '1'; }
-// A frame holding a task page (this overlay, Process's) takes the height of the page in it, growing as notes do.
+// A frame holding a record's page (an overlay, Process's) takes the height of the page in it, growing as notes do.
 function fitFrame(frame) {
   let watch = null;
   const fit = () => {
@@ -347,57 +370,88 @@ function fitFrame(frame) {
   frame.addEventListener('load', fit);
   fit();  // loaded before this ran (?task=<id>)
 }
-// Everything typed in a frame's task page saved: the box being typed in leaves it (saving it), title and notes through
+// Everything typed in a frame's page saved: the box being typed in leaves it (saving it), title and notes through
 // autosave. False on a conflict, to be settled in the frame first; true with nothing loaded.
 function frameSaved(frame) {
   const w = frame.contentWindow;
   w?.document.activeElement?.blur?.();
   return w?.autosaved?.() ?? Promise.resolve(true);
 }
+// The record a link opens ("/projects/4"), or nothing for any other link.
+const RECORD = /^\/(tasks|projects|horizons|reference)\/\d+$/;
+const recordOf = href => {
+  const u = new URL(href, location);
+  return u.origin === location.origin && !u.search && RECORD.test(u.pathname) && u.pathname;
+};
 if (frameElement) {
   document.addEventListener('submit', changed, true);
   document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
     if (e.key === 'Escape' && !document.querySelector('dialog[open]')) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });
 }
-(() => {
-  const dialog = document.querySelector('dialog.task-dialog');
-  if (!dialog) return;  // in a frame already: its links open in the page (base target)
-  const frame = dialog.querySelector('iframe');
-  const taskId = href => {
-    const u = new URL(href, location);
-    return u.origin === location.origin && !u.search && u.pathname.match(/^\/tasks\/(\d+)$/)?.[1];
-  };
-  fitFrame(frame);
-  const show = id => {
-    delete frame.dataset.changed;
-    frame.src = `/tasks/${id}?embed=task`;
+// A record's link opens its overlay, in a frame too (on the page around it).
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href]'), path = a && recordOf(a.href);
+  if (!path || !top.overlays || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  top.overlays.open(path);
+});
+window.overlays = document.body.matches('.embed') ? null : (() => {
+  const stack = [];  // {dialog, frame, path}, bottom first
+  let closing = false;
+  const adopt = dialog => {
+    const frame = dialog.querySelector('iframe'), o = {dialog, frame, path: new URL(frame.src).pathname};
+    fitFrame(frame);
+    dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    dialog.querySelector('.close').addEventListener('click', () => close());
+    stack.push(o);
     dialog.showModal();
   };
-  let closing = false;
-  const close = async () => {
-    if (closing) return;
-    closing = true;
-    const saved = await frameSaved(frame);
-    closing = false;
-    if (!saved) return;
-    dialog.close();
-    const url = new URL(location);
-    if (url.searchParams.has('task')) { url.searchParams.delete('task'); history.replaceState(null, '', url); }
-    if (frame.dataset.changed) return location.reload();
-    frame.src = 'about:blank';
+  const open = path => {
+    const at = stack.findIndex(o => o.path === path);
+    if (at >= 0) return closeTo(at + 1);  // already open below: back to it
+    const dialog = Object.assign(document.createElement('dialog'), {className: 'overlay'});
+    dialog.innerHTML = '<button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button><iframe title="Overlay"></iframe>';
+    dialog.querySelector('iframe').src = path + '?embed=overlay';
+    document.body.append(dialog);
+    adopt(dialog);
   };
-  dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
-  dialog.querySelector('.close').addEventListener('click', close);
-  dialog.addEventListener('click', e => {  // beside it, on the backdrop
-    const r = dialog.getBoundingClientRect();
-    if (e.target === dialog && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) close();
-  });
-  document.addEventListener('click', e => {
-    const a = e.target.closest('a[href]'), id = a && taskId(a.href);
-    if (!id || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    show(id);
-  });
-  if (frame.getAttribute('src') !== 'about:blank') dialog.showModal();  // ?task=<id>
+  // The top overlay, once what's typed in it is saved; false if it stays (a conflict).
+  const close = async () => {
+    const o = stack.at(-1);
+    if (!o || closing) return false;
+    closing = true;
+    const saved = await frameSaved(o.frame);
+    closing = false;
+    if (!saved) return false;
+    stack.pop();
+    o.dialog.close();
+    o.dialog.remove();
+    const [, kind, id] = o.path.match(/^\/(\w+?)s?\/(\d+)$/), url = new URL(location);  // ?task=<id>, ?project=<id>…
+    if (url.searchParams.get(kind) === id) { url.searchParams.delete(kind); history.replaceState(null, '', url); }
+    if (o.frame.dataset.changed) {
+      const below = stack.at(-1);
+      if (below) { below.frame.dataset.changed = '1'; below.frame.contentWindow.location.reload(); }
+      else if (!document.querySelector('dialog[open]')) location.reload();  // not under Process, which redraws itself
+    }
+    return true;
+  };
+  const closeTo = async n => { while (stack.length > n) if (!await close()) return false; return true; };
+  // Ctrl+↑: from the top overlay to its record's parent (its <link rel=up>): a step's project, opened in its place
+  // unless it's the overlay below; a list or Horizons card, gone to with every overlay closed.
+  const up = async () => {
+    const o = stack.at(-1);
+    if (!o) return;
+    const doc = () => o.frame.contentDocument;
+    if (doc()?.readyState !== 'complete' || doc().URL === 'about:blank')  // pressed before its page is in
+      await new Promise(done => o.frame.addEventListener('load', done, {once: true}));
+    const href = doc()?.querySelector('link[rel=up]')?.href;
+    const path = href && recordOf(href);
+    if (path) { if (await close() && stack.at(-1)?.path !== path) open(path); return; }
+    if (!await closeTo(0) || !href) return;
+    const u = new URL(href);
+    if (u.pathname + u.search !== location.pathname + location.search) location = href;
+  };
+  document.querySelectorAll('dialog.overlay').forEach(adopt);  // ?project=<id>, ?task=<id>…, bottom first
+  return {open, up};
 })();

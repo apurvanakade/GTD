@@ -15,7 +15,7 @@
     </select>
     {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
     {% if tasks %}{{ pin_button() }}{% endif %}
-    {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
+    {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" formtarget="_top" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
   </div>
   <div class="title-line outcome">
     <input name="outcome" value="{{ p.outcome or '' }}" placeholder="Done when…" aria-label="Desired outcome" title="Desired outcome: what done looks like" data-submit>

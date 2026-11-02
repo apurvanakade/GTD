@@ -68,12 +68,24 @@ def same_origin_only():
 @app.context_processor
 def template_globals():
     timer = db.timer_running(conn())
-    # A task page in a frame, without chrome: "task" (the overlay every task opens in) or "process" (inbox.html).
-    # base.html leaves out the nav, bar and pill there, so their numbers aren't worked out.
+    # A record's page in a frame, without chrome: "overlay" (every task, project, horizon and reference item opens in
+    # one) or "process" (inbox.html). base.html leaves out the nav, bar and pill there, so their numbers aren't worked out.
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
-            "open_task": request.args.get("task", type=int)}  # ?task=<id>: the page opens with that task's overlay
+            "overlays": [] if embed else opened()}
+
+
+# A record reached by URL opens over its list: ?project=, ?horizon=, ?reference=, ?task= (a project's step over its
+# project, so in that order).
+OVERLAYS = (("project", "project_view"), ("horizon", "horizon_view"), ("reference", "reference_view"),
+            ("task", "task_view"))
+
+
+def opened():
+    """The overlays a page opens with, bottom first: their frames' URLs."""
+    return [url_for(view, id=id, embed="overlay") for kind, view in OVERLAYS
+            if (id := request.args.get(kind, type=int))]
 
 
 STOPPED = timedelta(minutes=10)  # how long a stopped timer's pill stays, to finish its task or start it again
@@ -255,6 +267,8 @@ def capture():
             if "remind_at" in fields:
                 parts.append(f"reminder {local_minute(fields['remind_at'], WHEN)}")
             flash(" · ".join(parts))
+    if fetched():  # the capture dialog, in the background: whatever is open under it stays
+        return {"flashes": get_flashed_messages()}
     return back()
 
 
@@ -310,7 +324,8 @@ def tasks_order():
 
 def toggle_url(show, arg="done"):
     """This page's URL with ?done (or another flag) flipped, keeping other query args."""
-    args = {k: v for k, v in request.args.items() if k != arg and k not in request.view_args}
+    args = {k: v for k, v in request.args.items()
+            if k != arg and k not in request.view_args and k not in dict(OVERLAYS)}  # not reopening an overlay
     flip = {} if show else {arg: 1}
     return url_for(request.endpoint, **request.view_args, **flip, **args)
 
@@ -444,7 +459,9 @@ def reference_view(id):
                             notes=(request.form.get("notes") or "").strip())
         flash("Saved.")
         return back("reference")
-    return render_template("reference_item.html", r=r)
+    if not request.args.get("embed"):  # opens over Reference, like a task over its list
+        return redirect(url_for("reference", reference=id))
+    return render_template("reference_item.html", r=r, up=url_for("reference"))
 
 
 @app.post("/reference/<int:id>/delete")
@@ -584,14 +601,16 @@ def task_view(id):
         return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
-    return render_template("task.html", t=t, project_groups=db.project_groups(c), seconds=db.task_seconds(c, id, now()))
+    up = url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t)
+    return render_template("task.html", t=t, project_groups=db.project_groups(c), seconds=db.task_seconds(c, id, now()),
+                           up=up)
 
 
 def task_home(t, **args):
-    """The list a task is opened over when it's reached by URL (a reminder's tap, a new tab): its project's page, else
+    """The list a task is opened over when it's reached by URL (a reminder's tap, a new tab): over its project, else
     the list it's on, else Done."""
     if t["project_id"]:
-        return url_for("project_view", id=t["project_id"], **args)
+        return project_home(db.get_project(conn(), t["project_id"]), **args)
     if t["state"] != "open":
         return url_for("done", **args)
     if t["inbox"]:
@@ -680,11 +699,23 @@ def add_project_from_form(status="active"):
 
 @app.post("/projects")
 def project_create():
-    add_project_from_form()
+    """Projects' add line; its select makes a waiting or someday project at once."""
+    status = request.form.get("status")
+    add_project_from_form(status if status in PROJECT_STATUSES else "active")
     return back("projects_view")
 
 
 PROJECT_STATUSES = ("active", "waiting", "someday")  # what the status select sets; done or abandoned closes it
+
+
+def project_list(p, **args):
+    """The list a project is on: Projects, Waiting, Someday, else Done."""
+    return url_for({"active": "projects_view", "waiting": "waiting", "someday": "someday"}.get(p["status"], "done"), **args)
+
+
+def project_home(p, **args):
+    """What a project reached by URL opens as: its list, with its overlay (?project=<id>) over it."""
+    return project_list(p, project=p["id"], **args)
 
 
 @app.route("/projects/<int:id>", methods=["GET", "POST"])
@@ -714,7 +745,9 @@ def project_view(id):
         if fields.get("status") == "someday" != p["status"]:
             flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()
-    return render_template("project.html", p=p, tasks=db.project_tasks(c, id),
+    if not request.args.get("embed"):  # a project opens over its list, like a task
+        return redirect(project_home(p))
+    return render_template("project.html", p=p, up=project_list(p), tasks=db.project_tasks(c, id),
                            project_groups=db.project_groups(c), deletable=db.project_deletable(c, id),
                            times=db.step_totals(c, id, now()), **completed(abandoned=True, project_id=id))
 
@@ -750,7 +783,7 @@ def project_delete(id):
         flash(f"Deleted “{p['title']}”.")
         return redirect(url_for("projects_view"))
     flash("Only a project that never had tasks can be deleted: mark it done or abandoned instead.")
-    return redirect(url_for("project_view", id=id))
+    return back()
 
 
 @app.post("/projects/<int:id>/order")
@@ -759,7 +792,7 @@ def project_order(id):
     c = conn()
     db.get_project(c, id) or abort(404)
     db.reorder_project(c, id, form_ids())
-    return ("", 204) if fetched() else redirect(url_for("project_view", id=id))
+    return ("", 204) if fetched() else back()
 
 
 @app.post("/projects/<int:id>/tasks")
@@ -770,7 +803,7 @@ def project_add_task(id):
     if fields.get("title"):
         fields.setdefault("step", "later")  # "next" is only ever chosen, never a default
         db.add_task(c, fields.pop("title"), today=today(), project_id=id, **fields)
-    return redirect(url_for("project_view", id=id))
+    return back()
 
 
 # --- calendar --------------------------------------------------------------
@@ -1098,7 +1131,10 @@ def horizon_view(id):
                           notes=(request.form.get("notes") or "").strip())
         flash("Saved.")
         return back()
-    return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]], balance_words=BALANCE)
+    up = url_for("horizons_view", level=h["level"])
+    if not request.args.get("embed"):  # opens over its Horizons card, like a task over its list
+        return redirect(url_for("horizons_view", level=h["level"], horizon=id))
+    return render_template("horizon.html", h=h, balance_words=BALANCE, up=up)
 
 
 @app.post("/horizons/<int:id>/balance")

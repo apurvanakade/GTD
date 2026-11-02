@@ -7,10 +7,11 @@
 <script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-{% if embed %}<base target="_top">{% endif %}{# in a task's frame: links open in the page itself #}
+{#- A record's parent, where Ctrl+↑ goes (app.js): a step's project, a project's list, a horizon's card… #}
+{% if up is defined %}<link rel="up" href="{{ up }}">{% endif %}
 </head>
 <body{% if embed %} class="embed"{% endif %}>
-{#- In a frame (a task's overlay, Process) the page is the task alone: no nav, bar, pill or dialogs. #}
+{#- In a frame (an overlay, Process) the page is the record alone: no nav, bar, pill or dialogs. #}
 {# One list drives both the key handler and the help overlay. #}
 {% set go_keys = [('t', 'timer_view', 'Timer'), ('c', 'calendar_view', 'Calendar'), ('n', 'next_view', 'Next'),
   ('w', 'waiting', 'Waiting'), ('i', 'inbox', 'Inbox'), ('p', 'projects_view', 'Projects'), ('s', 'someday', 'Someday'),
@@ -46,10 +47,12 @@
   <h2>Keyboard shortcuts</h2>
   <dl>
     <dt><kbd>/</kbd> <kbd>+</kbd></dt><dd>Add to inbox</dd>
+    <dt><kbd>⌘/</kbd></dt><dd>Add to inbox, even while typing</dd>
+    <dt><kbd>Ctrl ↑</kbd></dt><dd>Up a level: a task's project, a project's list…</dd>
     <dt><kbd>f</kbd></dt><dd>Search</dd>
     <dt><kbd>?</kbd></dt><dd>This list</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next review step</dd>
-    <dt><kbd>Esc</kbd></dt><dd>Close a dialog or the search suggestions</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close an overlay, a dialog or the search suggestions</dd>
     <dt><kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd></dt><dd>At the end of a new task's title: due date, repeat, reminder</dd>
     {% for key, ep_name, label in go_keys %}<dt><kbd>{{ key }}</kbd></dt><dd>Go to {{ label }}</dd>{% endfor %}
   </dl>
@@ -63,11 +66,10 @@
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
-{#- Every task opens here, over the page it was clicked on (static/app.js); ?task=<id> opens with it. #}
-<dialog class="task-dialog" aria-label="Task">
-  <button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button>
-  <iframe title="The task" src="{{ url_for('task_view', id=open_task, embed='task') if open_task else 'about:blank' }}"></iframe>
-</dialog>
+{#- Every task, project, horizon and reference item opens in an overlay over the page it was clicked on (static/app.js
+    makes them); ?project=, ?task=… open the page with theirs. #}
+{% for src in overlays %}<dialog class="overlay"><button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button><iframe title="Overlay" src="{{ src }}"></iframe></dialog>
+{% endfor %}
 {% endif %}
 {# Messages float over the page and fade, so a record page opened on its title (below) still shows them. #}
 {% with flashes = get_flashed_messages() %}{% if flashes %}<div class="flashes" role="status">{% for m in flashes %}<p class="flash">{{ m }}</p>{% endfor %}</div>{% endif %}{% endwith %}

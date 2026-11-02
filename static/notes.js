@@ -40,24 +40,35 @@ function inline(s) {
 
 const RULE = /^ {0,3}([-*_])( ?\1){2,}\s*$/;  // a horizontal rule: ---, - - -, ***
 
+const ITEM = /^\s*(?:[-*+]|\d+[.)]) /;  // a list item, bullet, numbered or checklist
+
+// Each non-empty line outside code is a paragraph (.p) with a gap below it, parskip-style, as in the Journal's
+// editor; a list's items stay tight (.li) but for the last of a run. The "\n"s stay outside the wrappers.
 function markdown(text) {
   let fence = false;
-  return text.split("\n").map(line => {
-    let m;
+  const lines = text.split("\n");
+  return lines.map((line, i) => {
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return `<span class="md code-line">${esc(line)}</span>`; }
     if (fence) return `<span class="code-line">${esc(line)}</span>`;
-    if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
-    if (RULE.test(line)) return mk(line);
-    // A checklist line: its [ ] or [x] drawn as a box (the characters stay, hidden), a ticked one's text struck.
-    // The box may end the line ("- [ ]" just typed).
-    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )\[([ xX])\]( |$)(.*)/))) {
-      const on = m[2] !== " ";
-      return mk(m[1]) + `<span class="box${on ? " on" : ""}">[${m[2]}]</span>${m[3]}` + (on ? `<span class="ticked">${inline(m[4])}</span>` : inline(m[4]));
-    }
-    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )(.*)/))) return mk(m[1]) + inline(m[2]);
-    if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
-    return inline(line);
+    if (!line) return "";
+    const tight = ITEM.test(line) && i + 1 < lines.length && ITEM.test(lines[i + 1]);
+    return `<span class="${tight ? "li" : "p"}">${lineHtml(line)}</span>`;
   }).join("\n");
+}
+
+function lineHtml(line) {
+  let m;
+  if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
+  if (RULE.test(line)) return mk(line);
+  // A checklist line: its [ ] or [x] drawn as a box (the characters stay, hidden), a ticked one's text struck.
+  // The box may end the line ("- [ ]" just typed).
+  if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )\[([ xX])\]( |$)(.*)/))) {
+    const on = m[2] !== " ";
+    return mk(m[1]) + `<span class="box${on ? " on" : ""}">[${m[2]}]</span>${m[3]}` + (on ? `<span class="ticked">${inline(m[4])}</span>` : inline(m[4]));
+  }
+  if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) )(.*)/))) return mk(m[1]) + inline(m[2]);
+  if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
+  return inline(line);
 }
 
 // --- The toolbar ---
@@ -280,7 +291,9 @@ function editor(ta) {
     const a = e.target.closest("a");
     if (!a || !(e.metaKey || e.ctrlKey || matchMedia("(pointer: coarse)").matches)) return;
     e.preventDefault();
-    if (a.getAttribute("href").startsWith("/")) location.href = a.href;
+    const path = recordOf(a.href);  // app.js: a record opens in its overlay, another page of the app in its place
+    if (path && top.overlays) top.overlays.open(path);
+    else if (a.getAttribute("href").startsWith("/")) top.location.href = a.href;
     else window.open(a.href, "_blank", "noopener");
   });
 

@@ -72,6 +72,8 @@ textarea { resize: vertical; }
 }
 .md-editor:focus { outline: none; border-color: var(--accent); }
 .md-editor.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
+.md-editor .p, .md-editor .li { display: inline-block; width: 100%; }  /* a line each, parskip-style (notes.js) */
+.md-editor .p { margin-bottom: .6em; }
 .md-editor .md { color: var(--muted); }
 .md-editor .fmt:not(.md-on) > .hide { display: none; }
 .md-editor .h { font-weight: 700; }
@@ -127,14 +129,15 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search { flex: 1 1 0; min-width: 120px; position: relative; }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
-.capture-dialog, .help-dialog, .process, .task-dialog, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
+.capture-dialog, .help-dialog, .process, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
 .capture-dialog { width: min(480px, calc(100vw - 32px)); }
 .help-dialog { max-width: 26rem; }
 /* Process: the item, then one quiet line under a rule: the question and its answers; only a live File is filled. */
-.process, .task-dialog { width: min(1000px, calc(100vw - 64px)); padding: 16px 24px 20px; }
-/* Every task's overlay (app.js): its page in a frame, sized to fit, × in the title line's room (body.embed below). */
-.task-dialog .close { position: absolute; top: 16px; right: 20px; z-index: 1; }
-.task-dialog iframe { display: block; width: 100%; height: 12rem; border: 0; }
+.process, .overlay { width: min(1000px, calc(100vw - 64px)); padding: 16px 24px 20px; }
+/* Every record's overlay (app.js): its page in a frame, sized to fit up to the window (then it scrolls inside, so a
+   project's drop panel stays in view), × in the title line's room (body.embed below). */
+.overlay .close { position: absolute; top: 16px; right: 20px; z-index: 1; }
+.overlay iframe { display: block; width: 100%; height: 12rem; max-height: calc(100vh - 6rem); border: 0; }
 .process header { position: absolute; top: 16px; right: 20px; display: flex; align-items: baseline; gap: 4px; z-index: 1; }  /* beside the title, not a line of its own */
 .process .left { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; margin-right: 4px; }
 /* The item's own task page (?embed=process), the whole page as in its overlay, to clarify it on the way. Sized to fit. */
@@ -157,9 +160,9 @@ body.embed header.page { display: none; }  /* base.html leaves out the nav, bar 
 body.embed main :is(input, textarea, .md-editor) { background: transparent; border-color: transparent; }
 body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-color: var(--line); }
 body.embed .title-line { padding-right: 7rem; }  /* room for the overlay's × (and Process's count) */
-body.embed .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
+body.embed .edit .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
 body.embed .edit .fields .hint.when { display: inline; min-height: 0; }  /* no centering here to keep still */
-:is(.capture-dialog, .help-dialog, .process, .task-dialog, .reached)::backdrop { background: rgb(0 0 0 / .35); }
+:is(.capture-dialog, .help-dialog, .process, .overlay, .reached)::backdrop { background: rgb(0 0 0 / .35); }
 :is(.capture-dialog, .help-dialog, .reached) h2 { margin-top: 0; }
 .suggest {
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
@@ -243,14 +246,14 @@ body.pinned-panel .drop-panel .unpin { display: block; }
 .drop-panel .new.naming input { display: block; }
 .drop-panel .target.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--fg); }
 
-/* Messages: a toast at the top that fades away. */
+/* Messages: a toast just below the nav, never over it, that fades away, or goes at once when pointed at (app.js). */
 .flashes {
-  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100% - 32px);
+  position: fixed; top: 3.75rem; left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100% - 32px);
   display: flex; flex-direction: column; gap: 6px; pointer-events: none; animation: fade-out .4s 5s forwards;
 }
 .add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: var(--fs-s); }
 .capture-dialog .marks { margin: 6px 0 0; font-size: var(--fs-s); }
-.flash { margin: 0; background: var(--card); border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
+.flash { pointer-events: auto; margin: 0; background: var(--card); border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
 @keyframes fade-out { to { opacity: 0; visibility: hidden; } }
 
 .empty, .hint { color: var(--muted); }
