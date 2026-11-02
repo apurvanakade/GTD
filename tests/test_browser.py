@@ -1197,3 +1197,22 @@ def test_a_disabled_repeat_box_isnt_saved_with_the_other_fields(page, live, conn
         due.press("Tab")
     t = db.get_task(conn, tid)
     assert (t["due_date"], t["recur"]) == (None, "weekly")
+
+
+def test_an_areas_balance_slider_saves_in_place_on_its_page_and_h2(page, live, conn):
+    area = db.horizons(conn)["area"][0]["id"]
+    page.goto(live + f"/horizons/{area}")
+    slider = page.locator(".balance input")
+    page.evaluate("window.stay = true")  # gone if the page reloads
+    slider.focus()
+    for _ in range(2):
+        slider.press("ArrowLeft")
+    assert page.locator(".balance output").text_content() == "Too little"
+    page.wait_for_timeout(300)  # the save lands in the background
+    assert db.horizons(conn)["area"][0]["balance"] == -2 and page.evaluate("window.stay")
+    page.goto(live + "/horizons?level=area")  # H2's sliders move it too
+    page.evaluate("window.stay = true")
+    row(page, "Home").locator(".balance input").press("ArrowRight")
+    assert row(page, "Home").locator(".balance output").text_content() == "A bit too little"
+    page.wait_for_timeout(300)
+    assert db.horizons(conn)["area"][0]["balance"] == -1 and page.evaluate("window.stay")

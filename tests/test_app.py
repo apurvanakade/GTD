@@ -614,9 +614,9 @@ ADD_LINE = re.compile(r'<form[^>]*class="add')
 
 
 def horizon_card(html):
-    """The one Horizons card shown: its key and its HTML."""
-    m = re.search(r'<li id="(\w+)" class="step on">(.*?)</li>\s*</ol>', html, re.S)
-    return m and m.group(1), m and m.group(2)
+    """The one Horizons card shown: its key and its HTML, less its guide (whose prose names areas and projects)."""
+    m = re.search(r'<li id="(\w+)" class="step on">(.*)</li>\s*</ol>', html, re.S)
+    return m and m.group(1), m and re.sub(r'<div class="guide">.*?</div>', "", m.group(2), flags=re.S)
 
 
 def test_horizons_show_one_level_at_a_time(client, conn):
@@ -634,7 +634,7 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     assert '<input type="hidden" name="level" value="goal">' in goal  # the add line adds to the card shown
     assert '<span class="count">1</span>' in card
     area = client.get("/horizons?level=area").get_data(as_text=True)
-    assert '<input type="hidden" name="level" value="area">' in area and "Clean and calm" in horizon_card(area)[1]
+    assert '<input type="hidden" name="level" value="area">' in area and ">Home<" in horizon_card(area)[1]
     assert horizon_card(client.get("/horizons?level=bogus").get_data(as_text=True))[0] == "purpose"
     assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
     vision = db.horizons(conn)["vision"][0]["id"]
@@ -1864,7 +1864,9 @@ def test_revive_and_activate_buttons_are_not_make_next(client, conn):
 
 def test_style_has_no_dead_or_undefined_variables():
     css = open(os.path.join(os.path.dirname(db.__file__), "static", "style.css")).read()
-    defined = set(re.findall(r"(--[\w-]+):", css))
+    templates = os.path.join(os.path.dirname(db.__file__), "templates")
+    inline = "".join(open(os.path.join(templates, f)).read() for f in os.listdir(templates))
+    defined = set(re.findall(r"(--[\w-]+):", css)) | set(re.findall(r'style="(--[\w-]+):', inline))  # set per element
     used = set(re.findall(r"var\((--[\w-]+)", css))
     assert used - defined == set()
     assert defined - used == set()
@@ -2381,10 +2383,34 @@ def test_an_area_is_a_note_on_horizons(client, conn):
     ids = seed(conn)
     page = client.get(f"/horizons/{ids['area']}").get_data(as_text=True)
     assert "Clean and calm" in page and "Kitchen" not in page and "Archive" not in page and 'aria-label="Delete"' in page
-    card = client.get("/horizons?level=area").get_data(as_text=True)
-    assert ">Home<" in card and "project" not in card.split('class="deck"')[1].split("</ol>")[0].lower().replace("projects", "")
+    card = horizon_card(client.get("/horizons?level=area").get_data(as_text=True))[1]
+    assert ">Home<" in card and "project" not in card.lower().replace("projects", "")
+    assert "Clean and calm" not in card and 'class="balance unset"' in card  # its slider, not the notes' first line
     assert client.post(f"/horizons/{ids['area']}/delete").headers["Location"] == "/horizons?level=area"
     assert not db.get_horizon(conn, ids["area"])
+
+
+def test_an_area_has_a_balance_meter(client, conn):
+    """Each area is set from far too little (-3) through balanced (0) to far too much (3), on its page or on H2."""
+    ids = seed(conn)
+    area = ids["area"]
+    assert 'class="balance' in client.get(f"/horizons/{area}").get_data(as_text=True)
+    assert client.post(f"/horizons/{area}/balance", data={"balance": "-2"}, headers={"X-Requested-With": "fetch"}).status_code == 204
+    assert db.horizons(conn)["area"][0]["balance"] == -2
+    page = client.get(f"/horizons/{area}").get_data(as_text=True)
+    assert 'value="-2"' in page and "Too little" in page
+    card = horizon_card(client.get("/horizons?level=area").get_data(as_text=True))[1]
+    assert f'data-url="/horizons/{area}/balance"' in card and 'value="-2"' in card and "Too little" in card
+    for bad in ("4", "-4", "x"):
+        assert client.post(f"/horizons/{area}/balance", data={"balance": bad}).status_code == 400
+    goal = db.horizons(conn)["goal"][0]["id"]
+    assert client.post(f"/horizons/{goal}/balance", data={"balance": "0"}).status_code == 400  # areas only
+    assert 'class="balance' not in client.get(f"/horizons/{goal}").get_data(as_text=True)
+    client.post(f"/horizons/{area}/balance", data={"balance": ""})  # cleared
+    assert db.horizons(conn)["area"][0]["balance"] is None
+    client.post(f"/horizons/{area}/balance", data={"balance": "3"})
+    client.post(f"/horizons/{area}/delete")
+    assert not conn.execute("SELECT * FROM area_balance WHERE horizon_id = ?", (area,)).fetchall()
 
 
 def test_task_rows_show_the_project_not_the_area(client, conn):

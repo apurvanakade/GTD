@@ -1,0 +1,9 @@
+{# An area's balance slider, -3 (far too little) .. 3 (far too much): on its page with its scale, on H2 in its row.
+   Not a form field: it saves itself on release (static/app.js). #}
+{% macro balance(h, words, scale=True) -%}
+<div class="balance{% if h.balance is none %} unset{% endif %}" data-url="{{ url_for('horizon_balance', id=h.id) }}" data-words='{{ words.values()|list|tojson }}'>
+  <input type="range" min="-3" max="3" step="1" value="{{ h.balance if h.balance is not none else 0 }}" aria-label="{{ h.title }}: too little to too much attention">
+  {% if scale %}<span class="scale" aria-hidden="true"><span>too little</span><span>balanced</span><span>too much</span></span>{% endif %}
+  <output>{{ words[h.balance] if h.balance is not none else ('Not set: drag to set' if scale else 'Not set') }}</output>
+</div>
+{%- endmacro %}

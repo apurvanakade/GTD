@@ -1063,6 +1063,9 @@ if NTFY_URL:
 # --- horizons --------------------------------------------------------------
 
 # The Horizons page's cards, top down; horizons.html has one card per key.
+# An area's balance, -3 .. 3: how much attention it gets against what it needs.
+BALANCE = {-3: "Far too little", -2: "Too little", -1: "A bit too little", 0: "Balanced",
+           1: "A bit too much", 2: "Too much", 3: "Far too much"}
 HORIZON_STEPS = ("purpose", "vision", "goal", "area", "projects", "ground")
 HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS},
                   "projects": "H1 · Projects", "ground": "H0 · Ground level"}
@@ -1073,7 +1076,7 @@ def horizons_view():
     level = request.args.get("level")
     if level not in HORIZON_STEPS:
         level = "purpose"  # the top of the deck
-    return render_template("horizons.html", levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
+    return render_template("horizons.html", balance_words=BALANCE, levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
                            items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()))
 
 
@@ -1095,7 +1098,18 @@ def horizon_view(id):
                           notes=(request.form.get("notes") or "").strip())
         flash("Saved.")
         return back()
-    return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]])
+    return render_template("horizon.html", h=h, label=HORIZON_TITLES[h["level"]], balance_words=BALANCE)
+
+
+@app.post("/horizons/<int:id>/balance")
+def horizon_balance(id):
+    """An area's meter, saved as it's dragged (static/app.js); blank clears it."""
+    h = db.get_horizon(conn(), id) or abort(404)
+    value = request.form.get("balance", "").strip()
+    if h["level"] != "area" or value and not (value.lstrip("-").isdigit() and int(value) in BALANCE):
+        abort(400)
+    db.set_area_balance(conn(), id, int(value) if value else None)
+    return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
 
 
 @app.post("/horizons/<int:id>/delete")

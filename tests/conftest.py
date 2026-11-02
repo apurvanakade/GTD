@@ -34,6 +34,7 @@ def seed(c):
     db.add_horizon(c, "goal", "Ship the kitchen")
     area = db.add_horizon(c, "area", "Home")
     db.update_horizon(c, area, notes="Clean and calm\nsecond line")
+    db.set_area_balance(c, db.add_horizon(c, "area", "Work"), 1)  # an area's meter set; Home's isn't
     active = db.add_project(c, "Kitchen", notes="tiles\nand grout")
     stalled = db.add_project(c, "Stalled")
     waiting = db.add_project(c, "Waiting proj", status="waiting")

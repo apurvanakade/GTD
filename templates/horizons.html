@@ -1,16 +1,83 @@
 {% extends "base.html" %}
 {% from "_task.html" import row, add_form with context %}
 {% from "_deck.html" import stepper %}
+{% from "_balance.html" import balance %}
 {% block title %}Horizons{% endblock %}
 {% block heading %}<h1>Horizons of focus</h1>{% endblock %}
 {# One horizon shows at a time, H5 down to H0, like the weekly review's steps. #}
-{% set hints = {
-  'purpose': 'Why you do it. Yearly.',
-  'vision': 'Success in 3–5 years. Yearly.',
-  'goal': '1–2 years out. Quarterly.',
-  'area': 'What you keep up.',
-  'projects': 'Active projects.',
-  'ground': 'Tasks outside any project.',
+{# Each card's guide: what the level is, concrete steps, examples, and how often to revisit it.
+   The one place besides the review's cards that explains at length, since the horizons are unfamiliar ground. #}
+{% set guides = {
+  'purpose': {
+    'what': "The top of the stack: why you do anything at all, and the principles you won't trade away. Everything below should serve it. It changes rarely, and it's fine for it to be rough.",
+    'steps': [
+      "Set aside 20 minutes somewhere quiet. Write in the box below; nothing here needs to be polished.",
+      "Finish the sentence “I'm at my best when…” three different ways.",
+      "Ask: if I could only be known for one thing, what would it be? Write the answer, then why it matters to you.",
+      "List 3–5 principles: rules you keep even when breaking them would be easier (“I don't commit to what I can't do”, “Family dinners come first”).",
+      "Read it back. Cut anything that sounds like what you think you should say rather than what's true.",
+    ],
+    'examples': "“Help people understand hard ideas.” · “Be someone my kids can rely on.” · Principle: “Tell the truth early, even when it's awkward.”",
+    'review': "Once a year, or when facing a big decision (a job, a move). Reread it then and ask whether your vision still serves it.",
+  },
+  'vision': {
+    'what': "A picture of wild success 3–5 years from now: what your life and work look like if things go well. It turns the purpose into a place you could actually stand.",
+    'steps': [
+      "Pick a date 3–5 years ahead and write in the present tense, as if it's already that day.",
+      "Cover each part of life in a few lines: work, money, health, relationships, home, learning, fun.",
+      "Be concrete: what you do on a typical Tuesday, where you live, who's around you, what you've finished.",
+      "Mark the 2–3 lines that excite you most; those are where your goals (H3) will come from.",
+      "Check it against your purpose (H5): does this life serve it? If not, change one of them.",
+    ],
+    'examples': "“I teach two courses I designed and have a book out.” · “I run three times a week and sleep 7+ hours.” · “We own a house within walking distance of a park.”",
+    'review': "Once a year, right after reading your purpose. Also when something big changes (a new job, a child, a move).",
+  },
+  'goal': {
+    'what': "Specific results you want in 1–2 years: the milestones that move you toward the vision. A goal is bigger than a project and has a finish line; it usually spawns several projects.",
+    'steps': [
+      "Open your vision (H4) and take each line you marked. Ask: what has to be true in 1–2 years for this to be on track?",
+      "Write each answer as an outcome with a date, using the add line above: “Book draft finished by Dec 2027”, not “write more”.",
+      "Keep it to 3–7 goals. More than that and none get attention.",
+      "Open each goal and, in its notes, list the projects it needs. Create any that should start now on the Projects page (H1).",
+      "Note in each goal how you'll know it's done, and why it matters (one line linking it to the vision).",
+    ],
+    'examples': "“Get tenure by spring 2028.” · “Run a half-marathon by Oct 2027.” · “Save a 6-month emergency fund by June 2027.”",
+    'review': "Every quarter: Is each still the right goal? Does it have an active project moving it? Drop or rewrite the ones that don't fit any more.",
+  },
+  'area': {
+    'what': "The ongoing roles and responsibilities you keep up, with no finish line: things that need to stay at a standard rather than get done. They're the checklist that keeps your projects complete: if an area has nothing going and needs attention, a project is missing.",
+    'steps': [
+      "List your roles: walk through work (teaching, research, admin, each team or client) and life (health, finances, home, car, family, friends, personal growth, fun).",
+      "Add each as an area with the add line above. A good area name is a noun, not a task: “Health”, “Finances”, “Teaching”, not “Go to the gym”.",
+      "Aim for roughly 8–15 in total. Merge areas that are really the same thing; split one that's too broad to think about at once.",
+      "Open each area and write its standard in the notes: what “kept up” looks like (“Annual checkup done; exercise 3×/week; sleep 7h”).",
+      "Then, in each area's notes, ask: is it at its standard right now? If not, write what's off, and create a project (H1) or next action (H0) to fix it.",
+    ],
+    'examples': "Health · Finances · Home · Family · Friends · Career · Teaching · Research · Admin · Learning · Fun & rest",
+    'review': "Every month or two, or whenever life feels unbalanced: open each area and check it against its standard. Anything below standard becomes a project or a next action.",
+  },
+  'projects': {
+    'what': "Every result you've committed to finish that takes more than one step, within about a year. Each project needs a desired outcome (what done looks like) and at least one next action; ⚠ marks any missing either.",
+    'steps': [
+      "Scan the list below. For each project, ask: am I still committed to this? If not, open it and move it to someday or abandon it.",
+      "Fix every ⚠: open the project, write what done looks like under its title, and pick at least one next action with Make next.",
+      "Check against your areas (H2) and goals (H3): does each area at risk and each goal have a project moving it? If not, add one on the Projects page.",
+      "Look for missing projects: anything you're worrying about or keep thinking about is probably a project nobody wrote down.",
+    ],
+    'examples': "“Car serviced and registration renewed.” · “Course syllabus for spring posted.” · “Kitchen faucet replaced.”",
+    'review': "Every week, in the weekly review's projects step. This card is for checking them against the horizons above.",
+  },
+  'ground': {
+    'what': "Single next actions that don't belong to any project: one-step things you've decided to do. Ground level is where work actually happens; everything above exists so these are the right actions.",
+    'steps': [
+      "Scan the list below. Each should be one physical, visible action you could start right now (“Email Sam about Friday”), not a vague intention (“Sam”).",
+      "Rewrite any vague one so it starts with a verb and says exactly what to do.",
+      "Anything that takes more than one step is really a project: open it and give it a project instead of H0.",
+      "Remove what no longer matters (✕ on its page), and check whether each remaining one serves an area (H2) or goal (H3). If none, ask why you're doing it.",
+    ],
+    'examples': "“Call dentist to book cleaning.” · “Pay electricity bill.” · “Buy printer paper.”",
+    'review': "Daily, on Next. This card is for checking that what you do day to day still lines up with the horizons above.",
+  },
 } %}
 {% block actions %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endblock %}
 {% block body %}
@@ -22,7 +89,16 @@
 <ol class="deck">
   <li id="{{ step }}" class="step on">
     <h2>{{ titles[step] }}</h2>
-    <p class="hint">{{ hints[step] }}</p>
+    {% set g = guides[step] %}
+    <div class="guide">
+      <p>{{ g.what }}</p>
+      <h3>Do this</h3>
+      <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+      <h3>Examples</h3>
+      <p>{{ g.examples }}</p>
+      <h3>When to revisit</h3>
+      <p>{{ g.review }}</p>
+    </div>
     {% if step in ('purpose', 'vision') %}{% set h = items[step][0] %}
     <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
       <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', step)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
@@ -35,7 +111,7 @@
       {% for h in items[step] %}
       <li class="task">
         <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
-        {% if h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
+        {% if step == 'area' %}{{ balance(h, balance_words, scale=False) }}{% elif h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
       </li>
       {% else %}
       <li class="empty">None yet: add one above.</li>

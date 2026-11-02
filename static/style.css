@@ -4,7 +4,7 @@
   --bg: light-dark(#fafaf9, #1c1917); --fg: light-dark(#1c1917, #e7e5e4); --muted: light-dark(#8a8580, #a29d98);
   --line: light-dark(#ecebe9, #35312e); --card: light-dark(#ffffff, #262220); --soft: light-dark(#f2f1ef, #2a2624);
   --accent: light-dark(#2563eb, #60a5fa); --accent-fg: light-dark(#ffffff, #0c0a09); --warn: light-dark(#b45309, #fbbf24);
-  --danger: light-dark(#b91c1c, #f87171);
+  --danger: light-dark(#b91c1c, #f87171); --good: light-dark(#16a34a, #4ade80);
   /* Type scale: body text 1rem; every list row --fs-m; meta, hints and small controls --fs-s; tags and counts --fs-xs. */
   --fs-xs: .75rem; --fs-s: .8125rem; --fs-m: .9rem;
 }
@@ -361,6 +361,28 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .deck h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
 .deck h2 + .hint { margin: 2px 0 0; font-size: var(--fs-s); }
 .review h2 + .hint { margin-left: calc(1.3em + 10px); max-width: 60ch; }
+/* An area's balance: a track green at balanced, red toward too little and too much. Its page and H2's rows have the
+   same slider (_balance.html); an unset one is faint. */
+:root { --balance: linear-gradient(90deg, color-mix(in srgb, var(--danger) 55%, var(--line)), color-mix(in srgb, var(--good) 55%, var(--line)) 50%, color-mix(in srgb, var(--danger) 55%, var(--line))); }
+.balance { max-width: 420px; margin: 10px 0 14px; display: grid; grid-template-columns: 1fr auto; column-gap: 14px; align-items: center; }
+.balance input { grid-column: 1; width: 100%; margin: 0; appearance: none; background: none; height: 18px; cursor: grab; }
+.balance input:active { cursor: grabbing; }
+.balance input::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--balance); }
+.balance input::-moz-range-track { height: 4px; border-radius: 999px; background: var(--balance); }
+.balance input::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--fg); border: 2px solid var(--card); }
+.balance input::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; background: var(--fg); border: 2px solid var(--card); }
+.balance output { grid-column: 2; grid-row: 1; font-size: var(--fs-s); color: var(--muted); min-width: 9em; }
+.balance .scale { grid-column: 1; display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--muted); }
+.balance.unset input { opacity: .35; }
+.task:has(> .balance) .title { flex: 0 0 12em; }  /* H2: a fixed name column, then the slider across the row */
+.task > .balance { flex: 1 1 0; max-width: 520px; margin: 0 8px; }
+.task > .balance output { font-size: var(--fs-xs); min-width: 8em; }
+/* Horizons: each card's guide, what the level is and how to work it. */
+.guide { max-width: 70ch; color: var(--muted); font-size: var(--fs-m); margin-bottom: 12px; }
+.guide h3 { color: var(--fg); font-size: var(--fs-s); text-transform: none; letter-spacing: 0; margin: 14px 0 4px; }
+.guide p, .guide ol { margin: 4px 0; }
+.guide ol { padding-left: 1.4em; }
+.guide li + li { margin-top: 4px; }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
 .deck .count.clear { color: var(--muted); }
 .review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }

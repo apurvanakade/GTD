@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_balance.html" import balance %}
 {% block title %}{{ h.title }}{% endblock %}
 {% block crumb %}<p class="crumb"><a href="{{ url_for('horizons_view', level=h.level) }}">Horizons</a> · {{ label }}</p>{% endblock %}
 {% block heading %}{% endblock %}
@@ -11,6 +12,7 @@
     <button formaction="{{ url_for('horizon_delete', id=h.id) }}" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this {{ h.level }}?')">✕</button>
     {% endif %}
   </div>
+  {% if h.level == 'area' %}{{ balance(h, balance_words) }}{% endif %}
   <textarea name="notes" rows="14" placeholder="{% if h.level == 'goal' %}Outcome, target date…{% elif h.level == 'area' %}This area is fine when… Standards, recurring responsibilities…{% endif %}">{{ h.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
 </form>

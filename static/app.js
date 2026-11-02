@@ -96,6 +96,12 @@ document.addEventListener('keydown', e => {  // Enter in such a box saves it the
   const el = e.target;
   if (e.key === 'Enter' && el.form && 'saveOnChange' in el.form.dataset && el.matches('input:not(.big)')) { e.preventDefault(); el.blur(); }
 });
+// An area's balance slider (its page, H2's rows): its word follows the drag, and letting go saves it in the background.
+document.querySelectorAll('.balance').forEach(b => {
+  const input = b.querySelector('input'), words = JSON.parse(b.dataset.words);
+  input.addEventListener('input', () => { b.classList.remove('unset'); b.querySelector('output').textContent = words[+input.value + 3]; });
+  input.addEventListener('change', () => post(b.dataset.url, new URLSearchParams({balance: input.value})));
+});
 // Messages from a background save, shown like the server's.
 function toast(messages) {
   document.querySelector('body > .flashes')?.remove();
@@ -317,7 +323,7 @@ async function refreshNav() {
 // steps keep their own jobs, a click that ends a text selection selects, and a shift-click selects the row (move.js).
 document.addEventListener('click', e => {
   const li = e.target.closest('li.task');
-  if (!li || e.button || e.shiftKey || e.target.closest('a, button, input, select, textarea, label, form, .grip, .steps')
+  if (!li || e.button || e.shiftKey || e.target.closest('a, button, input, select, textarea, label, form, .grip, .steps, .balance')
       || String(getSelection())) return;
   const a = li.querySelector(':scope > .title, :scope > .name > .title');
   if (!a) return;

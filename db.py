@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS project_outcomes (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   outcome TEXT NOT NULL
 );
+-- An area of focus's balance, set on its page: -3 far too little attention, 0 balanced, 3 far too much. A table of its
+-- own, like project_outcomes; no row means not set.
+CREATE TABLE IF NOT EXISTS area_balance (
+  horizon_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
+  balance INTEGER NOT NULL CHECK (balance BETWEEN -3 AND 3)
+);
 -- A task's place in the list it's in (Inbox, Next, Waiting, Someday: list_of()), dragged on that page. A table of its
 -- own, not tasks.position, which is a step's place in its project: a waiting step is in both, in different orders.
 CREATE TABLE IF NOT EXISTS list_positions (
@@ -717,9 +723,12 @@ HORIZON_FIELDS = {"level", "title", "notes"}
 SINGLE_HORIZONS = ("purpose", "vision")  # exactly one note each; can't be deleted
 
 
+HORIZON_SELECT = """SELECT h.*, b.balance FROM horizons h LEFT JOIN area_balance b ON b.horizon_id = h.id"""
+
+
 def horizons(c):
-    """{level: rows}, each alphabetical."""
-    rows = c.execute("SELECT * FROM horizons ORDER BY lower(title)").fetchall()
+    """{level: rows}, each alphabetical; an area's row has its balance (None until set)."""
+    rows = c.execute(f"{HORIZON_SELECT} ORDER BY lower(h.title)").fetchall()
     out = {level: [] for level in ("purpose", "vision", "goal", "area")}
     for h in rows:
         out[h["level"]].append(h)
@@ -737,7 +746,16 @@ def update_horizon(c, id, **fields):
 
 
 def get_horizon(c, id):
-    return c.execute("SELECT * FROM horizons WHERE id = ?", (id,)).fetchone()
+    return c.execute(f"{HORIZON_SELECT} WHERE h.id = ?", (id,)).fetchone()
+
+
+@atomic
+def set_area_balance(c, id, balance):
+    """-3 (far too little) .. 3 (far too much); None clears it."""
+    if balance is None:
+        c.execute("DELETE FROM area_balance WHERE horizon_id = ?", (id,))
+    else:
+        c.execute("INSERT OR REPLACE INTO area_balance (horizon_id, balance) VALUES (?, ?)", (id, balance))
 
 
 @atomic
