@@ -581,10 +581,10 @@ def revive_project(c, id):
         WHERE id = ?""", (_top(c, "projects", "status = ?", "someday"), id))
 
 
-def closed_projects(c, status, limit=100):
-    """Done (or abandoned) projects, newest first."""
-    return c.execute("SELECT * FROM projects WHERE status = ? ORDER BY completed_at DESC, id DESC LIMIT ?",
-                     (status, limit)).fetchall()
+def closed_projects(c, status, limit=100, since=None):
+    """Done (or abandoned) projects, newest first; with `since` (a datetime), only those closed since."""
+    return c.execute("""SELECT * FROM projects WHERE status = ? AND completed_at >= ?
+        ORDER BY completed_at DESC, id DESC LIMIT ?""", (status, stamp(since), limit)).fetchall()
 
 
 REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at,
@@ -678,11 +678,11 @@ def open_steps(c, status="active"):
     return steps
 
 
-def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
+def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=None, once=False):
     """Finished (or, with state="abandoned", abandoned) tasks, newest first; optionally only one project's,
-    or only H0 (ground=1) / non-H0 (ground=0). Without a project, the steps a closed project took down with it are
-    left out (Done lists the project instead)."""
-    where, args = "t.state = ?", [state]
+    or only H0 (ground=1) / non-H0 (ground=0), or (`since`, a datetime) only those closed since; `once`: a repeat's
+    latest only. Without a project, the steps a closed project took down with it are left out (Done lists the project)."""
+    where, args = "t.state = ? AND t.completed_at >= ?", [state, stamp(since)]
     if project_id is None:
         where += " AND NOT (coalesce(p.status IN ('done', 'abandoned'), 0) AND t.completed_at = p.completed_at)"
     else:
@@ -691,8 +691,9 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done"):
     if ground is not None:
         where += " AND t.ground = ?"
         args.append(ground)
-    return c.execute(f"{TASK_SELECT} WHERE {where} ORDER BY t.completed_at DESC, t.id DESC LIMIT ?",
+    rows = c.execute(f"{TASK_SELECT} WHERE {where} ORDER BY t.completed_at DESC, t.id DESC LIMIT ?",
                      (*args, limit)).fetchall()
+    return _one_per_repeat(rows) if once else rows
 
 
 def project_groups(c):
@@ -864,6 +865,12 @@ SECONDS = "(julianday(coalesce(e.end_time, ?)) - julianday(e.start_time)) * 8640
 
 def iso(dt):
     return dt.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def stamp(dt):
+    """A datetime as SQLite's datetime('now') writes it (UTC, a space before the time), to compare with
+    completed_at; None is before every stamp."""
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if dt else ""
 
 
 def timer_running(c):

@@ -2,28 +2,18 @@
 {% from "_task.html" import row, closed_project with context %}
 {% block title %}Done{% endblock %}
 {% block body %}
-<h2>Projects</h2>
-<ul class="tasks">
-  {% for p in projects %}{{ closed_project(p) }}
-  {% else %}
-  <li class="empty">No finished projects.</li>
-  {% endfor %}
-</ul>
-<h2>Tasks</h2>
-{% if tasks %}
-<ul class="tasks">{% for t in tasks %}{{ row(t) }}{% endfor %}</ul>
+{% for key, label, band in done|done_bands %}
+<details class="band" data-band="{{ key }}" open>
+  <summary>{{ label }} <b>{{ band|length }}</b></summary>
+  <ul class="tasks">{% for is_project, r in band %}{{ closed_project(r) if is_project else row(r) }}{% endfor %}</ul>
+</details>
 {% else %}
-<p class="empty">Nothing finished yet.</p>
-{% endif %}
+<p class="empty">Nothing finished this week.</p>
+{% endfor %}
 <h2>Abandoned</h2>
-{% if dropped %}
-<ul class="tasks">
-  {% for p in dropped %}{{ closed_project(p) }}{% endfor %}
-</ul>
-{% endif %}
-{% if abandoned %}
-<ul class="tasks">{% for t in abandoned %}{{ row(t) }}{% endfor %}</ul>
-{% elif not dropped %}
-<p class="empty">Nothing abandoned.</p>
+{% if abandoned.projects or abandoned.tasks %}
+<ul class="tasks">{% for p in abandoned.projects %}{{ closed_project(p) }}{% endfor %}{% for t in abandoned.tasks %}{{ row(t) }}{% endfor %}</ul>
+{% else %}
+<p class="empty">Nothing abandoned this week.</p>
 {% endif %}
 {% endblock %}

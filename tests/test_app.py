@@ -1332,6 +1332,27 @@ def test_done_page_lists_finished_tasks_and_projects(client, conn):
     assert "buy tiles" not in page and "Kitchen" not in finished.split("Projects")[-1]
     assert "dropped idea" in page.split("<h2>Abandoned")[1]
     assert 'href="/done"' in client.get("/next").get_data(as_text=True)
+    # Only the last 7 days (local), done ones in Today and Past week; a repeat's done instances once, the latest.
+    stamp = lambda id, at, table="tasks": conn.execute(f"UPDATE {table} SET completed_at = ? WHERE id = ?", (at, id))
+    week, old = (db.add_task(conn, t, step="next", ground=1) for t in ("swept porch", "ancient chore"))
+    for t in (week, old):
+        db.complete_task(conn, t, TODAY)
+    stamp(week, "2026-10-16 12:00:00")  # 6 days back: still in
+    stamp(old, "2026-10-14 12:00:00")
+    stamp(db.add_project(conn, "Old proj", status="done"), "2026-10-01 12:00:00", "projects")
+    dropped = db.add_task(conn, "old dropped", step="next", ground=1)
+    db.abandon_task(conn, dropped)
+    stamp(dropped, "2026-10-01 12:00:00")
+    plants = db.add_task(conn, "water plants", step="next", ground=1, recur="daily", due_date="2026-10-21")
+    db.complete_task(conn, plants, TODAY)
+    db.complete_task(conn, conn.execute("SELECT id FROM tasks WHERE title = 'water plants' AND state = 'open'")
+                     .fetchone()[0], TODAY)
+    conn.commit()
+    page = client.get("/done").get_data(as_text=True)
+    assert "ancient chore" not in page and "Old proj" not in page and "old dropped" not in page
+    today_band, past = page.split('data-band="today"')[1].split('data-band="week"')
+    assert "Done proj" in today_band and "old tiles" in today_band and "swept porch" in past.split("<h2>Abandoned")[0]
+    assert page.count(">water plants<") == 1
 
 
 def test_done_toggle_on_lists(client, conn):

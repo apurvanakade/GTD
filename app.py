@@ -491,11 +491,26 @@ def reference_delete(id):
     return redirect(url_for("reference"))
 
 
+DONE_DAYS = 7  # Done lists what was closed in this many days, today included
+
+
 @app.route("/done")
 def done():
-    return render_template("done.html", tasks=db.done_tasks(conn()), projects=db.closed_projects(conn(), "done"),
-                           abandoned=db.done_tasks(conn(), state="abandoned"),
-                           dropped=db.closed_projects(conn(), "abandoned"))
+    """The last DONE_DAYS days' closed projects and tasks (a repeat's latest only), done ones split by done_bands."""
+    c = conn()
+    since = datetime.combine(today() - timedelta(days=DONE_DAYS - 1), datetime.min.time()).astimezone()
+    closed = lambda state: dict(projects=db.closed_projects(c, state, limit=-1, since=since),
+                                tasks=db.done_tasks(c, limit=-1, state=state, since=since, once=True))
+    return render_template("done.html", done=closed("done"), abandoned=closed("abandoned"))
+
+
+@app.template_filter()
+def done_bands(closed):
+    """Done's rows as (key, label, [(is_project, row)]), Today then Past week, projects first; empty ones left out."""
+    rows = [(True, p) for p in closed["projects"]] + [(False, t) for t in closed["tasks"]]
+    now = [r for r in rows if local_date(r[1]["completed_at"]) >= today().isoformat()]
+    out = [("today", "Today", now), ("week", "Past week", [r for r in rows if r not in now])]
+    return [b for b in out if b[2]]
 
 
 # The weekly review's steps, in Allen's order (get clear, get current, get creative); review.html has one card per key.
