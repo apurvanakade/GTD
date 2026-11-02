@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from flask import (Flask, abort, flash, g, get_flashed_messages, make_response, redirect, render_template, request,
                    session, url_for)
@@ -73,7 +73,7 @@ def template_globals():
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
-            "overlays": [] if embed else opened()}
+            "overlays": [] if embed else opened(), "app_url": GTD_URL or request.host_url.rstrip("/")}
 
 
 # A record reached by URL opens over its list: ?project=, ?horizon=, ?reference=, ?task= (a project's step over its
@@ -252,9 +252,30 @@ def home():
     return redirect(url_for("next_view"))
 
 
+@app.get("/capture")
+def capture_page():
+    """The bookmarklet's popup (bookmarklet() in base.html's ? overlay): capture from any web page, its link too."""
+    return render_template("capture.html", embed="popup", url=request.args.get("url", ""),
+                           page_title=request.args.get("title", ""))
+
+
+def bookmark(fields):
+    """The popup's "Bookmark link": the page goes into the notes as a Markdown link, its title the task's if none."""
+    link = form_value("link")
+    if not link:
+        return
+    name = re.sub(r"\s+", " ", re.sub(r"[\[\]]", "", request.form.get("page_title", ""))).strip() or link
+    fields["title"] = fields.get("title") or name
+    fields["notes"] = f"[{name}]({quote(link, safe=SAFE_URL)})"
+
+
+SAFE_URL = ":/?#[]@!$&'*+,;=%~"  # all but ( ) and spaces, which would end a Markdown link
+
+
 @app.post("/capture")
 def capture():
     fields = task_fields_from_form()
+    bookmark(fields)
     if fields.get("title"):
         title = fields.pop("title")
         db.add_task(conn(), title, today=today(), **fields)

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_task.html" import title_marks %}
+{% block title %}Add to inbox{% endblock %}
+{% block heading %}{% endblock %}
+{% block body %}
+{#- The bookmarklet's popup (base.html's ? overlay): static/app.js adds in the background, then closes the window. #}
+<form class="capture popup" method="post" action="{{ url_for('capture') }}">
+  <h2>Add to inbox</h2>
+  <input name="title" placeholder="What's on your mind?" autocomplete="off" autofocus required>
+  {{ title_marks() }}
+  <input type="hidden" name="page_title" value="{{ page_title }}">
+  {% if url %}<label class="bookmark" title="{{ url }}"><input type="checkbox" name="link" value="{{ url }}"> Bookmark link</label>{% endif %}
+  <p class="row"><button class="primary">Add</button></p>
+</form>
+{% endblock %}

@@ -72,6 +72,29 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
   } catch { return location.reload(); }
   refreshNav();
 });
+// The bookmarklet's popup (capture.html): adds in the background and closes; opened some other way, it stays to add
+// more. "Bookmark link" makes a title optional (the page's is used). Esc closes it.
+(f => {
+  if (!f) return;
+  const title = f.elements.title, link = f.elements.link;
+  link?.addEventListener('change', () => {
+    title.required = !link.checked;
+    title.placeholder = link.checked ? f.elements.page_title.value || link.value : "What's on your mind?";
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams(new FormData(f))});
+      if (!r.ok) throw r.status;
+      toast((await r.json()).flashes);
+    } catch { return location.reload(); }
+    window.close();
+    f.reset();
+    title.required = true;
+    title.focus();
+  });
+})(document.querySelector('form.capture.popup'));
 // Any dialog closes on a click beside it, on the backdrop, as with Esc: its 'cancel' event, so a dialog that saves
 // first (an overlay, Process) closes its own way. Pressed and let go there, so a text selection ending outside doesn't.
 (() => {

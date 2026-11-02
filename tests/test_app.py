@@ -816,6 +816,19 @@ def test_capture_on_inbox_has_no_flash_and_blank_is_ignored(client, conn):
     assert b"Added to inbox" not in r.data
 
 
+def test_bookmarklet_captures_a_page(client, conn):
+    """The bookmarklet (in the ? overlay) opens /capture in a popup; "Bookmark link" files the page as a link in the notes."""
+    assert b"javascript:" in client.get("/next").data
+    html = client.get("/capture?url=https://ex.com/a_(b)&title=Ex [1]").get_data(as_text=True)
+    assert "<nav" not in html and 'name="link"' in html and "https://ex.com/a_(b)" in html
+    client.post("/capture", data={"title": "", "link": "https://ex.com/a_(b) c", "page_title": "Ex [1]\n"})
+    client.post("/capture", data={"title": "read it", "link": "https://ex.com/", "page_title": ""})
+    client.post("/capture", data={"title": "just a thought", "page_title": "Ex"})  # box unticked: no link
+    assert [(t["title"], t["notes"]) for t in db.inbox_tasks(conn)] == [
+        ("just a thought", ""), ("read it", "[https://ex.com/](https://ex.com/)"),
+        ("Ex 1", "[Ex 1](https://ex.com/a_%28b%29%20c)")]
+
+
 def test_home_and_horizon_page(client, conn):
     assert client.get("/").headers["Location"] == "/next"
     gid = db.add_horizon(conn, "goal", "Run a marathon")

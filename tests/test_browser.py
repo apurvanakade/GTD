@@ -130,6 +130,18 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.click(".add-inbox")
     page.mouse.click(5, 5)  # so does any dialog
     assert not page.locator(".capture-dialog").evaluate("d => d.open")
+    # The bookmarklet opens a popup; "Bookmark link" with no title files the page under its own title, and it closes.
+    page.goto(live + "/someday")
+    code = page.locator(".bookmarklet a").get_attribute("href").removeprefix("javascript:")
+    with page.expect_popup() as info:
+        page.evaluate(code)
+    popup = info.value
+    popup.check("input[name=link]")
+    assert popup.get_attribute("input[name=title]", "placeholder") == "Someday / maybe"
+    popup.press("input[name=title]", "Enter")
+    popup.wait_for_event("close")
+    t = db.inbox_tasks(conn)[0]
+    assert (t["title"], t["notes"]) == ("Someday / maybe", f"[Someday / maybe]({live}/someday)")
 
 
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):

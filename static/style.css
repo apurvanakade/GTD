@@ -159,6 +159,12 @@ body.embed { padding: 0; max-width: none; }
 body.embed header.page { display: none; }  /* base.html leaves out the nav, bar and pill */
 body.embed main :is(input, textarea, .md-editor) { background: transparent; border-color: transparent; }
 body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-color: var(--line); }
+.popup { padding: 16px; }  /* the bookmarklet's window (capture.html) */
+.popup h2 { margin-top: 0; }
+body.embed .popup input[name=title] { width: 100%; border-color: var(--line); }
+.popup :is(.marks, .bookmark) { font-size: var(--fs-s); }
+.popup .bookmark { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.popup .bookmark input { width: auto; margin: 0; }
 body.embed .title-line { padding-right: 7rem; }  /* room for the overlay's × (and Process's count) */
 body.embed .edit .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
 body.embed .edit .fields .hint.when { display: inline; min-height: 0; }  /* no centering here to keep still */

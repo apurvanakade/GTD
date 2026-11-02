@@ -56,6 +56,8 @@
     <dt><kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd></dt><dd>At the end of a new task's title: due date, repeat, reminder</dd>
     {% for key, ep_name, label in go_keys %}<dt><kbd>{{ key }}</kbd></dt><dd>Go to {{ label }}</dd>{% endfor %}
   </dl>
+  {#- A bookmarklet: from any web page, a popup of /capture (capture.html) with the page's link on offer. #}
+  <p class="bookmarklet"><a href="javascript:void window.open('{{ app_url }}/capture?url='+encodeURIComponent(location.href)+'&amp;title='+encodeURIComponent(document.title),'gtd-capture','popup,width=480,height=280')" title="Drag to the bookmarks bar">＋ GTD</a> — drag to the bookmarks bar</p>
   <p class="row"><button type="button" onclick="this.closest('dialog').close()">Close</button></p>
 </dialog>
 <dialog class="capture-dialog">
