@@ -247,6 +247,7 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .drop-panel h3 { margin: 0 10px 4px; font-size: var(--fs-m); font-weight: 700; color: var(--fg); }
 .drop-panel .group .target { padding: 5px 10px 5px 20px; margin: 1px 0; }
 .drop-panel .target { padding: 8px 10px; margin: 2px 0; border-radius: 8px; border: 1px dashed transparent; }
+.drop-panel .target a, .drop-panel h3 a { color: inherit; }
 .drop-panel .target.new, .drop-panel .target[data-project="reference"] { color: var(--muted); }
 .drop-panel .new input { display: none; margin-top: 6px; }
 .drop-panel .new.naming input { display: block; }

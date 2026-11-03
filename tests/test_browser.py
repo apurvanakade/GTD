@@ -672,6 +672,21 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     panel.wait_for(state="visible")  # and on every other page: one pin for the whole site
     page.wait_for_timeout(300)
     assert not page.evaluate("window.slid")  # open from the first paint, no slide-in
+    panel.locator('[data-project="1"] a').click()  # a project's name opens its overlay
+    page.locator("dialog.overlay[open] iframe[src^='/projects/1?']").wait_for()
+    page.keyboard.press("Escape")
+    page.locator("dialog.overlay").wait_for(state="detached")
+    with page.expect_navigation():  # a task tab's name goes to its page
+        panel.locator('[data-project="waiting"] a').click()
+    assert page.url == live + "/waiting"
+    with page.expect_navigation():  # a project group's heading goes to its project tab
+        panel.locator("h3 a", has_text="Someday").click()
+    assert page.url == live + "/projects/someday"
+    page.go_back()  # project tabs and Reference have no panel
+    with page.expect_navigation():
+        panel.locator('[data-project="reference"] a').click()
+    assert page.url == live + "/reference"
+    page.go_back()
     panel.locator(".unpin").click()  # the panel floats over the header's button
     panel.wait_for(state="hidden")
     page.goto(live + "/inbox")

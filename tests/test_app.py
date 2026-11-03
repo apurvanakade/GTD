@@ -1887,7 +1887,7 @@ def test_every_task_list_has_the_drop_panel(client, conn):
         projects = [t for s, new in (("active", "__new__"), ("waiting", "__new__waiting"), ("someday", "__new__someday"))
                     for t in [new, *(str(p["id"]) for p in db.projects(conn, s))]]
         assert targets == [t for t in ["h0", "waiting", "someday", *projects, "reference"] if t != current], url
-        assert re.findall(r"<h3>([\w /()]+)</h3>", panel) == ["Tasks (no project)", "Active", "Waiting", "Someday"], url
+        assert re.findall(r"<h3>(?:<a [^>]*>)?([\w /()]+)(?:</a>)?</h3>", panel) == ["Tasks (no project)", "Active", "Waiting", "Someday"], url
         assert f'data-current="{current}"' in html if current else "data-current" not in html, url
 
 
@@ -1990,7 +1990,7 @@ def test_project_pickers_are_one_list(client, conn):
     task = client.get("/tasks/1?embed=overlay").data.decode()
     assert groups(task, r'<optgroup label="([\w ]+)">(.*?)</optgroup>', r'<option value="(\d+)"') == expected
     inbox = client.get("/inbox").data.decode()
-    assert groups(inbox, r'<section class="group"><h3>([\w ]+)</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
+    assert groups(inbox, r'<section class="group"><h3>(?:<a [^>]*>)?([\w ]+)(?:</a>)?</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
     assert "· someday" not in task and "Dropped proj" not in task + inbox and "Done proj" not in task + inbox
     # The task page has one H0 (its step select picks next, waiting or someday); Process's "file to…" has the panel's.
     assert task.count('value="h0"') == 1 and 'value="waiting"' not in task.split('name="project_id"')[1].split("</select>")[0]

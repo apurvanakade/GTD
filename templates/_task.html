@@ -111,14 +111,15 @@
 {% endmacro %}
 
 {# The drop panel's targets, as the nav: the task tabs, the project tabs' projects, then Reference; `current` (a
-   project id, 'waiting' or 'someday') is where the page's tasks already are, so it isn't offered. #}
+   project id, 'waiting' or 'someday') is where the page's tasks already are, so it isn't offered. Every name is a
+   link: a tab's (Next, a project group's heading, Reference) goes to its page, a project's opens its overlay. #}
 {% macro project_targets(current=none) %}
 <div class="targets" data-projects="panel"><section class="group"><h3>Tasks (no project)</h3>
-  {% for key, label in task_targets if key != current %}<div class="target" data-project="{{ key }}" title="H0: no project, on purpose">{{ label }}</div>{% endfor %}</section>
-{% for label, ps, new in project_groups %}<section class="group"><h3>{{ label }}</h3>
+  {% for key, label in task_targets if key != current %}<div class="target" data-project="{{ key }}" title="H0: no project, on purpose"><a href="{{ url_for({'h0': 'next_view'}.get(key, key)) }}" draggable="false">{{ label }}</a></div>{% endfor %}</section>
+{% for label, ps, new in project_groups %}<section class="group"><h3><a href="{{ url_for('projects_view', status=label.lower()) }}" draggable="false">{{ label }}</a></h3>
   <div class="target new" data-project="{{ new }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
-  {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}</div>{% endfor %}</section>{% endfor %}
-<div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div></div>
+  {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}"><a href="{{ url_for('project_view', id=p.id) }}" draggable="false">{{ p.title }}</a></div>{% endfor %}</section>{% endfor %}
+<div class="target" data-project="reference" title="Not actionable: keep it as a reference item"><a href="{{ url_for('reference') }}" draggable="false">Reference</a></div></div>
 {% endmacro %}
 
 {# Every task list's drop panel (static/move.js): it slides in while an open row is dragged, or stays while pinned by
