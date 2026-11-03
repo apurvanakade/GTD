@@ -117,6 +117,12 @@ CREATE TABLE IF NOT EXISTS list_positions (
   task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
   position INTEGER NOT NULL
 );
+-- A goal's or area's place in its list on Horizons, dragged there. A table of its own (no ALTER on the live DB); no
+-- row sorts last, alphabetically.
+CREATE TABLE IF NOT EXISTS horizon_positions (
+  horizon_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL
+);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
 # Stored in the file's user_version once SCHEMA has run on it, so a connection skips it until SCHEMA changes.
@@ -730,12 +736,14 @@ SINGLE_HORIZONS = ("purpose", "vision")  # exactly one note each; can't be delet
 
 
 HORIZON_SELECT = """SELECT h.*, b.balance, o.outcome FROM horizons h
-  LEFT JOIN area_balance b ON b.horizon_id = h.id LEFT JOIN horizon_outcomes o ON o.horizon_id = h.id"""
+  LEFT JOIN area_balance b ON b.horizon_id = h.id LEFT JOIN horizon_outcomes o ON o.horizon_id = h.id
+  LEFT JOIN horizon_positions hp ON hp.horizon_id = h.id"""
 
 
 def horizons(c):
-    """{level: rows}, each alphabetical; an area's row has its balance (None until set)."""
-    rows = c.execute(f"{HORIZON_SELECT} ORDER BY lower(h.title)").fetchall()
+    """{level: rows}, each in its dragged order (new ones on top, never-placed ones last, alphabetical); an area's
+    row has its balance (None until set)."""
+    rows = c.execute(f"{HORIZON_SELECT} ORDER BY hp.position IS NULL, hp.position, lower(h.title)").fetchall()
     out = {level: [] for level in ("purpose", "vision", "goal", "area")}
     for h in rows:
         out[h["level"]].append(h)
@@ -744,7 +752,17 @@ def horizons(c):
 
 @atomic
 def add_horizon(c, level, title):
-    return _insert(c, "horizons", HORIZON_FIELDS, {"level": level, "title": title})
+    id = _insert(c, "horizons", HORIZON_FIELDS, {"level": level, "title": title})
+    c.execute("""INSERT INTO horizon_positions (horizon_id, position) SELECT ?, coalesce(min(hp.position), 0) - 1
+        FROM horizons h JOIN horizon_positions hp ON hp.horizon_id = h.id WHERE h.level = ?""", (id, level))
+    return id
+
+
+@atomic
+def reorder_horizons(c, level, ids):
+    """Number the goals (or areas) in the given order; other levels' ids are ignored."""
+    c.executemany("""INSERT OR REPLACE INTO horizon_positions (horizon_id, position)
+                     SELECT id, ? FROM horizons WHERE id = ? AND level = ?""", [(n, id, level) for n, id in enumerate(ids)])
 
 
 @atomic

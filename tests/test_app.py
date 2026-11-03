@@ -1761,6 +1761,22 @@ def test_projects_reorder(client, conn, status, page):
     assert f'data-reorder="/projects/order/{status}"' in html and html.count('class="grip"') == 3
 
 
+@pytest.mark.parametrize("level", ["goal", "area"])
+def test_horizons_reorder(client, conn, level):
+    """Goals and areas keep the order they're dragged to; new ones go first; the other level is ignored."""
+    other = "area" if level == "goal" else "goal"
+    old = [h["title"] for h in db.horizons(conn)[level]]
+    a, b, c = (db.add_horizon(conn, level, t) for t in ("zz a", "zz b", "zz c"))
+    o = db.add_horizon(conn, other, "zz other")
+    assert [h["title"] for h in db.horizons(conn)[level]] == ["zz c", "zz b", "zz a", *old]
+    assert client.post(f"/horizons/order/{level}", data={"ids": f"{a},{o},{c},{b}"},
+                       headers={"X-Requested-With": "fetch"}).status_code == 204
+    assert [h["title"] for h in db.horizons(conn)[level]][:3] == ["zz a", "zz c", "zz b"]
+    assert [h["title"] for h in db.horizons(conn)[other]][0] == "zz other"
+    html = client.get(f"/horizons?level={level}").get_data(as_text=True)
+    assert f'data-reorder="/horizons/order/{level}"' in html
+
+
 def test_moved_project_goes_to_the_top_of_its_new_list(client, conn):
     a, b = db.add_project(conn, "a"), db.add_project(conn, "b")
     s = db.add_project(conn, "s", status="someday")

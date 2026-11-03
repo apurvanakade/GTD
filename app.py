@@ -1181,6 +1181,13 @@ def horizon_create():
     return back("horizons_view")
 
 
+@app.post("/horizons/order/<any(goal, area):level>")
+def horizons_order(level):
+    """A goal or area list's drag-and-drop sends the ids in their new order."""
+    db.reorder_horizons(conn(), level, form_ids())
+    return "", 204
+
+
 @app.route("/horizons/<int:id>", methods=["GET", "POST"])
 def horizon_view(id):
     c = conn()

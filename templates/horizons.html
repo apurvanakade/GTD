@@ -139,9 +139,10 @@
     </form>
     {% elif step in ('goal', 'area') %}
     <span class="count">{{ items[step]|length }}</span>
-    <ul class="tasks">
+    <ul class="tasks" data-reorder="{{ url_for('horizons_order', level=step) }}">
       {% for h in items[step] %}
-      <li class="task">
+      <li class="task" data-id="{{ h.id }}">
+        <span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>
         <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
         {% if step == 'area' %}{{ balance(h, balance_words, scale=False) }}{% elif h.outcome %}<span class="meta">→ {{ h.outcome|truncate(70) }}</span>{% elif h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
       </li>
