@@ -4,15 +4,15 @@
 // reorders its list or moves it out. Shift-click selects rows (Esc clears); dragging
 // a selected row moves them all.
 (() => {
-  const panel = document.querySelector('.drop-panel'), body = document.body, pin = document.querySelector('.pin-panel');
+  const panel = document.querySelector('.drop-panel'), root = document.documentElement, body = document.body, pin = document.querySelector('.pin-panel');
   let dragged = null, naming = null;  // dragged: the rows on the move; naming: {rows, target} while a new project's name is typed
-  const pinned = on => {  // remembered per browser, one pin for every page
-    body.classList.toggle('pinned-panel', on);
+  const pinned = on => {  // remembered per browser, one pin for every page; base.html's <head> applies it before first paint
+    root.classList.toggle('pinned-panel', on);
     pin?.setAttribute('aria-pressed', on);
     try { localStorage.setItem('panel', on ? '1' : '0'); } catch {}
   };
-  try { pinned(localStorage.getItem('panel') === '1'); } catch {}
-  pin?.addEventListener('click', () => pinned(!body.classList.contains('pinned-panel')));
+  pin?.setAttribute('aria-pressed', root.classList.contains('pinned-panel'));
+  pin?.addEventListener('click', () => pinned(!root.classList.contains('pinned-panel')));
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
   // Open rows only: they have a tick-off button. Done and abandoned rows stay put.
   const movable = li => li?.matches('main ul.tasks > li.task[data-id]') && li.querySelector(':scope > form.done');

@@ -666,8 +666,12 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     assert panel.is_visible()  # still pinned after the drop
     page.reload()
     panel.wait_for(state="visible")  # and after a reload
+    page.add_init_script("addEventListener('transitionrun', e => { if (e.target.matches('.drop-panel')) window.slid = true; })")
+    page.route("**/move.js", lambda r: (page.wait_for_timeout(200), r.continue_()))  # the page paints before move.js runs
     page.goto(live + "/next")
     panel.wait_for(state="visible")  # and on every other page: one pin for the whole site
+    page.wait_for_timeout(300)
+    assert not page.evaluate("window.slid")  # open from the first paint, no slide-in
     panel.locator(".unpin").click()  # the panel floats over the header's button
     panel.wait_for(state="hidden")
     page.goto(live + "/inbox")

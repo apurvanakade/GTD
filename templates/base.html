@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}GTD{% endblock %}</title>
-<script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t;
+  if (localStorage.panel === '1') document.documentElement.classList.add('pinned-panel'); } catch (e) {}</script>
 <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 {#- A record's parent, where Ctrl+↑ goes (app.js): a step's project, a project's list, a horizon's card… #}
