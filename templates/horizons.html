@@ -39,7 +39,7 @@
       "Write each answer as an outcome with a date, using the add line above: “Book draft finished by Dec 2027”, not “write more”.",
       "Keep it to 3–7 goals. More than that and none get attention.",
       "Open each goal and, in its notes, list the projects it needs. Create any that should start now on the Projects page (H1).",
-      "Note in each goal how you'll know it's done, and why it matters (one line linking it to the vision).",
+      "In each goal's “Done when…” line, say how you'll know it's done; in its notes, why it matters (one line linking it to the vision).",
     ],
     'examples': "“Get tenure by spring 2028.” · “Run a half-marathon by Oct 2027.” · “Save a 6-month emergency fund by June 2027.”",
     'review': "Every quarter: Is each still the right goal? Does it have an active project moving it? Drop or rewrite the ones that don't fit any more.",
@@ -50,7 +50,7 @@
       "List your roles: walk through work (teaching, research, admin, each team or client) and life (health, finances, home, car, family, friends, personal growth, fun).",
       "Add each as an area with the add line above. A good area name is a noun, not a task: “Health”, “Finances”, “Teaching”, not “Go to the gym”.",
       "Aim for roughly 8–15 in total. Merge areas that are really the same thing; split one that's too broad to think about at once.",
-      "Open each area and write its standard in the notes: what “kept up” looks like (“Annual checkup done; exercise 3×/week; sleep 7h”).",
+      "Open each area and write its standard in the “Kept up when…” line: what “kept up” looks like (“Annual checkup done; exercise 3×/week; sleep 7h”).",
       "Then, in each area's notes, ask: is it at its standard right now? If not, write what's off, and create a project (H1) or next action (H0) to fix it.",
     ],
     'examples': "Health · Finances · Home · Family · Friends · Career · Teaching · Research · Admin · Learning · Fun & rest",
@@ -79,8 +79,40 @@
     'review': "Daily, on Next. This card is for checking that what you do day to day still lines up with the horizons above.",
   },
 } %}
-{% block actions %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endblock %}
+{% block crumb %}{% if step %}<a href="{{ url_for('horizons_view') }}">Horizons</a>{% endif %}{% endblock %}
+{% block actions %}{% if step %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endif %}{% endblock %}
 {% block body %}
+{% if not step %}
+{# The overview: each horizon a fold with a compact peek at what it holds; the title opens its card. #}
+{% for s in steps %}
+<details class="band" data-band="{{ s }}">
+  <summary><a href="{{ url_for('horizons_view', level=s) }}">{{ titles[s] }}</a>
+    {% if s in ('goal', 'area') %}<b>{{ items[s]|length }}</b>{% elif s == 'projects' %}<b>{{ projects|length }}</b>{% elif s == 'ground' %}<b>{{ ground|length }}</b>{% endif %}</summary>
+  {% if s in ('purpose', 'vision') %}{% set n = items[s][0].notes %}
+  <p class="peek">{% if n %}{{ n.splitlines()[0]|truncate(160) }}{% else %}<span class="meta">Not written yet.</span>{% endif %}</p>
+  {% elif s in ('goal', 'area') %}
+  <ul class="tasks">
+    {% for h in items[s] %}
+    <li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
+      {% if s == 'area' and h.balance is not none %}<span class="meta">{{ balance_words[h.balance] }}</span>{% elif h.outcome %}<span class="meta">→ {{ h.outcome|truncate(70) }}</span>{% endif %}</li>
+    {% else %}<li class="empty">None yet.</li>{% endfor %}
+  </ul>
+  {% elif s == 'projects' %}
+  <ul class="tasks">
+    {% for p in projects[:peek] %}
+    <li class="task{% if p.warning %} flagged{% endif %}"{% if p.warning or p.outcome %} title="{{ p.warning or p.outcome }}"{% endif %}><a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.warning %}⚠ {% endif %}{{ p.title }}</a></li>
+    {% else %}<li class="empty">No active projects.</li>{% endfor %}
+    {% if projects|length > peek %}<li class="empty"><a href="{{ url_for('horizons_view', level=s) }}">+ {{ projects|length - peek }} more</a></li>{% endif %}
+  </ul>
+  {% else %}
+  <ul class="tasks">
+    {% for t in ground[:peek] %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}
+    {% if ground|length > peek %}<li class="empty"><a href="{{ url_for('horizons_view', level=s) }}">+ {{ ground|length - peek }} more</a></li>{% endif %}
+  </ul>
+  {% endif %}
+</details>
+{% endfor %}
+{% else %}
 {% if step in ('goal', 'area') %}
 {% call add_form(url_for('horizon_create'), 'Add a goal' if step == 'goal' else 'Add an area of focus') %}
   <input type="hidden" name="level" value="{{ step }}">
@@ -111,7 +143,7 @@
       {% for h in items[step] %}
       <li class="task">
         <a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
-        {% if step == 'area' %}{{ balance(h, balance_words, scale=False) }}{% elif h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
+        {% if step == 'area' %}{{ balance(h, balance_words, scale=False) }}{% elif h.outcome %}<span class="meta">→ {{ h.outcome|truncate(70) }}</span>{% elif h.notes %}<span class="meta">{{ h.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
       </li>
       {% else %}
       <li class="empty">None yet: add one above.</li>
@@ -135,4 +167,5 @@
     {% endif %}
   </li>
 </ol>
+{% endif %}
 {% endblock %}

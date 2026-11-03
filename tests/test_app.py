@@ -646,8 +646,13 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     """Like the weekly review: one card per horizon, H5 down to H0, and a rail of dots to move between them."""
     seed(conn)
     html = client.get("/horizons").get_data(as_text=True)
-    assert html.count('class="dot') == len(HORIZON_STEPS) == 6
-    assert horizon_card(html)[0] == "purpose"  # opens at the top
+    assert html.count('data-band="') == len(HORIZON_STEPS) == 6 and 'class="dot' not in html  # the overview: a fold per level
+    for step in HORIZON_STEPS:
+        assert f'href="/horizons?level={step}"' in html and f'data-band="{step}">' in html
+    assert "Ship the kitchen" in html and "Home" in html  # goals and areas peeked at
+    assert horizon_card(html)[0] is None
+    assert client.get("/horizons?level=bogus").get_data(as_text=True).count('data-band="') == 6
+    assert '<a href="/horizons">Horizons</a>' in client.get("/horizons?level=goal").get_data(as_text=True)  # crumb back
     top = client.get("/horizons?level=purpose").get_data(as_text=True)
     assert horizon_card(top)[0] == "purpose" and not ADD_LINE.search(top)  # no add line there
     assert 'rel="prev"' not in top and 'href="/horizons?level=vision" rel="next"' in top
@@ -658,7 +663,6 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     assert '<span class="count">1</span>' in card
     area = client.get("/horizons?level=area").get_data(as_text=True)
     assert '<input type="hidden" name="level" value="area">' in area and ">Home<" in horizon_card(area)[1]
-    assert horizon_card(client.get("/horizons?level=bogus").get_data(as_text=True))[0] == "purpose"
     assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
     vision = db.horizons(conn)["vision"][0]["id"]
     assert f'data-autosave="/autosave/horizons/{vision}"' in client.get("/horizons?level=vision").get_data(as_text=True)
@@ -2503,6 +2507,16 @@ def test_an_area_is_a_note_on_horizons(client, conn):
     card = horizon_card(client.get("/horizons?level=area").get_data(as_text=True))[1]
     assert ">Home<" in card and "project" not in card.lower().replace("projects", "")
     assert "Clean and calm" not in card and 'class="balance unset"' in card  # its slider, not the notes' first line
+    assert 'placeholder="Kept up when…"' in page
+    client.post(f"/horizons/{ids['area']}", data={"title": "Home", "notes": "x", "outcome": " Tidy weekly "})
+    assert db.get_horizon(conn, ids["area"])["outcome"] == "Tidy weekly"
+    assert 'value="Tidy weekly"' in client.get(f"/horizons/{ids['area']}?embed=overlay").get_data(as_text=True)
+    client.post(f"/horizons/{ids['area']}", data={"title": "Home", "notes": "x", "outcome": ""})  # blank clears it
+    assert db.get_horizon(conn, ids["area"])["outcome"] is None
+    goal = db.add_horizon(conn, "goal", "Tenure")
+    assert 'placeholder="Done when…"' in client.get(f"/horizons/{goal}?embed=overlay").get_data(as_text=True)
+    pid = db.horizons(conn)["purpose"][0]["id"]
+    assert 'name="outcome"' not in client.get(f"/horizons/{pid}?embed=overlay").get_data(as_text=True)
     assert client.post(f"/horizons/{ids['area']}/delete").headers["Location"] == "/horizons?level=area"
     assert not db.get_horizon(conn, ids["area"])
 

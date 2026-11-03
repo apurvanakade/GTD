@@ -100,6 +100,11 @@ CREATE TABLE IF NOT EXISTS project_outcomes (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   outcome TEXT NOT NULL
 );
+-- A goal's or area's outcome: what done (goal) or kept up (area) looks like. A table of its own, like project_outcomes.
+CREATE TABLE IF NOT EXISTS horizon_outcomes (
+  horizon_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
+  outcome TEXT NOT NULL
+);
 -- An area of focus's balance, set on its page: -3 far too little attention, 0 balanced, 3 far too much. A table of its
 -- own, like project_outcomes; no row means not set.
 CREATE TABLE IF NOT EXISTS area_balance (
@@ -724,7 +729,8 @@ HORIZON_FIELDS = {"level", "title", "notes"}
 SINGLE_HORIZONS = ("purpose", "vision")  # exactly one note each; can't be deleted
 
 
-HORIZON_SELECT = """SELECT h.*, b.balance FROM horizons h LEFT JOIN area_balance b ON b.horizon_id = h.id"""
+HORIZON_SELECT = """SELECT h.*, b.balance, o.outcome FROM horizons h
+  LEFT JOIN area_balance b ON b.horizon_id = h.id LEFT JOIN horizon_outcomes o ON o.horizon_id = h.id"""
 
 
 def horizons(c):
@@ -748,6 +754,15 @@ def update_horizon(c, id, **fields):
 
 def get_horizon(c, id):
     return c.execute(f"{HORIZON_SELECT} WHERE h.id = ?", (id,)).fetchone()
+
+
+@atomic
+def set_horizon_outcome(c, id, outcome):
+    """A goal's or area's outcome; blank clears it."""
+    if outcome := (outcome or "").strip():
+        c.execute("INSERT OR REPLACE INTO horizon_outcomes (horizon_id, outcome) VALUES (?, ?)", (id, outcome))
+    else:
+        c.execute("DELETE FROM horizon_outcomes WHERE horizon_id = ?", (id,))
 
 
 @atomic

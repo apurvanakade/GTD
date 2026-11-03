@@ -66,7 +66,7 @@ document.addEventListener('keydown', e => {
 document.querySelectorAll('details.band').forEach(d => {
   const key = `fold:${location.pathname}:${d.dataset.band}`;
   try { const v = localStorage.getItem(key); if (v !== null) d.open = v === '1'; } catch {}
-  d.querySelector('summary').addEventListener('click', () => { try { localStorage.setItem(key, d.open ? '0' : '1'); } catch {} });
+  d.querySelector('summary').addEventListener('click', e => { if (e.target.closest('a')) return; try { localStorage.setItem(key, d.open ? '0' : '1'); } catch {} });
 });
 // Capture goes to the Inbox page's own box, or elsewhere (or over an overlay) to the dialog. The dialog adds in the
 // background, so whatever is open under it stays as it was.

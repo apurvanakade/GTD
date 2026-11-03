@@ -7,12 +7,17 @@
   <button hidden>Save</button>{# the default, so Enter in the title saves #}
   <div class="title-line">
     <input name="title" value="{{ h.title }}" class="big" aria-label="Title" required>
+    {% if h.level == 'area' %}{{ balance(h, balance_words) }}{% endif %}
     {% if h.level in ('goal', 'area') %}
     <button formaction="{{ url_for('horizon_delete', id=h.id) }}" formtarget="_top" class="icon danger" title="Delete" aria-label="Delete" onclick="return confirm('Delete this {{ h.level }}?')">✕</button>
     {% endif %}
   </div>
-  {% if h.level == 'area' %}{{ balance(h, balance_words) }}{% endif %}
-  <textarea name="notes" rows="14" placeholder="{% if h.level == 'goal' %}Outcome, target date…{% elif h.level == 'area' %}This area is fine when… Standards, recurring responsibilities…{% endif %}">{{ h.notes }}</textarea>
+  {% if h.level in ('goal', 'area') %}
+  <div class="title-line outcome">
+    <input name="outcome" value="{{ h.outcome or '' }}" placeholder="{{ 'Done when…' if h.level == 'goal' else 'Kept up when…' }}" aria-label="{{ 'Desired outcome' if h.level == 'goal' else 'Standard' }}" title="{{ 'What done looks like' if h.level == 'goal' else 'What kept up looks like' }}" data-submit>
+  </div>
+  {% endif %}
+  <textarea name="notes" rows="14" placeholder="{% if h.level == 'goal' %}Projects it needs, why it matters, target date…{% elif h.level == 'area' %}Recurring responsibilities, what's off right now…{% endif %}">{{ h.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
 </form>
 {% endblock %}

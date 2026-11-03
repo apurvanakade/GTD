@@ -1158,6 +1158,7 @@ if NTFY_URL:
 BALANCE = {-3: "Far too little", -2: "Too little", -1: "A bit too little", 0: "Balanced",
            1: "A bit too much", 2: "Too much", 3: "Far too much"}
 HORIZON_STEPS = ("purpose", "vision", "goal", "area", "projects", "ground")
+PEEK = 8  # rows of projects and ground-level actions the overview shows per horizon
 HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS},
                   "projects": "H1 · Projects", "ground": "H0 · Ground level"}
 
@@ -1166,9 +1167,9 @@ HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS},
 def horizons_view():
     level = request.args.get("level")
     if level not in HORIZON_STEPS:
-        level = "purpose"  # the top of the deck
+        level = None  # the overview: every horizon, folded out
     return render_template("horizons.html", balance_words=BALANCE, levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
-                           items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()))
+                           items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()), peek=PEEK)
 
 
 @app.post("/horizons")
@@ -1187,6 +1188,8 @@ def horizon_view(id):
     if request.method == "POST":
         db.update_horizon(c, id, title=form_value("title") or h["title"],
                           notes=(request.form.get("notes") or "").strip())
+        if "outcome" in request.form and h["level"] in ("goal", "area"):
+            db.set_horizon_outcome(c, id, request.form["outcome"])
         flash("Saved.")
         return back()
     up = url_for("horizons_view", level=h["level"])

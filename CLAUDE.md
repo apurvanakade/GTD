@@ -224,7 +224,8 @@ The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Ta
 - **Horizons** live in one table keyed by `level`:
   - `purpose` and `vision` are single seeded notes that can't be deleted.
   - `goal` and `area` are lists of notes.
-  - The Horizons page is a deck like the review (no ticks): one card per `HORIZON_STEPS` key (purpose, vision, goal, area, projects, ground: H5 down to H0), `?level=`, else purpose (H5); titles in `HORIZON_TITLES`. Each card opens with a guide (`guides` in `horizons.html`): what the level is, numbered steps to work it, examples, and when to revisit it. Purpose and vision cards autosave their notes; goal and area cards get the page's add line; deleting a goal or area returns to its card.
+  - A goal or area also has an outcome line under its title (`horizon_outcomes`, `db.set_horizon_outcome()`, read as `outcome` by `HORIZON_SELECT`; blank clears): “Done when…” for a goal, “Kept up when…” for an area. Saved on change like a project's (`data-submit`, `horizon_view()`); a goal's row on its card shows it (→) in place of the notes' first line. Purpose and vision have none.
+  - `/horizons` lands on an overview: one `details.band` per `HORIZON_STEPS` key (purpose, vision, goal, area, projects, ground: H5 down to H0; folded by default, fold remembered like Next's), its title linking to the card and a compact peek inside (first notes line; goals and areas with outcome or balance; projects and H0 actions capped at `PEEK`). `?level=` opens that level as a deck like the review (no ticks; a crumb links back); titles in `HORIZON_TITLES`. Each card opens with a guide (`guides` in `horizons.html`): what the level is, numbered steps to work it, examples, and when to revisit it. Purpose and vision cards autosave their notes; goal and area cards get the page's add line; deleting a goal or area returns to its card.
 
 ## Tests
 
