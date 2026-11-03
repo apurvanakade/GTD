@@ -31,7 +31,7 @@ def conn(client):
 
 def seed(c):
     """One of everything the UI can show, so pages render every branch. Deterministic ids."""
-    db.add_horizon(c, "goal", "Ship the kitchen")
+    goal = db.add_horizon(c, "goal", "Ship the kitchen")
     area = db.add_horizon(c, "area", "Home")
     db.update_horizon(c, area, notes="Clean and calm\nsecond line")
     work = db.add_horizon(c, "area", "Work")
@@ -48,7 +48,7 @@ def seed(c):
     db.add_task(c, "lay tiles", step="later", project_id=active)
     db.add_task(c, "quote from Bob", step="waiting", project_id=active, due_date="2026-10-22",
                 remind_at="2026-10-22T13:00:00+00:00")
-    db.add_task(c, "vacuum", step="next", ground=1, recur="weekly", due_date="2026-10-22")
+    vacuum = db.add_task(c, "vacuum", step="next", ground=1, recur="weekly", due_date="2026-10-22")
     db.add_task(c, "bins", step="next", ground=1, recur="every 2 weeks", due_date="2026-11-03")
     db.add_task(c, "call mum", step="next", ground=1, due_date="2026-10-24", remind_at="2026-10-23T13:00:00+00:00")
     db.add_task(c, "parked step", step="next", project_id=waiting)
@@ -77,5 +77,12 @@ def seed(c):
     db.add_task(c, "sail", ground=1, step="someday", due_date=TODAY.isoformat())  # tickled: back in the Inbox
     db.add_task(c, "write a book", ground=1, step="someday", due_date="2026-12-01")  # out of sight until then
     db.mark_reviewed(c, italian, NOW - timedelta(days=3), table="task")
+    # The horizons' links: Home's vision line, the goal serving Home, Kitchen moving the goal, Stalled under Work, vacuum
+    # Home's upkeep. Waiting proj, Someday proj and the other H0 actions serve nothing: loose on the map.
+    db.set_area_vision(c, area, "A calm house we love")
+    db.set_goal_area(c, goal, area)
+    db.link_project(c, active, goal)
+    db.link_project(c, stalled, work)
+    db.link_task(c, vacuum, area)
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
-            "dropped": dropped, "area": area}
+            "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum}

@@ -2,6 +2,29 @@
 {% from "_balance.html" import balance %}
 {% block title %}{{ h.title }}{% endblock %}
 {% block heading %}{% endblock %}
+{# A goal's or area's links up and down the horizons: chips that open their overlay, × to unlink one from here, and a
+   select that links one more (moving it from wherever it was: one parent each). Set only here, on Horizons. #}
+{% macro links_row(label, kind, linked, more, empty) %}
+<div class="links">
+  <span class="label">{{ label }}</span>
+  {% for x in linked %}{% set warn = x.warning if 'warning' in x.keys() else none %}
+  <form method="post" action="{{ url_for('horizon_link', id=h.id) }}" class="chip{% if warn %} flagged{% endif %}">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <a href="/{{ {'goal': 'horizons'}.get(kind, kind + 's') }}/{{ x.id }}"{% if warn %} title="{{ warn }}"{% endif %}>{% if warn %}⚠ {% endif %}{{ x.title }}</a>
+    <button name="remove" value="{{ x.id }}" class="icon" title="Unlink" aria-label="Unlink {{ x.title }}">×</button>
+  </form>
+  {% endfor %}
+  {% if more %}
+  <form method="post" action="{{ url_for('horizon_link', id=h.id) }}">
+    <input type="hidden" name="kind" value="{{ kind }}">
+    <select name="add" data-submit aria-label="Link a {{ kind }}">
+      <option value="">＋ {{ empty }}</option>
+      {% for x in more %}<option value="{{ x.id }}">{{ x.title }}{% if 'under' in x.keys() and x.under %} · now under {{ x.under }}{% endif %}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+</div>
+{% endmacro %}
 {% block body %}
 <form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
   <button hidden>Save</button>{# the default, so Enter in the title saves #}
@@ -17,7 +40,27 @@
     <input name="outcome" value="{{ h.outcome or '' }}" placeholder="{{ 'Done when…' if h.level == 'goal' else 'Kept up when…' }}" aria-label="{{ 'Desired outcome' if h.level == 'goal' else 'Standard' }}" title="{{ 'What done looks like' if h.level == 'goal' else 'What kept up looks like' }}" data-submit>
   </div>
   {% endif %}
-  <textarea name="notes" rows="14" placeholder="{% if h.level == 'goal' %}Projects it needs, why it matters, target date…{% elif h.level == 'area' %}Recurring responsibilities, what's off right now…{% endif %}">{{ h.notes }}</textarea>
+  {% if h.level == 'area' %}
+  <div class="title-line outcome">
+    <textarea name="vision" rows="1" placeholder="In 3–5 years…" aria-label="Vision" title="Its part of the vision (H4): what it looks like in 3–5 years" data-submit>{{ h.vision or '' }}</textarea>
+  </div>
+  {% elif h.level == 'goal' %}
+  <div class="title-line serves">
+    <select name="area" data-submit aria-label="Area" title="The area (H2) it serves">
+      <option value="">Serves no area…</option>
+      {% for a in areas %}<option value="{{ a.id }}"{% if a.id == h.area_id %} selected{% endif %}>Serves {{ a.title }}</option>{% endfor %}
+    </select>
+    {% if h.area_id %}<a class="open-area" href="{{ url_for('horizon_view', id=h.area_id) }}" title="Open its area" aria-label="Open its area">↗</a>{% endif %}
+  </div>
+  {% endif %}
+  <textarea name="notes" rows="10" placeholder="{% if h.level == 'goal' %}Why it matters, target date…{% elif h.level == 'area' %}Recurring responsibilities, what's off right now…{% endif %}">{{ h.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
 </form>
+{% if links %}
+<section class="horizon-links">
+  {% if h.level == 'area' %}{{ links_row('Goals', 'goal', links.goals, links.more_goals, 'goal…') }}{% endif %}
+  {{ links_row('Projects', 'project', links.projects, links.more_projects, 'project…') }}
+  {% if h.level == 'area' %}{{ links_row('Actions', 'task', links.tasks, links.more_tasks, 'H0 action…') }}{% endif %}
+</section>
+{% endif %}
 {% endblock %}

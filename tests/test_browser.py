@@ -3,6 +3,7 @@
 Run these when a change touches templates/, static/ or static/app.js. The Stop hook and pre-commit
 hook do that automatically. Everything else in the suite checks only the HTML contract with the JS.
 """
+import re
 import threading
 from datetime import datetime, timedelta
 
@@ -879,6 +880,35 @@ def test_horizons_arrow_keys_move_between_levels(page, live):
     page.wait_for_url("**/horizons?level=area")
     page.locator(".rail .dot").first.click()
     page.wait_for_url("**/horizons?level=purpose")
+
+
+def test_horizons_map(page, live, conn):
+    """The overview draws every horizon as a graph: hovering lights a node's neighbours, a swatch hides a level (H0
+    actions start hidden), a click opens a record's overlay, and the purpose & vision card's area lines save in place."""
+    page.goto(live + "/horizons")
+    node = lambda title: page.locator(".graph .node", has=page.locator(f"text={title}")).first
+    sync_api.expect(node("Home")).to_be_visible()
+    sync_api.expect(node("vacuum")).to_be_hidden()  # H0 starts hidden
+    page.locator(".swatch[data-kind=task]").click()
+    sync_api.expect(node("vacuum")).to_be_visible()
+    node("Home").hover()
+    sync_api.expect(node("Ship the kitchen")).to_have_class(re.compile(r"\blit\b"))
+    assert "lit" not in node("Work").get_attribute("class")
+    page.locator(".swatch[data-kind=goal]").click()
+    sync_api.expect(node("Ship the kitchen")).to_be_hidden()
+    page.reload()  # what's hidden is remembered
+    sync_api.expect(node("Home")).to_be_visible()
+    sync_api.expect(node("Ship the kitchen")).to_be_hidden()
+    node("Home").locator("circle").click()
+    sync_api.expect(page.locator("dialog.overlay iframe")).to_have_attribute("src", re.compile(r"/horizons/\d+\?embed=overlay"))
+    assert page.url == live + "/horizons"
+    page.goto(live + "/horizons?level=purpose")
+    box = page.locator(".visions textarea").nth(1)  # Work
+    box.fill("Teaching what I love")
+    with page.expect_response("**/vision"):
+        box.press("Tab")  # saved as it's left
+    assert page.url.endswith("?level=purpose")  # saved in place
+    assert db.horizons(conn)["area"][1]["vision"] == "Teaching what I love"
 
 
 def test_remind_box_previews_how_it_reads(page, live):

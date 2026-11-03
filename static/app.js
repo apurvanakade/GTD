@@ -128,7 +128,13 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
   });
 })();
 // A field marked data-submit (the project page's status and tickler date)
-// saves its form as soon as it's changed; a text box waits while its 📅 picker is open.
+// saves its form as soon as it's changed; a text box waits while its 📅 picker is open. A form[data-background]
+// (the Vision card's area lines) saves in the background instead, as it's left; Enter just leaves the box.
+document.addEventListener('submit', e => {
+  if (!('background' in e.target.dataset)) return;
+  e.preventDefault();
+  document.activeElement?.blur();
+});
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
 // it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
 // Title and notes are autosave.js's; "＋ New project…" waits for its name; a box whose 📅 picker is open waits for it.
@@ -137,6 +143,7 @@ document.addEventListener('change', e => {
   const el = e.target, f = el.form;
   if (!f) return;
   if (el.matches('[data-submit]') && !el.closest('.date-field.picking')) return f.requestSubmit();
+  if ('background' in f.dataset) return post(f.action, new FormData(f));  // form[data-background]: saved in place
   if (!('saveOnChange' in f.dataset) || !el.name || ['title', 'notes'].includes(el.name)) return;
   if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
   if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();

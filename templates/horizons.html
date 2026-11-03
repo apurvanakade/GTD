@@ -24,7 +24,7 @@
     'what': "A picture of wild success 3–5 years from now: what your life and work look like if things go well. It turns the purpose into a place you could actually stand.",
     'steps': [
       "Pick a date 3–5 years ahead and write in the present tense, as if it's already that day.",
-      "Cover each part of life in a few lines: work, money, health, relationships, home, learning, fun.",
+      "Write one line per area (H2) under “Area by area” above: what that part of life looks like then. The vision box is for the picture as a whole.",
       "Be concrete: what you do on a typical Tuesday, where you live, who's around you, what you've finished.",
       "Mark the 2–3 lines that excite you most; those are where your goals (H3) will come from.",
       "Check it against your purpose (H5): does this life serve it? If not, change one of them.",
@@ -38,7 +38,7 @@
       "Open your vision (H4) and take each line you marked. Ask: what has to be true in 1–2 years for this to be on track?",
       "Write each answer as an outcome with a date, using the add line above: “Book draft finished by Dec 2027”, not “write more”.",
       "Keep it to 3–7 goals. More than that and none get attention.",
-      "Open each goal and, in its notes, list the projects it needs. Create any that should start now on the Projects page (H1).",
+      "Open each goal, pick the area it serves, and link the projects moving it (＋ project…). Create any that should start now on the Projects page (H1).",
       "In each goal's “Done when…” line, say how you'll know it's done; in its notes, why it matters (one line linking it to the vision).",
     ],
     'examples': "“Get tenure by spring 2028.” · “Run a half-marathon by Oct 2027.” · “Save a 6-month emergency fund by June 2027.”",
@@ -51,7 +51,8 @@
       "Add each as an area with the add line above. A good area name is a noun, not a task: “Health”, “Finances”, “Teaching”, not “Go to the gym”.",
       "Aim for roughly 8–15 in total. Merge areas that are really the same thing; split one that's too broad to think about at once.",
       "Open each area and write its standard in the “Kept up when…” line: what “kept up” looks like (“Annual checkup done; exercise 3×/week; sleep 7h”).",
-      "Then, in each area's notes, ask: is it at its standard right now? If not, write what's off, and create a project (H1) or next action (H0) to fix it.",
+      "Write its line in the vision (“In 3–5 years…”), then link its goals, projects and upkeep actions on its page.",
+      "Ask: is it at its standard right now? If not, write what's off in its notes, and create a project (H1) or next action (H0) to fix it.",
     ],
     'examples': "Health · Finances · Home · Family · Friends · Career · Teaching · Research · Admin · Learning · Fun & rest",
     'review': "Every month or two, or whenever life feels unbalanced: open each area and check it against its standard. Anything below standard becomes a project or a next action.",
@@ -61,7 +62,7 @@
     'steps': [
       "Scan the list below. For each project, ask: am I still committed to this? If not, open it and move it to someday or abandon it.",
       "Fix every ⚠: open the project, write what done looks like under its title, and pick at least one next action with Make next.",
-      "Check against your areas (H2) and goals (H3): does each area at risk and each goal have a project moving it? If not, add one on the Projects page.",
+      "On the map, a project floating loose serves no goal or area: link it from the goal's or area's page, or ask why it's there. An area or goal with nothing hanging from it needs a project.",
       "Look for missing projects: anything you're worrying about or keep thinking about is probably a project nobody wrote down.",
     ],
     'examples': "“Car serviced and registration renewed.” · “Course syllabus for spring posted.” · “Kitchen faucet replaced.”",
@@ -73,45 +74,40 @@
       "Scan the list below. Each should be one physical, visible action you could start right now (“Email Sam about Friday”), not a vague intention (“Sam”).",
       "Rewrite any vague one so it starts with a verb and says exactly what to do.",
       "Anything that takes more than one step is really a project: open it and give it a project instead of H0.",
-      "Remove what no longer matters (✕ on its page), and check whether each remaining one serves an area (H2) or goal (H3). If none, ask why you're doing it.",
+      "Remove what no longer matters (✕ on its page). Link upkeep actions to their area from the area's page; one serving no area at all: ask why you're doing it.",
     ],
     'examples': "“Call dentist to book cleaning.” · “Pay electricity bill.” · “Buy printer paper.”",
     'review': "Daily, on Next. This card is for checking that what you do day to day still lines up with the horizons above.",
   },
 } %}
+{# A level's guide: what it is, how to work it, examples, when to revisit. #}
+{% macro guide(g) %}
+<div class="guide">
+  <p>{{ g.what }}</p>
+  <h3>Do this</h3>
+  <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+  <h3>Examples</h3>
+  <p>{{ g.examples }}</p>
+  <h3>When to revisit</h3>
+  <p>{{ g.review }}</p>
+</div>
+{% endmacro %}
 {% block crumb %}{% if step %}<a href="{{ url_for('horizons_view') }}">Horizons</a>{% endif %}{% endblock %}
 {% block actions %}{% if step %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endif %}{% endblock %}
 {% block body %}
 {% if not step %}
-{# The overview: each horizon a fold with a compact peek at what it holds; the title opens its card. #}
-{% for s in steps %}
-<details class="band" data-band="{{ s }}">
-  <summary><a href="{{ url_for('horizons_view', level=s) }}">{{ titles[s] }}</a>
-    {% if s in ('goal', 'area') %}<b>{{ items[s]|length }}</b>{% elif s == 'projects' %}<b>{{ projects|length }}</b>{% elif s == 'ground' %}<b>{{ ground|length }}</b>{% endif %}</summary>
-  {% if s in ('purpose', 'vision') %}{% set n = items[s][0].notes %}
-  <p class="peek">{% if n %}{{ n.splitlines()[0]|truncate(160) }}{% else %}<span class="meta">Not written yet.</span>{% endif %}</p>
-  {% elif s in ('goal', 'area') %}
-  <ul class="tasks">
-    {% for h in items[s] %}
-    <li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) }}">{{ h.title }}</a>
-      {% if s == 'area' and h.balance is not none %}<span class="meta">{{ balance_words[h.balance] }}</span>{% elif h.outcome %}<span class="meta">→ {{ h.outcome|truncate(70) }}</span>{% endif %}</li>
-    {% else %}<li class="empty">None yet.</li>{% endfor %}
-  </ul>
-  {% elif s == 'projects' %}
-  <ul class="tasks">
-    {% for p in projects[:peek] %}
-    <li class="task{% if p.warning %} flagged{% endif %}"{% if p.warning or p.outcome %} title="{{ p.warning or p.outcome }}"{% endif %}><a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.warning %}⚠ {% endif %}{{ p.title }}</a></li>
-    {% else %}<li class="empty">No active projects.</li>{% endfor %}
-    {% if projects|length > peek %}<li class="empty"><a href="{{ url_for('horizons_view', level=s) }}">+ {{ projects|length - peek }} more</a></li>{% endif %}
-  </ul>
-  {% else %}
-  <ul class="tasks">
-    {% for t in ground[:peek] %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}
-    {% if ground|length > peek %}<li class="empty"><a href="{{ url_for('horizons_view', level=s) }}">+ {{ ground|length - peek }} more</a></li>{% endif %}
-  </ul>
-  {% endif %}
-</details>
-{% endfor %}
+{# The overview: every horizon as one map (static/graph.js draws db.horizon_graph(), embedded below; another view of
+   the same data can replace it). Under it, one line per level: its swatch shows or hides it on the map, its name
+   opens its card. #}
+{% set kinds = {'purpose': 'purpose', 'goal': 'goal', 'area': 'area', 'projects': 'project', 'ground': 'task'} %}
+<div class="horizon-map" aria-label="Map of the horizons"></div>
+<ul class="levels">
+  {% for s in steps %}{% set n = graph.nodes|selectattr('kind', 'eq', kinds[s])|list|length %}
+  <li><button type="button" class="swatch k-{{ kinds[s] }}" data-kind="{{ kinds[s] }}" aria-pressed="true" title="Show or hide on the map" aria-label="Show {{ titles[s] }}"></button><a href="{{ url_for('horizons_view', level=s) }}">{{ titles[s] }}</a>{% if s != 'purpose' %} <span class="meta">{{ n }}</span>{% endif %}</li>
+  {% endfor %}
+</ul>
+<script type="application/json" id="horizon-graph">{{ graph|tojson }}</script>
+<script defer src="{{ url_for('static', filename='graph.js') }}"></script>
 {% else %}
 {% if step in ('goal', 'area') %}
 {% call add_form(url_for('horizon_create'), 'Add a goal' if step == 'goal' else 'Add an area of focus') %}
@@ -121,12 +117,31 @@
 <ol class="deck">
   <li id="{{ step }}" class="step on">
     <h2>{{ titles[step] }}</h2>
-    {% if step in ('purpose', 'vision') %}{% set h = items[step][0] %}
+    {% if step == 'purpose' %}
+    {# Purpose (H5), then vision (H4): a note each, autosaved, its guide right under it; under the vision's note, each
+       area's part of it. #}
+    {% for level in ('purpose', 'vision') %}{% set h = items[level][0] %}
+    <h3>{{ levels|selectattr(0, 'eq', level)|map(attribute=1)|first }}</h3>
     <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
-      <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', step)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
+      <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', level)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
       <p class="autosave hint" aria-live="polite"></p>
       <button hidden>Save</button>
     </form>
+    {% if level == 'purpose' %}{{ guide(guides.purpose) }}{% endif %}
+    {% endfor %}
+    {# The vision, area by area: each area's line, saved in the background as it's left (its page has it too). #}
+    <h3>Area by area</h3>
+    <ul class="tasks visions">
+      {% for a in items.area %}
+      <li class="task"><a class="title" href="{{ url_for('horizon_view', id=a.id) }}">{{ a.title }}</a>
+        <form method="post" action="{{ url_for('horizon_vision', id=a.id) }}" data-background>
+          <textarea name="vision" rows="1" placeholder="In 3–5 years…" aria-label="{{ a.title }} in 3–5 years">{{ a.vision or '' }}</textarea>
+        </form></li>
+      {% else %}
+      <li class="empty">No areas yet: add them on <a href="{{ url_for('horizons_view', level='area') }}">H2</a>.</li>
+      {% endfor %}
+    </ul>
+    {{ guide(guides.vision) }}
     {% elif step in ('goal', 'area') %}
     <span class="count">{{ items[step]|length }}</span>
     <ul class="tasks" data-reorder="{{ url_for('horizons_order', level=step) }}">
@@ -156,16 +171,7 @@
     <span class="count">{{ ground|length }}</span>
     <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
     {% endif %}
-    {% set g = guides[step] %}
-    <div class="guide">
-      <p>{{ g.what }}</p>
-      <h3>Do this</h3>
-      <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
-      <h3>Examples</h3>
-      <p>{{ g.examples }}</p>
-      <h3>When to revisit</h3>
-      <p>{{ g.review }}</p>
-    </div>
+    {% if step != 'purpose' %}{{ guide(guides[step]) }}{% endif %}
   </li>
 </ol>
 {% endif %}

@@ -123,6 +123,24 @@ CREATE TABLE IF NOT EXISTS horizon_positions (
   horizon_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
   position INTEGER NOT NULL
 );
+-- The horizons' links, set only on Horizons, each child under one parent at most: an area's vision line (H4 is built
+-- from them), a goal's area, a project's goal or area, an H0 task's area. Tables of their own (no ALTER).
+CREATE TABLE IF NOT EXISTS area_visions (
+  horizon_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
+  vision TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goal_areas (
+  goal_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
+  area_id INTEGER NOT NULL REFERENCES horizons(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS project_horizons (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  horizon_id INTEGER NOT NULL REFERENCES horizons(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS task_areas (
+  task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+  area_id INTEGER NOT NULL REFERENCES horizons(id) ON DELETE CASCADE
+);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
 # Stored in the file's user_version once SCHEMA has run on it, so a connection skips it until SCHEMA changes.
@@ -385,6 +403,8 @@ def complete_task(c, id, today, now=None):
         step = "later" if t["step"] == "next" and t["project_id"] else t["step"]
         new_id = add_task(c, t["title"], today=today, notes=t["notes"], step=step, project_id=t["project_id"],
                           ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
+        c.execute("INSERT INTO task_areas (task_id, area_id) SELECT ?, area_id FROM task_areas WHERE task_id = ?",
+                  (new_id, id))  # and keeps its area
         if t["list_position"] is not None:  # the next instance takes this one's place in its list
             c.execute("UPDATE list_positions SET position = ? WHERE task_id = ?", (t["list_position"], new_id))
     return new_id
@@ -735,8 +755,10 @@ HORIZON_FIELDS = {"level", "title", "notes"}
 SINGLE_HORIZONS = ("purpose", "vision")  # exactly one note each; can't be deleted
 
 
-HORIZON_SELECT = """SELECT h.*, b.balance, o.outcome FROM horizons h
+# A horizon with its balance, outcome, vision line (an area's) and area (a goal's), each None until set.
+HORIZON_SELECT = """SELECT h.*, b.balance, o.outcome, v.vision, ga.area_id FROM horizons h
   LEFT JOIN area_balance b ON b.horizon_id = h.id LEFT JOIN horizon_outcomes o ON o.horizon_id = h.id
+  LEFT JOIN area_visions v ON v.horizon_id = h.id LEFT JOIN goal_areas ga ON ga.goal_id = h.id
   LEFT JOIN horizon_positions hp ON hp.horizon_id = h.id"""
 
 
@@ -790,6 +812,116 @@ def set_area_balance(c, id, balance):
         c.execute("DELETE FROM area_balance WHERE horizon_id = ?", (id,))
     else:
         c.execute("INSERT OR REPLACE INTO area_balance (horizon_id, balance) VALUES (?, ?)", (id, balance))
+
+
+@atomic
+def set_area_vision(c, id, vision):
+    """An area's line in the vision (H4): what it looks like in 3–5 years; blank clears it."""
+    _level(c, id, "area")
+    if vision := (vision or "").strip():
+        c.execute("INSERT OR REPLACE INTO area_visions (horizon_id, vision) VALUES (?, ?)", (id, vision))
+    else:
+        c.execute("DELETE FROM area_visions WHERE horizon_id = ?", (id,))
+
+
+def _level(c, id, *levels):
+    """Raise unless horizon id exists at one of these levels."""
+    row = c.execute("SELECT level FROM horizons WHERE id = ?", (id,)).fetchone()
+    if not row or row["level"] not in levels:
+        raise ValueError(f"horizon {id} is not a {' or '.join(levels)}")
+
+
+@atomic
+def set_goal_area(c, goal_id, area_id):
+    """The area a goal serves; None unlinks it."""
+    _level(c, goal_id, "goal")
+    c.execute("DELETE FROM goal_areas WHERE goal_id = ?", (goal_id,))
+    if area_id is not None:
+        _level(c, area_id, "area")
+        c.execute("INSERT INTO goal_areas (goal_id, area_id) VALUES (?, ?)", (goal_id, area_id))
+
+
+@atomic
+def link_project(c, project_id, horizon_id):
+    """Hang a project under a goal or an area (moving it from wherever it was); None unlinks it."""
+    if not get_project(c, project_id):
+        raise ValueError(f"no project {project_id}")
+    c.execute("DELETE FROM project_horizons WHERE project_id = ?", (project_id,))
+    if horizon_id is not None:
+        _level(c, horizon_id, "goal", "area")
+        c.execute("INSERT INTO project_horizons (project_id, horizon_id) VALUES (?, ?)", (project_id, horizon_id))
+
+
+@atomic
+def link_task(c, task_id, area_id):
+    """Hang an H0 task under an area (moving it from wherever it was); None unlinks it."""
+    t = get_task(c, task_id)
+    if not t or not t["ground"]:
+        raise ValueError(f"task {task_id} is not an H0 task")
+    c.execute("DELETE FROM task_areas WHERE task_id = ?", (task_id,))
+    if area_id is not None:
+        _level(c, area_id, "area")
+        c.execute("INSERT INTO task_areas (task_id, area_id) VALUES (?, ?)", (task_id, area_id))
+
+
+# The open projects and H0 tasks the horizons' links show: closed ones leave the map (their links stay, for a revive).
+LINKED_PROJECTS = f"""SELECT p.id, p.title, p.status, p.warning, p.outcome, ph.horizon_id, u.title AS under
+  FROM ({PROJECT_SELECT}) p LEFT JOIN project_horizons ph ON ph.project_id = p.id
+  LEFT JOIN horizons u ON u.id = ph.horizon_id
+  WHERE p.status NOT IN {CLOSED} ORDER BY p.status != 'active', p.status != 'waiting', p.position, p.id"""
+LINKED_TASKS = """SELECT t.id, t.title, t.step, t.due_date, ta.area_id, u.title AS under FROM tasks t
+  LEFT JOIN task_areas ta ON ta.task_id = t.id LEFT JOIN horizons u ON u.id = ta.area_id
+  LEFT JOIN list_positions lp ON lp.task_id = t.id
+  WHERE t.state = 'open' AND t.ground AND t.step IN ('next', 'waiting')
+  ORDER BY t.step != 'next', lp.position IS NULL, lp.position, t.id"""
+
+
+def horizon_links(c, h):
+    """What a goal's or area's page links to: {goals and tasks (an area's: its goals and H0 actions), projects, and
+    for each the ones not linked here, to add (more_goals, more_projects, more_tasks)}. Each project and task row says where it is (`under`)."""
+    projects = c.execute(LINKED_PROJECTS).fetchall()
+    tasks = c.execute(LINKED_TASKS).fetchall() if h["level"] == "area" else []
+    goals = horizons(c)["goal"] if h["level"] == "area" else []
+    return {"goals": [g for g in goals if g["area_id"] == h["id"]],
+            "more_goals": [g for g in goals if g["area_id"] != h["id"]],
+            "projects": [p for p in projects if p["horizon_id"] == h["id"]],
+            "tasks": [t for t in tasks if t["area_id"] == h["id"]],
+            "more_projects": [p for p in projects if p["horizon_id"] != h["id"]],
+            "more_tasks": [t for t in tasks if t["area_id"] != h["id"]]}
+
+
+def horizon_graph(c, balance_words):
+    """Every horizon as one graph, the only thing a view of them (horizons.html's map) is drawn from:
+    {nodes: [{id, kind, title, url, sub, warn, dim}], edges: [[parent id, child id]]}. Kinds, top down: purpose
+    (purpose and vision as one, as on their card), area, goal, project, task. It links to every area, an area to its goals, projects
+    and H0 actions, a goal to its projects. A goal, project or task with no parent has no edge up: a gap, left loose.
+    Plain dicts, so the renderer can be swapped without touching this. An area's sub names its balance in
+    balance_words (app.py's BALANCE)."""
+    hs = horizons(c)
+    nodes, edges = [], []
+
+    def node(id, kind, title, url, sub="", warn="", dim=False, parent=None):
+        nodes.append({"id": id, "kind": kind, "title": title, "url": url, "sub": sub or "", "warn": warn or "", "dim": dim})
+        if parent:
+            edges.append([parent, id])
+
+    purpose, vision = hs["purpose"][0], hs["vision"][0]
+    first = lambda text: (text or "").strip().splitlines()[0] if (text or "").strip() else ""
+    top = f"h{purpose['id']}"
+    node(top, "purpose", "Purpose & vision", "/horizons?level=purpose", first(purpose["notes"]) or first(vision["notes"]))
+    for a in hs["area"]:
+        sub = " · ".join(x for x in (a["vision"], a["balance"] is not None and balance_words[a["balance"]]) if x)
+        node(f"h{a['id']}", "area", a["title"], f"/horizons/{a['id']}", sub, parent=top)
+    for g in hs["goal"]:
+        node(f"h{g['id']}", "goal", g["title"], f"/horizons/{g['id']}", g["outcome"],
+             parent=g["area_id"] and f"h{g['area_id']}")
+    for p in c.execute(LINKED_PROJECTS):
+        node(f"p{p['id']}", "project", p["title"], f"/projects/{p['id']}", p["outcome"], p["warning"],
+             dim=p["status"] == "someday", parent=p["horizon_id"] and f"h{p['horizon_id']}")
+    for t in c.execute(LINKED_TASKS):
+        node(f"t{t['id']}", "task", t["title"], f"/tasks/{t['id']}", "waiting" if t["step"] == "waiting" else "",
+             dim=t["step"] == "waiting", parent=t["area_id"] and f"h{t['area_id']}")
+    return {"nodes": nodes, "edges": edges}
 
 
 @atomic

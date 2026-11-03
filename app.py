@@ -1157,9 +1157,9 @@ if NTFY_URL:
 # An area's balance, -3 .. 3: how much attention it gets against what it needs.
 BALANCE = {-3: "Far too little", -2: "Too little", -1: "A bit too little", 0: "Balanced",
            1: "A bit too much", 2: "Too much", 3: "Far too much"}
-HORIZON_STEPS = ("purpose", "vision", "goal", "area", "projects", "ground")
-PEEK = 8  # rows of projects and ground-level actions the overview shows per horizon
-HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS},
+# Purpose (H5) and vision (H4) share one card, "purpose": two notes, one above the other.
+HORIZON_STEPS = ("purpose", "goal", "area", "projects", "ground")
+HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS}, "purpose": "H5 · H4 · Purpose & vision",
                   "projects": "H1 · Projects", "ground": "H0 · Ground level"}
 
 
@@ -1168,8 +1168,10 @@ def horizons_view():
     level = request.args.get("level")
     if level not in HORIZON_STEPS:
         level = None  # the overview: every horizon, folded out
+    c = conn()
     return render_template("horizons.html", balance_words=BALANCE, levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
-                           items=db.horizons(conn()), projects=db.projects(conn()), ground=db.h0_actions(conn()), peek=PEEK)
+                           items=db.horizons(c), projects=db.projects(c), ground=db.h0_actions(c),
+                           graph=None if level else db.horizon_graph(c, BALANCE))
 
 
 @app.post("/horizons")
@@ -1197,12 +1199,52 @@ def horizon_view(id):
                           notes=(request.form.get("notes") or "").strip())
         if "outcome" in request.form and h["level"] in ("goal", "area"):
             db.set_horizon_outcome(c, id, request.form["outcome"])
+        if "vision" in request.form and h["level"] == "area":
+            db.set_area_vision(c, id, request.form["vision"])
+        if "area" in request.form and h["level"] == "goal":
+            area = request.form["area"]
+            try:
+                db.set_goal_area(c, id, int(area) if area else None)
+            except ValueError:
+                abort(400)
         flash("Saved.")
         return back()
-    up = url_for("horizons_view", level=h["level"])
+    up = url_for("horizon_view", id=h["area_id"]) if h["area_id"] else url_for("horizons_view", level=h["level"])
     if not request.args.get("embed"):  # opens over its Horizons card, like a task over its list
         return redirect(url_for("horizons_view", level=h["level"], horizon=id))
-    return render_template("horizon.html", h=h, balance_words=BALANCE, up=up)
+    areas = db.horizons(c)["area"] if h["level"] == "goal" else []
+    links = db.horizon_links(c, h) if h["level"] in ("goal", "area") else None
+    return render_template("horizon.html", h=h, balance_words=BALANCE, up=up, areas=areas, links=links)
+
+
+@app.post("/horizons/<int:id>/link")
+def horizon_link(id):
+    """Hang a project (under a goal or area), or a goal or H0 task (under an area), here: `kind` and `add` (its id),
+    from the goal's or area's page; `remove` unlinks one from here. A child has one parent, so linking moves it."""
+    c = conn()
+    h = db.get_horizon(c, id) or abort(404)
+    kind, add, remove = request.form.get("kind"), request.form.get("add", ""), request.form.get("remove", "")
+    link = {"project": db.link_project, "task": db.link_task, "goal": db.set_goal_area}.get(kind)
+    target = add or remove
+    if not link or target and not target.isdigit():
+        abort(400)
+    linked = db.horizon_links(c, h)[kind + "s"] if h["level"] in ("goal", "area") else []
+    if add or target and any(x["id"] == int(target) for x in linked):  # a remove only unlinks it from here; "＋ …" alone, nothing
+        try:
+            link(c, int(target), id if add else None)
+        except ValueError:
+            abort(400)
+    return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
+
+
+@app.post("/horizons/<int:id>/vision")
+def horizon_vision(id):
+    """An area's vision line, from the purpose & vision card, saved as it's left."""
+    h = db.get_horizon(conn(), id) or abort(404)
+    if h["level"] != "area":
+        abort(400)
+    db.set_area_vision(conn(), id, request.form.get("vision"))
+    return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back()
 
 
 @app.post("/horizons/<int:id>/balance")
