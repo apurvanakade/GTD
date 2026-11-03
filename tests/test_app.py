@@ -1344,7 +1344,7 @@ def test_project_next_actions_are_pinned_on_top(client, conn):
     more = db.add_task(conn, "order grout", step="next", project_id=ids["active"])
     page = client.get(f"/projects/{ids['active']}?embed=overlay").get_data(as_text=True)
     rows = re.findall(r'<li class="task[^"]*" data-id="(\d+)"( data-pinned)?>\s*<span class="grip" title="([^"]*)"', page)
-    pinned, other = (" data-pinned", "Drag to reorder next actions, or onto a project"), ("", "Drag to reorder, or onto a project")
+    pinned, other = (" data-pinned", "Drag to reorder next actions"), ("", "Drag to reorder")
     assert rows[:2] == [(str(more), *pinned), ("2", *pinned)] and sorted(rows[2:]) == [("3", *other), ("4", *other)]
 
 
@@ -1879,8 +1879,7 @@ def test_every_task_list_has_the_drop_panel(client, conn):
     """The panel follows the nav: the task tabs (Next, Waiting, Someday), the project tabs' projects under their
     headings, then Reference. Where the page's tasks already are isn't offered."""
     ids = seed(conn)
-    for url, current in (("/inbox", None), ("/next", None), ("/waiting", "waiting"), ("/someday?tickled=1", "someday"),
-                         (f"/projects/{ids['active']}?embed=overlay", str(ids["active"]))):
+    for url, current in (("/inbox", None), ("/next", None), ("/waiting", "waiting"), ("/someday?tickled=1", "someday")):
         html = client.get(url).get_data(as_text=True)
         assert 'class="drop-panel"' in html and 'class="pin-panel"' in html and ">File to<" in html, url
         panel = html.split('class="drop-panel"')[1].split("</aside>")[0]

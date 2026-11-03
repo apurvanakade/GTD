@@ -1,11 +1,11 @@
-{# grip: ⠿ drags the row, to reorder its list or onto the drop panel. On a project page (project=False) the next
-   actions are pinned on top: they reorder among themselves or move out. set_step: Make next, or a next one's Make later. #}
+{# grip: ⠿ drags the row, to reorder its list or onto the drop panel. On a project page (project=False; no drop panel)
+   the next actions are pinned on top: they reorder among themselves. set_step: Make next, or a next one's Make later. #}
 {% macro row(t, project=True, set_step=False, grip=False) %}
 {% set closed = t.state != 'open' %}
 {% set pinned = grip and not project and t.step == 'next' and not closed %}
 <li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if pinned %} data-pinned{% endif %}>
-  {% if pinned %}<span class="grip" title="Drag to reorder next actions, or onto a project" aria-hidden="true">⠿</span>
-  {% elif grip and not closed %}<span class="grip" title="Drag to reorder, or onto a project" aria-hidden="true">⠿</span>{% endif %}
+  {% if pinned %}<span class="grip" title="Drag to reorder next actions" aria-hidden="true">⠿</span>
+  {% elif grip and not closed %}<span class="grip" title="Drag to reorder{% if project %}, or onto a project{% endif %}" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
   {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}

@@ -735,18 +735,6 @@ def test_waiting_projects_and_tasks_have_their_own_tabs(page, live, conn):
     assert (t["project_id"], t["step"], t["ground"]) == (2, "waiting", 0)
 
 
-def test_dragging_a_project_step_by_its_grip_moves_it_to_another_project(page, live, conn):
-    page.goto(live + "/projects/1?embed=overlay")
-    assert page.locator('.drop-panel [data-project="1"]').count() == 0  # not its own project
-    drag_to_panel(page, row(page, "lay tiles"), '[data-project="2"]')
-    page.wait_for_function("!document.querySelector('li.task[data-id=\"3\"]')")
-    assert (db.get_task(conn, 3)["project_id"], db.get_task(conn, 3)["step"]) == (2, "later")
-    # The next action can go too: the page redraws, the project now stalled.
-    drag_to_panel(page, row(page, "buy tiles"), '[data-project="2"]')
-    page.locator(".title-line > .warn").wait_for()
-    assert row(page, "buy tiles").count() == 0 and db.get_task(conn, 2)["project_id"] == 2
-
-
 def test_review_arrow_keys_move_between_steps(page, live):
     page.goto(live + "/review?step=overdue")
     page.keyboard.press("ArrowRight")

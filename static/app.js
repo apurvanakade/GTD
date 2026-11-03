@@ -281,7 +281,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     list.addEventListener('dragover', e => {
       if (!dragged || list !== from) return;
       // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
-      // block of both only moves out, to another project.
+      // block of both doesn't move.
       const pinned = li => 'pinned' in li.dataset, pin = pinned(dragged[0]);
       if (dragged.some(r => pinned(r) !== pin)) return;
       const over = rows(list).find(li => li.contains(e.target));
