@@ -15,7 +15,7 @@
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
-    {% if not project and t.project_id and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step in ('later', 'someday') and not closed %}<span>{{ t.step }}</span>{% endif %}
+    {% if not project and t.project_id and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' and not closed %}<span>{{ t.step }}</span>{% endif %}
     {# The date and repeat slots are always there, empty when unused, so the columns line up down the list. #}
     {% if closed and t.completed_at %}<span class="date" title="{{ 'Completed' if t.state == 'done' else 'Abandoned' }}">{{ t.completed_at|local_date }}</span>
     {% else %}<span class="date">{{ t.due_date if t.due_date and not closed }}</span>{% endif %}
