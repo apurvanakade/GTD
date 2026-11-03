@@ -19,7 +19,7 @@
   ('s', url_for('someday'), 'Someday'), ('p', url_for('projects_view'), 'Active projects'),
   ('W', url_for('projects_view', status='waiting'), 'Waiting projects'),
   ('S', url_for('projects_view', status='someday'), 'Someday projects'), ('r', url_for('reference'), 'Reference'),
-  ('v', url_for('review'), 'Review'), ('o', url_for('horizons_view'), 'Horizons'), ('d', url_for('done'), 'Done')] %}
+  ('v', url_for('review'), 'Review'), ('h', url_for('horizons_view'), 'Horizons'), ('d', url_for('done'), 'Done')] %}
 {% if not embed %}
 {% include "_nav.html" %}
 {# The bar is identical on every page so switching tabs never moves it. #}
