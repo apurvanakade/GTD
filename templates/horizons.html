@@ -121,16 +121,6 @@
 <ol class="deck">
   <li id="{{ step }}" class="step on">
     <h2>{{ titles[step] }}</h2>
-    {% set g = guides[step] %}
-    <div class="guide">
-      <p>{{ g.what }}</p>
-      <h3>Do this</h3>
-      <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
-      <h3>Examples</h3>
-      <p>{{ g.examples }}</p>
-      <h3>When to revisit</h3>
-      <p>{{ g.review }}</p>
-    </div>
     {% if step in ('purpose', 'vision') %}{% set h = items[step][0] %}
     <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
       <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', step)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
@@ -166,6 +156,16 @@
     <span class="count">{{ ground|length }}</span>
     <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
     {% endif %}
+    {% set g = guides[step] %}
+    <div class="guide">
+      <p>{{ g.what }}</p>
+      <h3>Do this</h3>
+      <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+      <h3>Examples</h3>
+      <p>{{ g.examples }}</p>
+      <h3>When to revisit</h3>
+      <p>{{ g.review }}</p>
+    </div>
   </li>
 </ol>
 {% endif %}

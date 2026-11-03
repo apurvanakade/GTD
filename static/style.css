@@ -395,7 +395,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task > .balance { flex: 1 1 0; max-width: 520px; margin: 0 8px; }
 .task > .balance output { font-size: var(--fs-xs); min-width: 8em; }
 /* Horizons: each card's guide, what the level is and how to work it. */
-.guide { max-width: 70ch; color: var(--muted); font-size: var(--fs-m); margin-bottom: 12px; }
+.guide { max-width: 70ch; color: var(--muted); font-size: var(--fs-m); margin: 28px 0 12px; padding-top: 14px; border-top: 1px solid var(--line); }
 .guide h3 { color: var(--fg); font-size: var(--fs-s); text-transform: none; letter-spacing: 0; margin: 14px 0 4px; }
 .guide p, .guide ol { margin: 4px 0; }
 .guide ol { padding-left: 1.4em; }
