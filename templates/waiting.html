@@ -9,5 +9,5 @@
 {% endcall %}
 {# Waiting tasks, H0's and project steps, dragged to reorder. Waiting projects have their own tab. #}
 {% if tasks %}{{ task_list(tasks) }}{% else %}<p class="empty clear">Nothing delegated.</p>{% endif %}
-{% if tasks %}{{ move_panel('waiting', current='waiting', reload=True) }}{% endif %}
+{% if tasks %}{{ move_panel(current='waiting', reload=True) }}{% endif %}
 {% endblock %}

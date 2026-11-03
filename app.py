@@ -112,6 +112,21 @@ def form_ids():
     return [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()]
 
 
+def new_project_made(title, status):
+    """Every new project is made here, so a background save that made one tells its page (projects_changed())."""
+    g.projects_changed = True
+    return db.add_project(conn(), title, status=status)
+
+
+@app.after_request
+def projects_changed(r):
+    """The page's project lists (project_select(), project_targets()) are stale once a project is made in the
+    background: the header has refreshProjects() in static/app.js redraw them all."""
+    if g.get("projects_changed"):
+        r.headers["X-Projects-Changed"] = "1"
+    return r
+
+
 def fetched():
     """A background save by the page's JS (X-Requested-With: fetch), which updates the page itself."""
     return request.headers.get("X-Requested-With") == "fetch"
@@ -134,7 +149,7 @@ def task_fields_from_form(current=None):
         fields["project_id"] = int(raw) if raw.isdigit() else None
     if new_project:  # typed into the "new project" box; overrides the dropdown. Its group sets the status.
         status = (raw or "").removeprefix(NEW)
-        fields["project_id"] = db.add_project(conn(), new_project, status=status if status in PROJECT_STATUSES else "active")
+        fields["project_id"] = new_project_made(new_project, status=status if status in PROJECT_STATUSES else "active")
         fields["ground"] = 0
     if request.form.get("step") in ("next", "waiting", "later", "someday"):  # a project's or H0's step; inbox items drop it
         fields["step"] = request.form["step"]
@@ -735,7 +750,7 @@ def projects_order(status):
 def add_project_from_form(status="active"):
     """The add line's new project (a project tab, the review's new ideas)."""
     if title := form_value("title"):
-        db.add_project(conn(), title, status=status)
+        new_project_made(title, status=status)
 
 
 @app.post("/projects")

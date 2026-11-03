@@ -3,10 +3,29 @@
 async function post(url, body) {
   try {
     const r = await fetch(url, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-    if (r.ok) { changed(); return true; }
+    if (r.ok) { changed(); projectsSaved(r); return true; }
   } catch {}
   location.reload();
   return false;
+}
+// A background save that made a project (X-Projects-Changed, set by app.py) leaves every project list on the page
+// stale: the dropdowns (project_select()) and the drop panel (project_targets()), each marked data-projects with
+// its kind. Redraw them all from a fresh copy of the page, in place (scripts keep their references), each select
+// keeping its pick.
+function projectsSaved(r) { if (r.headers.has('X-Projects-Changed')) refreshProjects(); }
+async function refreshProjects() {
+  try {
+    const fresh = new DOMParser().parseFromString(await (await fetch(location.href)).text(), 'text/html');
+    const kinds = {};  // kind → its fresh lists, in page order, matched to the page's in that order
+    fresh.querySelectorAll('[data-projects]').forEach(el => (kinds[el.dataset.projects] ??= []).push(el));
+    for (const el of document.querySelectorAll('[data-projects]')) {
+      const from = kinds[el.dataset.projects]?.shift();
+      if (!from) continue;
+      const pick = el.value;
+      el.innerHTML = from.innerHTML;
+      if (el.tagName === 'SELECT') el.value = [...el.options].some(o => o.value === pick) ? pick : '';
+    }
+  } catch {}  // only the lists go stale
 }
 // The nav slides away while you scroll down and comes back when you scroll up, reach the top, or point at the top
 // edge. Touch scrolling (iPad) drives it too; the clamp ignores Safari's rubber band.

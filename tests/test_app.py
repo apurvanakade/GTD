@@ -1818,12 +1818,14 @@ def test_inbox_drag_moves_an_item_into_a_project(client, conn):
     a, b = db.add_task(conn, "a"), db.add_task(conn, "b")
     pid = db.add_project(conn, "P")
     db.add_task(conn, "p next", project_id=pid, step="next")
-    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    r = client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH)
+    assert r.status_code == 204 and "X-Projects-Changed" not in r.headers
     assert (db.get_task(conn, a)["project_id"], db.get_task(conn, a)["step"]) == (pid, "later")
     assert db.get_task(conn, b)["inbox"]
     assert b"Moved" not in client.get("/inbox").data  # no flash left over for the next page
     # Dropped on "＋ New…" with a name: a new project.
-    assert client.post("/tasks/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH).status_code == 204
+    r = client.post("/tasks/move", data={"id": b, "new_project": "Fresh"}, headers=FETCH)
+    assert r.status_code == 204 and r.headers["X-Projects-Changed"] == "1"  # the page redraws its project lists
     fresh = [p for _, ps, _ in db.project_groups(conn) for p in ps if p["title"] == "Fresh"]
     assert len(fresh) == 1 and db.get_task(conn, b)["project_id"] == fresh[0]["id"]
 

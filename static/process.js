@@ -51,7 +51,7 @@
   const save = async data => {  // the task page's own save, its messages shown here
     try {
       const r = await fetch(`/tasks/${id()}`, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams(data)});
-      if (r.ok) { toast((await r.json()).flashes); return true; }
+      if (r.ok) { toast((await r.json()).flashes); projectsSaved(r); return true; }
     } catch {}
     location.reload();
     return false;

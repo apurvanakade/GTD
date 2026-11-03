@@ -6,12 +6,12 @@
 (() => {
   const panel = document.querySelector('.drop-panel'), body = document.body, pin = document.querySelector('.pin-panel');
   let dragged = null, naming = null;  // dragged: the rows on the move; naming: {rows, target} while a new project's name is typed
-  const pinned = on => {  // remembered per browser and kind of page, like a folded band
+  const pinned = on => {  // remembered per browser, one pin for every page
     body.classList.toggle('pinned-panel', on);
     pin?.setAttribute('aria-pressed', on);
-    try { localStorage.setItem(`${panel.dataset.key}-panel`, on ? '1' : '0'); } catch {}
+    try { localStorage.setItem('panel', on ? '1' : '0'); } catch {}
   };
-  try { pinned(localStorage.getItem(`${panel.dataset.key}-panel`) === '1'); } catch {}
+  try { pinned(localStorage.getItem('panel') === '1'); } catch {}
   pin?.addEventListener('click', () => pinned(!body.classList.contains('pinned-panel')));
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
   // Open rows only: they have a tick-off button. Done and abandoned rows stay put.
@@ -77,16 +77,16 @@
     t.classList.add('naming');
     t.querySelector('input').focus();
   });
-  panel.querySelectorAll('.new input').forEach(name => {
-    name.addEventListener('keydown', e => {
-      if (!naming) return;
-      if (e.key === 'Escape') { e.preventDefault(); close(); }
-      if (e.key === 'Enter' && name.value.trim()) {
-        e.preventDefault();
-        move(naming.rows, {project_id: naming.target.dataset.project, new_project: name.value.trim()});  // its status
-        close();
-      }
-    });
-    name.addEventListener('blur', close);
+  // The name boxes, delegated, since refreshProjects() (app.js) redraws the targets.
+  panel.addEventListener('keydown', e => {
+    const name = e.target.closest('.new input');
+    if (!name || !naming) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    if (e.key === 'Enter' && name.value.trim()) {
+      e.preventDefault();
+      move(naming.rows, {project_id: naming.target.dataset.project, new_project: name.value.trim()});  // its status
+      close();
+    }
   });
+  panel.addEventListener('focusout', e => { if (e.target.closest('.new input')) close(); });
 })();

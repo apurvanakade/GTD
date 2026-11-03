@@ -7,5 +7,5 @@
 {{ add_form(url_for('someday_add'), 'Someday I might…') }}
 {# H0's someday tasks: drag one onto Next or a project to commit to it. Someday projects have their own tab. #}
 {% if tasks %}{{ task_list(tasks) }}{% else %}<ul class="tasks"><li class="empty">Nothing parked here.</li></ul>{% endif %}
-{% if tasks %}{{ move_panel('someday', current='someday') }}{% endif %}
+{% if tasks %}{{ move_panel(current='someday') }}{% endif %}
 {% endblock %}

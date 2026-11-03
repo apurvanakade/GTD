@@ -90,11 +90,13 @@
    and as the drop panel in project_targets(). Each group starts with "＋ New project…" (value __new__, __new__waiting,
    __new__someday: a project of that status),
    which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
-   task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there. #}
+   task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there.
+   Both mark their list `data-projects` (its kind), so refreshProjects() in static/app.js redraws every one of them
+   once a background save made a project. #}
 {% macro project_select(selected=none, h0=True, keep=none, targets=False) %}
 {#- targets: the drop panel's whole list (Process's "file to…"): the task tabs and Reference too. Otherwise one H0,
     whose step the task's step select picks. #}
-<select name="project_id" aria-label="{{ 'File to' if targets else 'Project' }}"{% if targets %} class="quick" title="File it now (f)"{% endif %}>
+<select name="project_id" aria-label="{{ 'File to' if targets else 'Project' }}" data-projects="{{ 'targets' if targets else 'h0' if h0 else 'projects' }}"{% if targets %} class="quick" title="File it now (f)"{% endif %}>
   <option value="">{{ 'file to…' if targets else 'project…' }}</option>
   {% if targets %}<optgroup label="Tasks (no project)">{% for key, label in task_targets %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</optgroup>
   {% elif h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
@@ -111,21 +113,21 @@
 {# The drop panel's targets, as the nav: the task tabs, the project tabs' projects, then Reference; `current` (a
    project id, 'waiting' or 'someday') is where the page's tasks already are, so it isn't offered. #}
 {% macro project_targets(current=none) %}
-<section class="group"><h3>Tasks (no project)</h3>
+<div class="targets" data-projects="panel"><section class="group"><h3>Tasks (no project)</h3>
   {% for key, label in task_targets if key != current %}<div class="target" data-project="{{ key }}" title="H0: no project, on purpose">{{ label }}</div>{% endfor %}</section>
 {% for label, ps, new in project_groups %}<section class="group"><h3>{{ label }}</h3>
   <div class="target new" data-project="{{ new }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
   {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}">{{ p.title }}</div>{% endfor %}</section>{% endfor %}
-<div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div>
+<div class="target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</div></div>
 {% endmacro %}
 
 {# Every task list's drop panel (static/move.js): it slides in while an open row is dragged, or stays while pinned by
-   the header's File to button (pin_button()); dropping a row on a target moves the task there. `key` names the page
-   for remembering the pin; `reload`: the page redraws after a move instead of dropping the row (Waiting, where a
+   the header's File to button (pin_button()); dropping a row on a target moves the task there. The pin holds
+   on every page; `reload`: the page redraws after a move instead of dropping the row (Waiting, where a
    moved waiting step stays). #}
 {% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the places to file to open">File to</button>{% endmacro %}
-{% macro move_panel(key, current=none, reload=False, stays=none) %}
-<aside class="drop-panel" data-move="{{ url_for('task_move') }}" data-key="{{ key }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>
+{% macro move_panel(current=none, reload=False, stays=none) %}
+<aside class="drop-panel" data-move="{{ url_for('task_move') }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>
   <button type="button" class="unpin" title="Hide the panel" aria-label="Hide the panel">✕</button>{{ project_targets(current) }}</aside>
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}

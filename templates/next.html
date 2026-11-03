@@ -10,5 +10,5 @@
 {% endcall %}
 {{ banded(tasks, empty='No next actions. Clear the inbox or check stalled projects.') }}
 {% include "_done_toggle.html" %}
-{% if tasks %}{{ move_panel('next', stays='h0') }}{% endif %}
+{% if tasks %}{{ move_panel(stays='h0') }}{% endif %}
 {% endblock %}

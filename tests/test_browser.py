@@ -638,6 +638,11 @@ def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live,
     p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
     assert (p["title"], p["status"]) == ("Dragged", "someday")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+    # Every project list on the page has it at once, without a reload: Process's selects, and the panel.
+    assert page.locator("dialog.process select option", has_text="Dragged").count() == 2
+    drag_to_panel(page, row(page, "legacy orphan"), f'[data-project="{p["id"]}"]')
+    page.wait_for_function("!document.querySelector('main li.task[data-id]')")
+    assert [t["title"] for t in db.project_tasks(conn, p["id"])] == ["legacy orphan", "inbox item"]
 
 
 def test_escape_cancels_naming_a_new_project(page, live, conn):
@@ -661,9 +666,11 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     assert panel.is_visible()  # still pinned after the drop
     page.reload()
     panel.wait_for(state="visible")  # and after a reload
+    page.goto(live + "/next")
+    panel.wait_for(state="visible")  # and on every other page: one pin for the whole site
     panel.locator(".unpin").click()  # the panel floats over the header's button
     panel.wait_for(state="hidden")
-    page.reload()
+    page.goto(live + "/inbox")
     assert not panel.is_visible()
 
 
