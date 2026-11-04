@@ -68,7 +68,7 @@
 {% macro peek_steps(steps) %}
 <ul class="steps">
   {% for t in steps %}
-  <li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+  <li{% if t.step == 'next' %} class="next"{% endif %}><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
     <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
   {% else %}
   <li class="empty">No open steps.</li>

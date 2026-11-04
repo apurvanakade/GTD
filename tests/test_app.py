@@ -1188,6 +1188,11 @@ def test_project_lists_carry_each_projects_open_steps(client, conn):
         assert f'href="/tasks/{tid}"' in steps and title in steps, url
         assert "<form" not in steps and (done is None or done not in steps), url
         assert 'class="peek"' in html and 'aria-expanded="false"' in html, url
+    # In the project page's order: next actions first, marked, though the later step was added on top.
+    db.add_task(conn, "plan beds", step="later", project_id=pid)
+    conn.commit()
+    steps = re.search(r'<ul class="steps">(.*?)</ul>', client.get("/projects").data.decode(), re.S).group(1)
+    assert re.search(r'<li class="next"><a [^>]*>dig</a>.*<li><a [^>]*>plan beds</a>', steps, re.S)
 
 
 def test_timer_week_totals_have_bars(client, conn):

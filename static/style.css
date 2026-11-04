@@ -249,7 +249,7 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
 
 /* The add line: one quiet title box; its extra fields show once it's in use. */
 .add {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 14px; padding: 6px 10px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 24px; padding: 6px 10px;
   background: var(--card); border: 1px solid var(--muted); border-radius: 10px;
 }
 .add:focus-within { border-color: var(--accent); }
@@ -400,6 +400,10 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 /* A project's steps: the step word and Make next / Make later show on hover, one width so the dates line up. */
 .tasks.by-step > .task :is(.step, .set-step button) { opacity: 0; }
 .tasks.by-step > .task:is(:hover, :focus-within) :is(.step, .set-step button) { opacity: 1; }
+/* Next actions read at full strength, the other steps muted, a small gap between the two groups; the same in a project row's fold-out. */
+.tasks.by-step > .task:not([data-pinned]) .title, .task .steps li:not(.next) a { color: var(--muted); }
+.tasks.by-step > .task[data-pinned] + .task:not([data-pinned]) { margin-top: 8px; }
+.task .steps li.next + li:not(.next) { margin-top: 6px; }
 .task .set-step button { min-width: 6.5em; }
 
 /* Decks (Review, Horizons): one card at a time, a rail of dots to move between them. Review's past weeks: a streak. */

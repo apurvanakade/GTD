@@ -794,7 +794,7 @@ def reorder_projects(c, status, ids):
 def open_steps(c, status="active"):
     """{project id: its open steps in project-page order}, for every project with the given status."""
     steps = {}
-    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.state = 'open' ORDER BY t.position, t.id DESC""",
+    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.state = 'open' ORDER BY t.step = 'next' DESC, t.position, t.id DESC""",
                        (status,)):
         steps.setdefault(t["project_id"], []).append(t)
     return steps
