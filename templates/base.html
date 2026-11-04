@@ -12,7 +12,7 @@
 {% if up is defined %}<link rel="up" href="{{ up }}">{% endif %}
 </head>
 <body{% if embed %} class="embed"{% endif %} data-contexts="{{ contexts|map(attribute='name')|join(' ') }}">
-{#- In a frame (an overlay, Process) the page is the record alone: no nav, bar, pill or dialogs. #}
+{#- In a frame (an overlay) the page is the record alone: no nav, bar, pill or dialogs. #}
 {# One list drives both the key handler and the help overlay. #}
 {% set go_keys = [('t', url_for('timer_view'), 'Timer'), ('c', url_for('calendar_view'), 'Calendar'),
   ('i', url_for('inbox'), 'Inbox'), ('n', url_for('next_view'), 'Next'), ('w', url_for('waiting'), 'Waiting'),
@@ -74,7 +74,7 @@
         <dt><kbd>⌘/</kbd></dt><dd>Add, even while typing</dd>
         <dt><kbd>f</kbd></dt><dd>Search</dd>
         <dt><kbd>Ctrl ↑</kbd></dt><dd>Up a level</dd>
-        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next step</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next step or task</dd>
         <dt><kbd>Esc</kbd></dt><dd>Close</dd>
         <dt><kbd>?</kbd></dt><dd>This page</dd>
       </dl>

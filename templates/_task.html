@@ -48,7 +48,7 @@
 {# The filtered lists' header (the working lists only): what the context filter is showing; a click opens Site info to
    change it, × clears it (static/app.js). Empty with no filter, but always there: it marks the page as one the filter
    thins, so a change redraws it. #}
-{% macro context_chip() %}<span class="ctx-filter">{% if context_filter %}<button type="button" class="ctx-open" title="{{ hidden_by_filter }} hidden: change the filter ( ? )">{% for n in context_filter %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</button><button type="button" class="ctx-clear icon" title="Show every context" aria-label="Show every context">×</button>{% endif %}</span>{% endmacro %}
+{% macro context_chip() %}<span class="ctx-filter" data-filtered>{% if context_filter %}<button type="button" class="ctx-open" title="{{ hidden_by_filter }} hidden: change the filter ( ? )">{% for n in context_filter %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</button><button type="button" class="ctx-clear icon" title="Show every context" aria-label="Show every context">×</button>{% endif %}</span>{% endmacro %}
 
 {# Next: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. Each band
    reorders on its own. #}
@@ -113,18 +113,17 @@
    task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there.
    Both mark their list `data-projects` (its kind), so refreshProjects() in static/app.js redraws every one of them
    once a background save made a project. #}
-{% macro project_select(selected=none, h0=True, keep=none, targets=False) %}
-{#- targets: the drop panel's whole list (Process's "file to…"): the task tabs and Reference too. Otherwise one H0,
-    whose step the task's step select picks. #}
-<select name="project_id" aria-label="{{ 'File to' if targets else 'Project' }}" data-projects="{{ 'targets' if targets else 'h0' if h0 else 'projects' }}"{% if targets %} class="quick" title="File it now (f)"{% endif %}>
-  <option value="">{{ 'file to…' if targets else 'project…' }}</option>
-  {% if targets %}<optgroup label="Tasks (no project)">{% for key, label in task_targets %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</optgroup>
-  {% elif h0 %}<option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>{% endif %}
+{% macro project_select(selected=none, keep=none, filing=False) %}
+{#- One H0, whose step the task's step select picks. filing: the task page's File to, where blank means the inbox, and
+    Reference is on offer. #}
+<select name="project_id" aria-label="{{ 'File to' if filing else 'Project' }}" data-projects="select">
+  <option value="">{{ 'inbox' if filing else 'project…' }}</option>
+  <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
   {% for label, ps, new in project_groups %}<optgroup label="{{ label }}">
     <option value="{{ new }}">＋ New project…</option>
     {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
   </optgroup>{% endfor %}
-  {% if targets %}<option value="reference">Reference</option>{% endif %}
+  {% if filing %}<option value="reference">Reference</option>{% endif %}
   {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
 </select>
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">

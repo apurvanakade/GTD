@@ -20,7 +20,7 @@
   {#- Get clear #}
   {% call card('collect', 'Collect loose ends', 'Gather what\'s lying around: desktop, downloads, email, notes, open tabs, paper, the last two weeks of your calendar. Capture every loose end into the Inbox; don\'t decide anything yet.') %}{% endcall %}
   {% call card('inbox', 'Inbox to zero', 'Decide each item, top first: trash, someday, reference, a project, do it now if under two minutes, or make it a next action or a waiting-for.', counts.inbox) %}
-    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox', process=1) }}">Process inbox →</a></p>{% endif %}
+    {% if counts.inbox %}<p><a class="button primary" href="{{ url_for('inbox') }}">Open Inbox →</a></p>{% endif %}
   {% endcall %}
   {% call card('sweep', 'Mind sweep', 'Empty your head: run through work, home, people, money, health, errands. Capture every open loop, however small, then process it like the Inbox.') %}{% endcall %}
   {#- Get current #}

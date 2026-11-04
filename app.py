@@ -69,7 +69,7 @@ def same_origin_only():
 def template_globals():
     timer = db.timer_running(conn())
     # A record's page in a frame, without chrome: "overlay" (every task, project, horizon and reference item opens in
-    # one) or "process" (inbox.html). base.html leaves out the nav, bar and pill there, so their numbers aren't worked out.
+    # one). base.html leaves out the nav, bar and pill there, so their numbers aren't worked out.
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
@@ -734,6 +734,9 @@ def task_view(id):
     c = conn()
     t = db.get_task(c, id) or abort(404)
     if request.method == "POST":
+        if request.form.get("project_id") == "reference" and t["state"] == "open":  # File to's Reference: as a drop on it
+            item = db.task_to_reference(c, [id], now())[0]
+            return redirect(url_for("reference_view", id=item, embed=request.args.get("embed")))
         # Title and notes are autosave's, with its conflict check: a select posting this stale form leaves them.
         fields = {k: v for k, v in task_fields_from_form(t).items() if k not in ("title", "notes")}
         project_id = fields["project_id"] if "project_id" in fields else t["project_id"]
@@ -792,7 +795,7 @@ def delete(id):
         db.delete_task(c, id)
     elif t:
         db.abandon_task(c, id, now())
-        return ("", 204) if fetched() else back()  # an abandoned task's page still shows it, with Revive
+        return back()  # an abandoned task's page still shows it, with Revive
     return redirect(url_for("done"))  # where closed tasks are listed; its own page is gone
 
 

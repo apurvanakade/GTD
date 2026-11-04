@@ -1039,14 +1039,16 @@ def tickled(c, today):
 @atomic
 def task_to_reference(c, ids, now):
     """Not actionable after all: each task becomes a reference item (title, notes) and goes: deleted, or abandoned
-    when it has time on it, so the time is kept."""
+    when it has time on it, so the time is kept. Returns the items' ids."""
+    items = []
     for id in ids:
         t = get_task(c, id)
-        add_reference(c, t["title"], notes=t["notes"])
+        items.append(add_reference(c, t["title"], notes=t["notes"]))
         if task_seconds(c, id, now):
             abandon_task(c, id, now)
         else:
             delete_task(c, id)
+    return items
 
 
 # --- reference -------------------------------------------------------------

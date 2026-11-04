@@ -22,7 +22,7 @@
 {% endcall %}
 <table class="cal{% if week %} week{% endif %}">
   <thead><tr>{% for d in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
-  <tbody>
+  <tbody data-filtered>
   {% for days in weeks %}
   <tr>
     {% for d in days %}{% set iso = d.isoformat() %}
@@ -46,14 +46,17 @@
 <p class="legend">{% for k, label in [('next', 'Next'), ('later', 'Later step'), ('waiting', 'Waiting'), ('someday', 'Someday'), ('inbox', 'Inbox')] %}<span class="k-{{ k }}">{{ label }}</span>{% endfor %}
 {%- for name in calendars %}<span class="x-{{ loop.index0 % 3 }}">{{ name }}{% if name in cal_errors %} <i class="warn" title="Couldn't fetch: {{ cal_errors[name] }}">⚠</i>{% endif %}</span>{% endfor %}</p>
 <script>
-document.querySelectorAll('.cal .day').forEach(b => b.addEventListener('click', () => {
+// Bound to the table, since a context filter redraws its days (applyFilter in app.js).
+const cal = document.querySelector('.cal');
+cal.addEventListener('click', e => {
+  const b = e.target.closest('.day');
+  if (!b) return;
   const f = document.getElementById('cal-add');
   f.due_date.value = b.dataset.date;
   f.title.placeholder = `Add on ${b.dataset.label}…`;
   f.title.focus();
-}));
+});
 // Drag a task onto another day to move its due date; it moves in place and is saved in the background.
-const cal = document.querySelector('.cal');
 let dragged = null;
 cal.addEventListener('dragstart', e => {
   dragged = e.target.closest('a.ev');

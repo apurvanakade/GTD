@@ -4,9 +4,8 @@
 {% block heading %}{% endblock %}
 {% block body %}
 {# Title and notes save themselves (autosave.js); every other field saves when it's changed (static/app.js). #}
-{#- Always in a frame (its overlay, or Process): the form stays in the frame; only ✓→ and delete-for-good leave it, for
-    the page. data-inbox tells Process the item is still to be processed. #}
-<form method="post" class="edit"{% if t.inbox %} data-inbox{% endif %} data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
+{#- Always in a frame (its overlay): the form stays in the frame; only ✓→ and delete-for-good leave it, for the page. #}
+<form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
   <button hidden>Save</button>{# the default, so Enter in a field saves #}
   {% set running = timer and timer.task_id == t.id %}
   <div class="title-line">
@@ -30,8 +29,8 @@
   <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
   <div class="fields">
-    <label>Project
-      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status in ('done', 'abandoned')) }}
+    <label>File to
+      <span class="with-link">{{ project_select('h0' if t.ground else t.project_id, keep=t if t.project_status in ('done', 'abandoned'), filing=t.state == 'open') }}
       {%- if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}</span>
     </label>
     {# An inbox item, waiting to be filed, has no step; an H0 task is next, waiting or someday, a project's next,

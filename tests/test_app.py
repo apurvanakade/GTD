@@ -42,7 +42,7 @@ def test_after_done_counts_from_completion():
 # --- inbox processing ------------------------------------------------------
 
 def test_no_process_page(client, conn):
-    """The Inbox page is where items get dealt with (its Process overlay too): no second page doing the same."""
+    """The Inbox page is where items get dealt with: no second page doing the same."""
     assert client.get("/process").status_code == 404
 
 def test_capture_box_only_on_inbox(client, conn):
@@ -745,8 +745,6 @@ def test_deleting_an_abandoned_task_goes_to_done(client, conn):
     assert db.get_task(conn, tid)["state"] == "abandoned" and r.headers["Location"] == f"http://localhost/tasks/{tid}"
     r = client.post(f"/tasks/{tid}/delete")
     assert db.get_task(conn, tid) is None and r.headers["Location"] == "/done"
-    tid = db.add_task(conn, "y")  # Process's Trash: in the background, no page
-    assert client.post(f"/tasks/{tid}/delete", headers={"X-Requested-With": "fetch"}).status_code == 204
 
 
 def test_delete_empty_project_only(client, conn):
@@ -1099,8 +1097,7 @@ def test_task_page_timer_sits_on_the_title_line(client, conn):
 def test_every_record_opens_only_in_a_frame(client, conn):
     """No record has a page of its own: /tasks/<id> goes to the task's list with ?task=<id> (a step: over its project,
     ?project=<id>&task=<id>), /projects/<id> to its list, /horizons/<id> to its card, /reference/<id> to Reference.
-    Their overlays frame ?embed=overlay, the whole page, which names its parent for Ctrl+↑ (<link rel="up">); so
-    does Process's (?embed=process)."""
+    Their overlays frame ?embed=overlay, the whole page, which names its parent for Ctrl+↑ (<link rel="up">)."""
     seed(conn)
     home = lambda path: client.get(path).location
     assert home("/tasks/2") == "/projects?project=1&task=2"  # a project's step: over its project
@@ -1133,15 +1130,24 @@ def test_every_record_opens_only_in_a_frame(client, conn):
     assert 'class="embed"' in task and "<base" not in task  # its forms and links stay in the frame
     assert 'name="project_id"' in task and "Start the timer" in task and 'class="overlay"' not in task
     tid = db.add_task(conn, "ring Bob")
-    page = client.get(f"/tasks/{tid}?embed=process").get_data(as_text=True)
-    assert 'name="project_id"' in page and "Start the timer" in page and 'data-inbox' in page  # the same page
-    for mode in ("overlay", "process"):
-        assert client.post(f"/tasks/{tid}?embed={mode}", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed={mode}")
+    assert client.post(f"/tasks/{tid}?embed=overlay", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed=overlay")
     # A project's own forms stay in its frame (back to it); deleting it leaves for its list.
     pid = db.add_project(conn, "Empty")
     assert re.search(r'formaction="/projects/\d+/delete" formtarget="_top"', client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True))
     frame = f"http://localhost/projects/{pid}?embed=overlay"
     assert client.post(f"/projects/{pid}/tasks", data={"title": "x"}, headers={"Referer": frame}).location == frame
+
+
+def test_filing_a_task_to_reference_from_its_page(client, conn):
+    """The task page's File to has Reference: the task becomes an item, shown in the task's frame. Add lines don't."""
+    tid = db.add_task(conn, "wifi code", notes="abc123")
+    assert '<option value="reference">' in client.get(f"/tasks/{tid}?embed=overlay").get_data(as_text=True)
+    assert "File to" in client.get(f"/tasks/{tid}?embed=overlay").get_data(as_text=True)
+    assert '<option value="reference">' not in client.get("/next").get_data(as_text=True).split('name="project_id"')[1].split("</select>")[0]
+    r = client.post(f"/tasks/{tid}?embed=overlay", data={"project_id": "reference"})
+    item = [x for x in db.references(conn) if x["title"] == "wifi code"][0]
+    assert item["notes"] == "abc123" and db.get_task(conn, tid) is None
+    assert r.location == f"/reference/{item['id']}?embed=overlay"
 
 
 def test_new_project_from_task_form(client, conn):
@@ -1585,7 +1591,7 @@ def test_review_shows_one_step_at_a_time(client, conn):
     key, card = step_card(client.get("/review?step=projects").get_data(as_text=True), "projects")
     assert "⚠ Stalled" in card  # no next action
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
-    assert 'href="/inbox?process=1"' in card  # processed on the Inbox page, its overlay open
+    assert 'href="/inbox"' in card  # dealt with on the Inbox page
     r = client.post("/review/inbox")  # ticking moves on to the next unticked step (sweep is ticked)
     assert r.headers["Location"] == "/review"
     assert step_card(client.get("/review").get_data(as_text=True), "overdue")[0] == "overdue"
@@ -2025,14 +2031,12 @@ def test_project_pickers_are_one_list(client, conn):
     inbox = client.get("/inbox").data.decode()
     assert groups(inbox, r'<section class="group"><h3>(?:<a [^>]*>)?([\w ]+)(?:</a>)?</h3>(.*?)</section>', r'data-project="(\d+)"') == expected
     assert "· someday" not in task and "Dropped proj" not in task + inbox and "Done proj" not in task + inbox
-    # The task page has one H0 (its step select picks next, waiting or someday); Process's "file to…" has the panel's.
+    # The task page has one H0: its step select picks next, waiting or someday.
     assert task.count('value="h0"') == 1 and 'value="waiting"' not in task.split('name="project_id"')[1].split("</select>")[0]
-    quick = inbox.split('class="quick"')[1].split("</select>")[0]
-    assert re.findall(r'<option value="([a-z][a-z0-9]*)"', quick) == ["h0", "waiting", "someday", "reference"]
     # "＋ New project…" once per group, in both.
     for new in ("__new__", "__new__waiting", "__new__someday"):
         assert task.count(f'value="{new}"') == 1 and inbox.count(f'data-project="{new}"') == 1, new
-    # Each makes a project of its group's status: from a drop, the task page, Process's "file to…".
+    # Each makes a project of its group's status: from a drop, the task page.
     a, b = db.add_task(conn, "renew visa"), db.add_task(conn, "boat")
     assert client.post("/tasks/move", data={"id": a, "project_id": "__new__waiting", "new_project": "Visa"},
                        headers=FETCH).status_code == 204

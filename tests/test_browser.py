@@ -8,6 +8,7 @@ import threading
 from datetime import datetime, timedelta
 
 import pytest
+from playwright.sync_api import expect
 from werkzeug.serving import make_server
 
 import db
@@ -139,8 +140,8 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     popup = info.value
     popup.check("input[name=link]")
     assert popup.get_attribute("input[name=title]", "placeholder") == "Someday / maybe"
-    popup.press("input[name=title]", "Enter")
-    popup.wait_for_event("close")
+    with popup.expect_event("close"):  # listening first: it can close before a later wait starts
+        popup.press("input[name=title]", "Enter")
     t = db.inbox_tasks(conn)[0]
     assert (t["title"], t["notes"]) == ("Someday / maybe", f"[Someday / maybe]({live}/someday)")
 
@@ -641,8 +642,8 @@ def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live,
     p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
     assert (p["title"], p["status"]) == ("Dragged", "someday")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
-    # Every project list on the page has it at once, without a reload: Process's selects, and the panel.
-    assert page.locator("dialog.process select option", has_text="Dragged").count() == 2
+    # Every project list on the page has it at once, without a reload.
+    assert page.locator(".drop-panel .target", has_text="Dragged").count() == 1
     drag_to_panel(page, row(page, "legacy orphan"), f'[data-project="{p["id"]}"]')
     page.wait_for_function("!document.querySelector('main li.task[data-id]')")
     assert [t["title"] for t in db.project_tasks(conn, p["id"])] == ["legacy orphan", "inbox item"]
@@ -1178,97 +1179,70 @@ def test_notes_editor_edge_cases(page, live, conn):
     assert notes_text(page).endswith("___bold___")
 
 
-def test_process_walks_the_inbox_one_question_at_a_time(page, live, conn):
-    page.goto(live + "/inbox")
+def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
+    """‹ › go through the list the task was opened from, even after it's filed elsewhere; ← → too, unless typing."""
     orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
-    dialog = page.locator("dialog.process")
-    item = page.frame_locator("dialog.process iframe")  # the item's own task page
-    row(page, "inbox item").locator(".title").click()  # a row opens Process at that item, not its page
-    item.locator("main input[name=title][value='inbox item']").wait_for()
-    assert page.url == live + "/inbox"
-    page.keyboard.press("Escape")
-    page.get_by_role("button", name="Process").click()
-    item.locator("main input[name=title][value='legacy orphan']").wait_for()  # the top row first
-    assert item.locator("nav").is_hidden()
-    item.get_by_role("button", name="Start the timer").click()  # the whole task page: timed while it's processed
-    item.get_by_role("button", name="Stop the timer").wait_for()
-    assert db.timer_running(conn)["task_id"] == orphan and dialog.locator(".left").text_content() == "2 left"
-    assert dialog.locator("section:not([hidden])").count() == 1  # one question at a time
-    dialog.get_by_role("button", name="No").click()
-    dialog.get_by_role("button", name="Trash").click()
-    dialog.get_by_role("button", name="Someday").click()  # picking files nothing; the last pick counts
-    assert db.get_task(conn, orphan)["state"] == "open" and dialog.get_by_role("button", name="Someday", pressed=True).count() == 1
-    dialog.get_by_role("button", name="File").click()
-    item.locator("main input[name=title][value='inbox item']").wait_for()
-    t = db.get_task(conn, orphan)
-    assert (t["ground"], t["step"]) == (1, "someday") and row(page, "legacy orphan").count() == 0
-    dialog.get_by_role("button", name="Yes").click()  # actionable
-    dialog.get_by_role("button", name="Yes").click()  # part of a project
-    dialog.get_by_label("Project", exact=True).select_option("1")
-    dialog.get_by_role("button", name="Continue").click()
-    assert dialog.get_by_role("button", name="File").is_disabled()  # nothing picked yet
-    page.keyboard.press("n")  # not its next action
-    assert db.get_task(conn, 1)["project_id"] is None  # not filed until File
-    page.keyboard.press("Enter")  # File
-    dialog.wait_for(state="hidden")
-    t = db.get_task(conn, 1)
-    assert (t["project_id"], t["step"]) == (1, "later")
-    page.wait_for_load_state()  # inbox zero: the page reloads (the tickled item stays)
-    assert page.locator("main li.task[data-id]").count() == 0 and row(page, "sail").count() == 1
-
-
-def test_process_keys_back_and_next_action_with_a_date(page, live, conn):
-    page.goto(live + "/inbox?process=1")  # the weekly review's link opens it straight away
-    orphan = conn.execute("SELECT id FROM tasks WHERE title = 'legacy orphan'").fetchone()[0]
-    dialog = page.locator("dialog.process")
-    dialog.wait_for()
-    assert page.url == live + "/inbox"  # so a reload doesn't reopen it
-    page.keyboard.press("y")  # actionable
-    page.keyboard.press("y")  # part of a project
-    dialog.get_by_role("button", name="Back").click()
-    page.keyboard.press("n")  # a single action
-    page.keyboard.press("n")  # over two minutes
-    item = page.frame_locator("dialog.process iframe")
-    item.locator("main input[name=title]").fill("call the legacy orphan")  # clarified on the way
-    item.locator("main input[name=recur]").fill("weekly")
-    dialog.get_by_role("button", name="Yes").click()  # mine to do
-    item.locator("main input[name=due_date]").fill("fri")  # When? is answered in the item's own Due box
-    dialog.get_by_role("button", name="File").click()
-    item.locator("main input[name=title][value='inbox item']").wait_for()
-    t = db.get_task(conn, orphan)
-    assert (t["title"], t["recur"], t["ground"], t["step"], t["due_date"]) == ("call the legacy orphan", "weekly", 1, "next", "2026-10-23")
-    with page.expect_navigation():  # finished on its own page: Process moves on, here to inbox zero
-        item.get_by_role("button", name="Done").click()
-    assert db.get_task(conn, 1)["state"] == "done" and page.locator("main li.task[data-id]").count() == 0
-
-
-def test_process_skips_ticked_rows_and_reloads_after_an_edit(page, live, conn):
     page.goto(live + "/inbox")
-    with page.expect_response(lambda r: "/complete" in r.url):
-        row(page, "legacy orphan").locator("form.done button").click()  # ticked in place: the row stays, faded
-    page.get_by_role("button", name="Process").click()
-    dialog = page.locator("dialog.process")
-    item = page.frame_locator("dialog.process iframe")
-    item.locator("main input[name=title][value='inbox item']").wait_for()  # not the ticked one
-    assert dialog.locator(".left").text_content() == "1 left"
-    item.locator("main input[name=title]").fill("inbox item, clarified")
-    with page.expect_navigation():  # closing after an edit redraws the list under it
-        dialog.get_by_role("button", name="Stop").click()
-    assert row(page, "inbox item, clarified").count() == 1
-    # Already knowing where it goes: "file to…" skips the questions, here into a new project named on the spot.
-    page.get_by_role("button", name="Process").click()
-    item.locator("main input[name=title][value='inbox item, clarified']").wait_for()
-    page.keyboard.press("f")
-    quick = dialog.locator("select.quick")
-    assert quick.evaluate("el => el === document.activeElement")
-    quick.select_option("__new__")
-    box = dialog.locator(".quick + input[name=new_project]")
-    assert box.input_value() == "inbox item, clarified"  # named after the item, like Which one?'s
-    box.fill("garden")
-    with page.expect_navigation():  # inbox zero
-        box.press("Enter")
-    t = db.get_task(conn, 1)
-    assert (db.get_project(conn, t["project_id"])["title"], t["step"]) == ("garden", "later")
+    dialog, frame = page.locator("dialog.overlay"), page.frame_locator("dialog.overlay iframe")
+    prev, nxt = dialog.get_by_role("button", name="Previous"), dialog.get_by_role("button", name="Next")
+    title = frame.locator("main input[name=title]")
+    row(page, "legacy orphan").locator(".title").click()  # an Inbox row opens its task page
+    expect(title).to_have_value("legacy orphan")
+    frame.locator("main select[name=project_id]").select_option("1")  # filed by hand: the frame reloads, a project's step
+    frame.locator("main select[name=step]").wait_for()
+    assert db.get_task(conn, orphan)["project_id"] == 1
+    nxt.click()  # on down the Inbox, not the project's steps
+    expect(title).to_have_value("inbox item")
+    expect(nxt).to_be_disabled()  # the list's end
+    title.fill("inbox item, clarified")
+    prev.click()  # saved on the way, and back to the one just filed
+    expect(title).to_have_value("legacy orphan")
+    assert db.get_task(conn, 1)["title"] == "inbox item, clarified"
+    frame.locator("body").click(position={"x": 1, "y": 1})  # focus in the frame, not a field
+    page.keyboard.press("ArrowRight")
+    expect(title).to_have_value("inbox item, clarified")
+    title.focus()
+    page.keyboard.press("ArrowLeft")  # typing: the caret moves, the page doesn't
+    page.wait_for_timeout(100)
+    expect(title).to_have_value("inbox item, clarified")
+    with page.expect_navigation():  # closing after a change redraws the list
+        dialog.get_by_role("button", name="Close").click()
+    assert row(page, "legacy orphan").count() == 0 and row(page, "inbox item, clarified").count() == 1
+    # Filed to Reference: the task is gone, its item shows in the frame, and the arrows carry on without it.
+    db.add_task(conn, "third item")
+    page.goto(live + "/inbox")
+    row(page, "inbox item, clarified").locator(".title").click()
+    expect(title).to_have_value("inbox item, clarified")
+    frame.get_by_label("File to").select_option("reference")
+    frame.locator("main form[data-autosave*='/reference/']").wait_for()
+    assert db.get_task(conn, 1) is None
+    prev.click()  # past the gone one, from where it stood: the item above it
+    expect(title).to_have_value("third item")
+    expect(nxt).to_be_disabled()
+    # Next: across its bands, the folded ones too, in page order.
+    page.goto(live + "/next")
+    titles = [a.strip() for a in page.locator("main li.task .name a.title").all_text_contents()]
+    assert len(titles) > 2
+    page.locator("main li.task .name a.title").first.evaluate("a => a.click()")
+    expect(prev).to_be_disabled()
+    for t in titles:
+        expect(title).to_have_value(t)
+        if t != titles[-1]:
+            nxt.click()
+    expect(nxt).to_be_disabled()
+    dialog.get_by_role("button", name="Close").click()
+    # A project has no arrows; a step opened over its project's overlay walks the project's steps.
+    page.goto(live + "/projects?project=1")
+    dialog.get_by_role("button", name="Close").wait_for()
+    assert dialog.locator(".walk:visible").count() == 0
+    page.frame_locator("dialog.overlay iframe").locator("main li.task .name a.title").first.click()
+    expect(dialog).to_have_count(2)
+    expect(dialog.last.get_by_role("button", name="Next")).to_be_enabled()
+    # Opened by URL, as a reminder's tap does: the same list, and the URL stops naming it once it's moved on.
+    first = db.project_tasks(conn, 1)[0]["id"]
+    page.goto(live + f"/projects?project=1&task={first}")
+    dialog.last.get_by_role("button", name="Next").click()
+    page.wait_for_url(lambda u: f"task={first}" not in u and "project=1" in u)
 
 
 def test_a_disabled_repeat_box_isnt_saved_with_the_other_fields(page, live, conn):
@@ -1307,29 +1281,32 @@ def contexts_row(page, name):
     return page.locator(f".context-list li:has(input[name=context_name][value={name}])")
 
 
-def test_site_info_filters_every_working_list_but_not_the_inbox(page, live):
+def test_site_info_filters_every_working_list_but_not_the_inbox(page, live, conn):
     page.goto(live + "/calendar?m=2026-10")
     assert page.locator(".ev", has_text="call mum").count() == 1
+    page.evaluate("window.stay = 1")  # a filter redraws in place: the page is never reloaded
     page.keyboard.press("?")
     assert page.locator(".help-dialog h2").text_content() == "Site info"
     tick = lambda name: contexts_row(page, name).locator("input[type=checkbox]")
-    with page.expect_navigation():  # at once, under Site info, which stays open on the same tick
-        tick("morning").check()
+    tick("morning").check()  # at once, under Site info, which stays open on the same tick
+    page.locator(".ev", has_text="call mum").wait_for(state="detached")
     assert page.locator(".help-dialog").evaluate("d => d.open") and tick("morning").is_checked()
     assert tick("morning").evaluate("c => c === document.activeElement")
-    assert page.locator(".ev", has_text="call mum").count() == 0
     assert page.locator(".ev", has_text="buy tiles").count() == 1
-    with page.expect_navigation():  # another: any of them
-        tick("errands").check()
+    assert page.locator(".ctx-open").text_content() == "@morning"
+    tick("errands").check()  # another: any of them
+    page.wait_for_function("document.querySelector('.ctx-open').textContent.includes('@errands')")
     assert page.locator(".help-dialog").evaluate("d => d.open")
     assert tick("morning").is_checked() and tick("errands").is_checked()
-    with page.expect_navigation():  # "Show all" too
-        page.locator(".help-dialog .ctx-clear").click()
+    page.locator(".help-dialog .ctx-clear").click()  # "Show all" too
+    page.locator(".ev", has_text="call mum").wait_for()
     assert page.locator(".help-dialog").evaluate("d => d.open")
-    assert page.locator(".ev", has_text="call mum").count() == 1
-    with page.expect_navigation():
-        tick("morning").check()
+    tick("morning").check()
+    page.locator(".ev", has_text="call mum").wait_for(state="detached")
     page.keyboard.press("Escape")  # closing it reloads nothing more, and it stays closed
+    page.locator(".cal .day").first.click()  # the redrawn grid still works: a day number sets the add line's date
+    assert page.locator("#cal-add [name=due_date]").input_value() == page.locator(".cal .day").first.get_attribute("data-date")
+    assert page.evaluate("window.stay") == 1
     page.reload()
     assert not page.locator(".help-dialog").evaluate("d => d.open")
     page.goto(live + "/next")
@@ -1340,13 +1317,35 @@ def test_site_info_filters_every_working_list_but_not_the_inbox(page, live):
     assert row(page, "learn Italian").count() == 1
     page.goto(live + "/inbox")
     assert row(page, "inbox item").count() == 1 and page.locator(".ctx-open").count() == 0
-    page.goto(live + "/waiting")
+    page.goto(live + "/waiting")  # the filter leaves nothing here, on load
     assert row(page, "quote from Bob").count() == 0
-    with page.expect_navigation():  # the header's × clears it, everywhere
-        page.locator(".ctx-filter .ctx-clear").click()
-    assert row(page, "quote from Bob").count() == 1 and page.locator(".ctx-open").count() == 0
+    page.evaluate("window.stay = 1")
+    page.locator(".ctx-filter .ctx-clear").click()  # the header's × clears it, everywhere
+    row(page, "quote from Bob").wait_for()
+    assert page.locator(".ctx-open").count() == 0 and page.evaluate("window.stay") == 1
+    # The rows the filter brought back drag like any: to reorder, and out to the drop panel.
+    with page.expect_response(lambda r: r.url.endswith("/tasks/order")):
+        row(page, "quote from Bob").locator(".grip").drag_to(row(page, "parcel from Ann"), target_position={"x": 40, "y": 2})
+    assert page.locator("main li.task a.title").first.text_content() == "quote from Bob"
+    drag_to_panel(page, row(page, "parcel from Ann"), '[data-project="someday"]')
+    page.wait_for_function("!document.body.classList.contains('dragging-tasks')")
+    page.locator(".drop-panel").wait_for(state="hidden")
+    assert conn.execute("SELECT step FROM tasks WHERE title = 'parcel from Ann'").fetchone()[0] == "someday"
     page.keyboard.press("?")
     assert not contexts_row(page, "morning").locator("input[type=checkbox]").is_checked()
+    page.keyboard.press("Escape")
+    page.goto(live + "/next")  # a band folded stays folded through a redraw, whose bands save their clicks too
+    band = page.locator("details.band").first
+    band.locator("summary").click()
+    assert not band.evaluate("d => d.open")
+    page.keyboard.press("?")
+    tick("morning").check()
+    page.locator(".ctx-open").wait_for()
+    assert not page.locator("details.band").first.evaluate("d => d.open")
+    page.keyboard.press("Escape")
+    page.locator("details.band").first.locator("summary").click()
+    page.reload()
+    assert page.locator("details.band").first.evaluate("d => d.open")
 
 
 def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):

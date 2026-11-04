@@ -43,14 +43,17 @@ async function refreshProjects() {
   addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
   document.addEventListener('focusin', e => { if (e.target.closest('nav')) show(true); });
 })();
-// ⌘/ (Ctrl+/) captures from anywhere, typing in a field or in an overlay too; Ctrl+↑ goes up a level (overlays, below).
-// Both work in a frame, for the page around it.
+const typing = () => /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
+// ⌘/ (Ctrl+/) captures from anywhere, typing in a field or in an overlay too; Ctrl+↑ goes up a level (overlays, below);
+// ← → walk an overlay's task list, unless typing. All work in a frame, for the page around it.
 document.addEventListener('keydown', e => {
   if ((e.metaKey || e.ctrlKey) && e.key === '/') { e.preventDefault(); top.capture(); }
   if (e.ctrlKey && e.key === 'ArrowUp') { e.preventDefault(); top.overlays?.up(); }
+  const by = {ArrowLeft: -1, ArrowRight: 1}[e.key];
+  if (by && !typing() && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !document.querySelector('dialog[open]:not(.overlay)')) top.overlays?.walk(by);
 });
 document.addEventListener('keydown', e => {
-  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || document.activeElement.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (typing() || e.metaKey || e.ctrlKey || e.altKey) return;
   if (document.querySelector('dialog[open]') || document.body.matches('.embed')) return;  // Esc closes a dialog natively; a task's frame goes nowhere
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
@@ -61,12 +64,18 @@ document.addEventListener('keydown', e => {
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
-// Next's due bands: remember which you opened or folded, per page. Only a click is saved: a band
-// that starts open fires 'toggle' too, which would freeze today's default.
-document.querySelectorAll('details.band').forEach(d => {
-  const key = `fold:${location.pathname}:${d.dataset.band}`;
-  try { const v = localStorage.getItem(key); if (v !== null) d.open = v === '1'; } catch {}
-  d.querySelector('summary').addEventListener('click', e => { if (e.target.closest('a')) return; try { localStorage.setItem(key, d.open ? '0' : '1'); } catch {} });
+// Next's due bands: remember which you opened or folded, per page. Only a click is saved (delegated, since a filter
+// redraws the bands): a band that starts open fires 'toggle' too, which would freeze today's default.
+const foldKey = d => `fold:${location.pathname}:${d.dataset.band}`;
+const restoreBands = () => document.querySelectorAll('details.band').forEach(d => {
+  try { const v = localStorage.getItem(foldKey(d)); if (v !== null) d.open = v === '1'; } catch {}
+});
+restoreBands();
+document.addEventListener('click', e => {
+  const summary = e.target.closest('details.band > summary');
+  if (!summary || e.target.closest('a')) return;
+  const d = summary.parentElement;
+  try { localStorage.setItem(foldKey(d), d.open ? '0' : '1'); } catch {}
 });
 // Capture goes to the Inbox page's own box, or elsewhere (or over an overlay) to the dialog. The dialog adds in the
 // background, so whatever is open under it stays as it was.
@@ -115,7 +124,7 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
   });
 })(document.querySelector('form.capture.popup'));
 // Any dialog closes on a click beside it, on the backdrop, as with Esc: its 'cancel' event, so a dialog that saves
-// first (an overlay, Process) closes its own way. Pressed and let go there, so a text selection ending outside doesn't.
+// first (an overlay) closes its own way. Pressed and let go there, so a text selection ending outside doesn't.
 (() => {
   const beside = e => e.target.matches('dialog') && (r => e.clientX < r.left || e.clientX > r.right
     || e.clientY < r.top || e.clientY > r.bottom)(e.target.getBoundingClientRect());
@@ -217,25 +226,28 @@ document.addEventListener('change', e => {
   post(f.action, new FormData(f));
 });
 // Site info (the ? overlay): its contexts. A tick filters the working lists (the `contexts` cookie, read by app.py) at
-// once: a filtered page redraws under the overlay, which opens again on the same tick, before the first paint. A
-// filtered list's header says what's showing, and its × clears it. A name saves when left, a name another context has
-// asks first, as a merge; ✕ asks first.
+// once: what the filter decides on a filtered page (each [data-filtered]) is redrawn in place from a fresh copy of it,
+// under the overlay, so nothing else repaints. A filtered list's header says what's showing, and its × clears it. A
+// name saves when left, a name another context has asks first, as a merge; ✕ asks first.
 (() => {
   const dialog = document.querySelector('.help-dialog');
   if (!dialog) return;  // in a frame
   const list = dialog.querySelector('.context-list'), showAll = dialog.querySelector('h3 .ctx-clear');
-  // Redraw a filtered page now, Site info staying open (read below, on the way back); elsewhere the cookie is enough.
-  const applyFilter = focus => {
-    if (!document.querySelector('.ctx-filter')) return;
-    try { sessionStorage.siteInfo = focus; } catch {}
-    location.reload();
+  // Only the latest of several quick ticks is drawn; elsewhere than a filtered page the cookie is enough. Row events are
+  // delegated, so the new rows need no wiring. A failed fetch reloads, so the screen never shows the wrong filter.
+  let redraws = 0;
+  const applyFilter = async () => {
+    if (!document.querySelector('[data-filtered]')) return;
+    const mine = ++redraws;
+    try {
+      const r = await fetch(location.href);
+      if (!r.ok) throw r.status;
+      const fresh = new DOMParser().parseFromString(await r.text(), 'text/html').querySelectorAll('[data-filtered]');
+      if (mine !== redraws) return;
+      document.querySelectorAll('[data-filtered]').forEach((el, i) => { el.innerHTML = fresh[i].innerHTML; });
+      restoreBands();
+    } catch { location.reload(); }
   };
-  let reopen = null;
-  try { reopen = sessionStorage.siteInfo; sessionStorage.removeItem('siteInfo'); } catch {}
-  if (reopen) {
-    dialog.showModal();
-    list?.querySelector(`[data-id="${reopen}"] input[type=checkbox]`)?.focus();
-  }
   let stale = false;  // a rename or delete: the rows under the overlay no longer hold
   const setFilter = ids => { document.cookie = `contexts=${ids.join('-')}; path=/; max-age=31536000; SameSite=Lax`; };
   const saveFilter = () => {
@@ -244,20 +256,21 @@ document.addEventListener('change', e => {
     showAll.hidden = !ids.length;
   };
   dialog.addEventListener('close', () => { if (stale) location.reload(); });
-  showAll.addEventListener('click', () => {
+  const clearFilter = () => {
     list?.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = false; });
     saveFilter();
-    applyFilter('all');
-  });
+    applyFilter();
+  };
+  showAll.addEventListener('click', clearFilter);
   document.addEventListener('click', e => {
     if (e.target.closest('.ctx-open')) dialog.showModal();
-    if (e.target.closest('.ctx-filter .ctx-clear')) { setFilter([]); location.reload(); }
+    if (e.target.closest('.ctx-filter .ctx-clear')) clearFilter();
   });
   if (!list) return;
   const nameBox = li => li.querySelector('input[name=context_name]');
   list.addEventListener('change', async e => {
     const li = e.target.closest('li'), box = e.target;
-    if (box.type === 'checkbox') { saveFilter(); applyFilter(li.dataset.id); return; }
+    if (box.type === 'checkbox') { saveFilter(); applyFilter(); return; }
     const name = contextName(box.value);
     const other = name && [...list.children].find(o => o !== li && sameName(nameBox(o).value, name));
     if (other && !confirm(`@${nameBox(other).value} already exists. Merge @${box.defaultValue} into it? Its tasks move over.`)) {
@@ -433,44 +446,44 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
 }), 1000);
 // Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
 // on the project tabs (active, waiting, someday); the new order is saved in the background. Shift-selected rows (move.js) go as a
-// block, if they're all in this list.
+// block, if they're all in this list. Delegated, since a context filter redraws the lists (applyFilter above).
 (() => {
   let dragged = null, from = null, before = null, out = false;  // dragged: the rows on the move, in page order
   // Dropped on the drop panel (move.js), the rows leave: the list's order isn't saved, and stays as it was.
   document.querySelector('.drop-panel')?.addEventListener('drop', () => { out = true; });
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
-  document.querySelectorAll('ul[data-reorder]').forEach(list => {
-    // Only the grip starts a drag, so titles stay links and text stays selectable.
-    list.addEventListener('pointerdown', e => { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; });
-    list.addEventListener('pointerup', () => list.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
-    list.addEventListener('dragstart', e => {
-      const li = e.target.closest('li[draggable]');
-      if (!li) return;
-      const picked = li.classList.contains('selected') ? [...document.querySelectorAll('main li.task.selected')] : [li];
-      if (picked.some(r => r.parentElement !== list)) return;  // a selection across lists only moves out (move.js)
-      dragged = picked;
-      from = list;
-      before = rows(list);
-      out = false;
-      dragged.forEach(r => r.classList.add('dragging'));
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    list.addEventListener('dragover', e => {
-      if (!dragged || list !== from) return;
-      // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
-      // block of both doesn't move.
-      const pinned = li => 'pinned' in li.dataset, pin = pinned(dragged[0]);
-      if (dragged.some(r => pinned(r) !== pin)) return;
-      const over = rows(list).find(li => li.contains(e.target));
-      if (!over || pinned(over) !== pin) return;
-      e.preventDefault();
-      if (dragged.includes(over)) return;
-      const r = over.getBoundingClientRect();
-      if (e.clientY < r.top + r.height / 2) over.before(...dragged); else over.after(...dragged);
-    });
-    list.addEventListener('drop', e => e.preventDefault());
+  const listOf = e => e.target.closest?.('ul[data-reorder]');
+  // Only the grip starts a drag, so titles stay links and text stays selectable.
+  document.addEventListener('pointerdown', e => { if (listOf(e)) { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; } });
+  document.addEventListener('pointerup', e => listOf(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
+  document.addEventListener('dragstart', e => {
+    const list = listOf(e), li = list && e.target.closest('li[draggable]');
+    if (!li) return;
+    const picked = li.classList.contains('selected') ? [...document.querySelectorAll('main li.task.selected')] : [li];
+    if (picked.some(r => r.parentElement !== list)) return;  // a selection across lists only moves out (move.js)
+    dragged = picked;
+    from = list;
+    before = rows(list);
+    out = false;
+    dragged.forEach(r => r.classList.add('dragging'));
+    e.dataTransfer.effectAllowed = 'move';
   });
+  document.addEventListener('dragover', e => {
+    const list = listOf(e);
+    if (!dragged || !list || list !== from) return;
+    // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
+    // block of both doesn't move.
+    const pinned = li => 'pinned' in li.dataset, pin = pinned(dragged[0]);
+    if (dragged.some(r => pinned(r) !== pin)) return;
+    const over = rows(list).find(li => li.contains(e.target));
+    if (!over || pinned(over) !== pin) return;
+    e.preventDefault();
+    if (dragged.includes(over)) return;
+    const r = over.getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) over.before(...dragged); else over.after(...dragged);
+  });
+  document.addEventListener('drop', e => { if (listOf(e)) e.preventDefault(); });
   document.addEventListener('dragend', () => {
     if (!dragged) return;
     const list = from, ids = rows(list).map(li => li.dataset.id);
@@ -575,9 +588,10 @@ document.addEventListener('click', e => {
 // top of it, and a record already open below is gone back to rather than opened twice. ⌘/Ctrl-click opens a new tab,
 // where /tasks/<id> (or /projects/<id>…) opens its list with it open (?task=<id>, as a reminder's tap does). Closing
 // (×, Esc, a click beside it) saves what's typed first, and reloads what's under it (the overlay below, else the page)
-// if the record changed (changed(), from the frame), so it shows the change.
+// if the record changed (changed(), from the frame), so it shows the change. A task opened from a task list has ‹ ›
+// (← →), which walk that list as it stood when opened, wherever the task gets filed meanwhile.
 function changed() { if (frameElement) frameElement.dataset.changed = '1'; }
-// A frame holding a record's page (an overlay, Process's) takes the height of the page in it, growing as notes do.
+// A frame holding a record's page (an overlay) takes the height of the page in it, growing as notes do.
 function fitFrame(frame) {
   let watch = null;
   const fit = () => {
@@ -603,6 +617,16 @@ const recordOf = href => {
   const u = new URL(href, location);
   return u.origin === location.origin && !u.search && RECORD.test(u.pathname) && u.pathname;
 };
+// The task list a link's row is in, as paths in page order: a task row's is every task row on its page (Next's bands
+// run on, folded ones too), skipping those ticked off in place; another list's (a project row's folded steps, a
+// review list) is its own items.
+const listOf = a => {
+  const li = a.closest('li');
+  if (!li) return [];
+  const links = li.matches('.task') ? a.ownerDocument.querySelectorAll('li.task:not(.gone) > .name > a.title')
+    : li.parentElement.querySelectorAll(':scope > li > a');
+  return [...new Set([...links].map(x => recordOf(x.href)))].filter(p => /^\/tasks\//.test(p));
+};
 if (frameElement) {
   document.addEventListener('submit', changed, true);
   document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
@@ -614,27 +638,72 @@ document.addEventListener('click', e => {
   const a = e.target.closest('a[href]'), path = a && recordOf(a.href);
   if (!path || !top.overlays || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
-  top.overlays.open(path);
+  top.overlays.open(path, listOf(a));
 });
 window.overlays = document.body.matches('.embed') ? null : (() => {
   const stack = [];  // {dialog, frame, path}, bottom first
   let closing = false;
-  const adopt = dialog => {
-    const frame = dialog.querySelector('iframe'), o = {dialog, frame, path: new URL(frame.src).pathname};
+  // Draws o's ‹ ›: hidden unless its task is in its list and has company, disabled at the list's ends.
+  const draw = o => {
+    const at = o.list.indexOf(o.path), walk = o.dialog.querySelector('.walk'), [back, on] = walk.children;
+    walk.hidden = at < 0 || o.list.length < 2;
+    back.disabled = at === 0;
+    on.disabled = at === o.list.length - 1;
+  };
+  const setList = (o, list) => {  // a record open below is gone back to, not opened twice, so it isn't walked to
+    o.list = list.filter(p => p === o.path || !stack.some(x => x.path === p));
+    draw(o);
+  };
+  const adopt = (dialog, list) => {
+    const frame = dialog.querySelector('iframe'), o = {dialog, frame, path: new URL(frame.src).pathname, list: []};
+    dialog.insertAdjacentHTML('beforeend', '<span class="walk" hidden><button type="button" class="icon" title="Previous (left arrow)" aria-label="Previous">‹</button><button type="button" class="icon" title="Next (right arrow)" aria-label="Next">›</button></span>');
+    const [back, on] = dialog.querySelector('.walk').children;
+    back.addEventListener('click', () => walk(-1));
+    on.addEventListener('click', () => walk(1));
     fitFrame(frame);
     dialog.addEventListener('cancel', e => { e.preventDefault(); close(); });
     dialog.querySelector('.close').addEventListener('click', () => close());
     stack.push(o);
     dialog.showModal();
+    if (list) return setList(o, list);
+    // Opened with the page (?task=<id>): the list of the row naming it, on the page, or in the overlay below once in.
+    const below = stack.at(-2)?.frame;
+    const find = () => {
+      const a = (below ? below.contentDocument : document)?.querySelector(`li a[href="${o.path}"]`);
+      if (a) setList(o, listOf(a));
+    };
+    below?.addEventListener('load', find, {once: true});
+    find();
   };
-  const open = path => {
+  // ?task=<id>, ?project=<id>… no longer names what's open.
+  const forget = path => {
+    const [, kind, id] = path.match(/^\/(\w+?)s?\/(\d+)$/), url = new URL(location);
+    if (url.searchParams.get(kind) === id) { url.searchParams.delete(kind); history.replaceState(null, '', url); }
+  };
+  // The top overlay on to the next or previous task of its list, once what's typed in it is saved.
+  const walk = async by => {
+    const o = stack.at(-1);
+    if (!o || closing || !o.list.includes(o.path)) return;
+    const at = o.list.indexOf(o.path), to = o.list[at + by];
+    if (!to) return;
+    closing = true;
+    const saved = await frameSaved(o.frame);
+    closing = false;
+    if (!saved) return;
+    if (o.frame.contentWindow.location.pathname !== o.path) o.list.splice(at, 1);  // filed to Reference: the task is gone
+    forget(o.path);
+    o.path = to;
+    o.frame.contentWindow.location.replace(to + '?embed=overlay');  // not a step in the browser's history
+    draw(o);
+  };
+  const open = (path, list) => {
     const at = stack.findIndex(o => o.path === path);
     if (at >= 0) return closeTo(at + 1);  // already open below: back to it
     const dialog = Object.assign(document.createElement('dialog'), {className: 'overlay'});
     dialog.innerHTML = '<button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button><iframe title="Overlay"></iframe>';
     dialog.querySelector('iframe').src = path + '?embed=overlay';
     document.body.append(dialog);
-    adopt(dialog);
+    adopt(dialog, list);
   };
   // The top overlay, once what's typed in it is saved; false if it stays (a conflict).
   const close = async () => {
@@ -647,12 +716,11 @@ window.overlays = document.body.matches('.embed') ? null : (() => {
     stack.pop();
     o.dialog.close();
     o.dialog.remove();
-    const [, kind, id] = o.path.match(/^\/(\w+?)s?\/(\d+)$/), url = new URL(location);  // ?task=<id>, ?project=<id>…
-    if (url.searchParams.get(kind) === id) { url.searchParams.delete(kind); history.replaceState(null, '', url); }
+    forget(o.path);
     if (o.frame.dataset.changed) {
       const below = stack.at(-1);
       if (below) { below.frame.dataset.changed = '1'; below.frame.contentWindow.location.reload(); }
-      else if (!document.querySelector('dialog[open]')) location.reload();  // not under Process, which redraws itself
+      else location.reload();
     }
     return true;
   };
@@ -672,6 +740,6 @@ window.overlays = document.body.matches('.embed') ? null : (() => {
     const u = new URL(href);
     if (u.pathname + u.search !== location.pathname + location.search) location = href;
   };
-  document.querySelectorAll('dialog.overlay').forEach(adopt);  // ?project=<id>, ?task=<id>…, bottom first
-  return {open, up};
+  document.querySelectorAll('dialog.overlay').forEach(d => adopt(d));  // ?project=<id>, ?task=<id>…, bottom first
+  return {open, up, walk};
 })();
