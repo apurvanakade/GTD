@@ -73,7 +73,9 @@ def template_globals():
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
-            "overlays": [] if embed else opened(), "app_url": GTD_URL or request.host_url.rstrip("/")}
+            "overlays": [] if embed else opened(), "app_url": GTD_URL or request.host_url.rstrip("/"),
+            "contexts": db.contexts(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
+            "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0)}
 
 
 # A record reached by URL opens over its list: ?project=, ?horizon=, ?reference=, ?task= (a project's step over its
@@ -134,7 +136,7 @@ def fetched():
 
 def task_fields_from_form(current=None):
     """Editable task fields present in the submitted form. On an add line (no `current` task) the title may end
-    with >due, *repeat and !remind (split_title())."""
+    with ^due, *repeat, !remind and @context (split_title())."""
     fields = {}
     for name in ("title", "notes", "due_date", "recur"):
         if name in request.form:
@@ -203,10 +205,25 @@ def parse_reminder(raw, say=flash):
         return db.iso(when.astimezone())
 
 
-# An add line's title can end with these, in any order: "pay rent @nov 1 *monthly !oct 30 9am". Each needs a space
-# before it and none after, so "Yes! do it", "a @ b", "mail bob@x.com" and a bare "!3pm" stay plain titles.
-TITLE_MARKS = {"@": ("due_date", parse_due), "*": ("recur", parse_recur), "!": ("remind_at", parse_reminder)}
-TITLE_MARK = re.compile(r"\s([@*!])(\S[^@*!]*?)\s*$")
+CONTEXT = re.compile(r"[^\W\d_][\w-]*")  # one word, starting with a letter, so @5km and @/notes stay in a title
+
+
+def parse_context(raw, say=None):
+    """A @mark's context name, or None: not one, so it's just the title's own words. Nothing to flash."""
+    return raw if CONTEXT.fullmatch(raw) else None
+
+
+def context_name(raw):
+    """A name typed in a box (a task's new context, a rename): spaces become hyphens. None if it can't be one."""
+    return parse_context(re.sub(r"\s+", "-", (raw or "").strip().removeprefix("@")))
+
+
+# An add line's title can end with these, in any order: "pay rent ^nov 1 *monthly !oct 30 9am @home". Each needs a
+# space before it and none after, so "Yes! do it", "a @ b", "mail bob@x.com" and a bare "!3pm" stay plain titles. Only
+# @context can be given more than once. All on the number row, typed with shift.
+TITLE_MARKS = {"^": ("due_date", parse_due), "*": ("recur", parse_recur), "!": ("remind_at", parse_reminder),
+               "@": ("contexts", parse_context)}
+TITLE_MARK = re.compile(r"\s([\^*!@])(\S[^\^*!@]*?)\s*$")
 
 
 def split_title(title):
@@ -217,10 +234,14 @@ def split_title(title):
     while m := TITLE_MARK.search(title):
         name, parse = TITLE_MARKS[m.group(1)]
         quiet = len(m.group(2).split()) > 1
-        value = name not in fields and parse(m.group(2), say=(lambda _: None) if quiet else flash)
+        value = (name == "contexts" or name not in fields) and parse(m.group(2), say=(lambda _: None) if quiet else flash)
         if not value:
             break
-        fields[name], title = value, title[:m.start()].rstrip()
+        if name == "contexts":
+            fields.setdefault(name, []).append(value)
+        else:
+            fields[name] = value
+        title = title[:m.start()].rstrip()
     return title, fields
 
 
@@ -303,6 +324,7 @@ def capture():
                 parts.append(f"↻ {fields['recur']}")
             if "remind_at" in fields:
                 parts.append(f"reminder {local_minute(fields['remind_at'], WHEN)}")
+            parts += [f"@{name}" for name in fields.get("contexts", ())]
             flash(" · ".join(parts))
     if fetched():  # the capture dialog, in the background: whatever is open under it stays
         return {"flashes": get_flashed_messages()}
@@ -358,6 +380,77 @@ def tasks_order():
 
 # --- lists -----------------------------------------------------------------
 
+# The context filter: the checkboxes on Site info (static/app.js), kept in the `contexts` cookie as ids joined by "-".
+# It holds across pages but only thins the working lists: Next, Waiting, Someday and the Calendar. Not the Inbox,
+# where everything lands, nor the project pages, the review or the nav's dots.
+FILTERED_VIEWS = ("next_view", "waiting", "someday", "calendar_view")
+
+
+def chosen_contexts():
+    """The contexts checked, in their order; a deleted one's id means nothing."""
+    ids = request.cookies.get("contexts", "").split("-")
+    return [x for x in db.contexts(conn()) if str(x["id"]) in ids]
+
+
+def filtered(tasks):
+    """These tasks minus those in none of the checked contexts; all of them with none checked."""
+    chosen = chosen_contexts()
+    if not chosen:
+        return tasks
+    keep = db.tasks_in_contexts(conn(), [x["id"] for x in chosen])
+    shown = [t for t in tasks if t["id"] in keep]
+    g.hidden_by_filter = g.get("hidden_by_filter", 0) + len(tasks) - len(shown)
+    return shown
+
+
+def stay_in_view(fields):
+    """A task added on a filtered list takes the checked contexts, or it would vanish as it's added. A @mark wins; if
+    that leaves it hidden, it says so."""
+    if urlsplit(request.referrer or "").path not in map(url_for, FILTERED_VIEWS):
+        return
+    chosen = [x["name"] for x in chosen_contexts()]
+    if chosen and "contexts" not in fields:
+        fields["contexts"] = chosen
+    elif chosen and not {n.lower() for n in fields["contexts"]} & {n.lower() for n in chosen}:
+        flash(f"Added @{' @'.join(fields['contexts'])}, but the filter hides it.")
+
+
+@app.post("/tasks/<int:id>/contexts")
+def task_contexts(id):
+    """The task page's context picks (`context`, one per tick) and a new one's name (`new_context`)."""
+    db.get_task(conn(), id) or abort(404)
+    picks = [context_name(raw) for raw in [*request.form.getlist("context"), request.form.get("new_context")]]
+    db.set_task_contexts(conn(), id, [name for name in picks if name])
+    return ("", 204) if fetched() else back()
+
+
+@app.post("/contexts/order")
+def contexts_order():
+    """Site info's list, dragged."""
+    db.reorder_contexts(conn(), form_ids())
+    return ("", 204) if fetched() else back()
+
+
+@app.post("/contexts/<int:id>/rename")
+def context_rename(id):
+    """Site info's name box, in the background: a name another context has merges into that one. Answers what the row
+    now is."""
+    x = db.get_context(conn(), id) or abort(404)
+    name = context_name(request.form.get("name"))
+    if not name:
+        flash("A context is one word, starting with a letter.")
+    x = db.get_context(conn(), db.rename_context(conn(), id, name) if name else id)
+    return {"id": x["id"], "name": x["name"], "open": x["open"], "flashes": get_flashed_messages()}
+
+
+@app.post("/contexts/<int:id>/delete")
+def context_delete(id):
+    """Site info's ✕, once confirmed: its tasks stay."""
+    db.get_context(conn(), id) or abort(404)
+    db.delete_context(conn(), id)
+    return ("", 204) if fetched() else back()
+
+
 def toggle_url(show, arg="done"):
     """This page's URL with ?done (or another flag) flipped, keeping other query args."""
     args = {k: v for k, v in request.args.items()
@@ -377,8 +470,9 @@ def completed(abandoned=False, **filters):
 
 @app.route("/next")
 def next_view():
-    return render_template("next.html", tasks=db.next_list(conn()), project_groups=db.project_groups(conn()),
-                           **completed())
+    done = completed()
+    return render_template("next.html", tasks=filtered(db.next_list(conn())), project_groups=db.project_groups(conn()),
+                           **{**done, "done_tasks": filtered(done["done_tasks"])})
 
 
 def add_next_action():
@@ -389,6 +483,7 @@ def add_next_action():
     pid = fields.get("project_id")
     fields["step"] = "next"
     orphaned(pid, fields.get("ground"), say="it")
+    stay_in_view(fields)
     db.add_task(conn(), fields.pop("title"), today=today(), **fields)
 
 
@@ -422,7 +517,7 @@ def bands(tasks):
 def waiting():
     """Waiting tasks, H0's and project steps, in one dragged order. Waiting projects have their own tab."""
     c = conn()
-    return render_template("waiting.html", tasks=db.tasks_with_step(c, "waiting"), project_groups=db.project_groups(c))
+    return render_template("waiting.html", tasks=filtered(db.tasks_with_step(c, "waiting")), project_groups=db.project_groups(c))
 
 
 @app.post("/waiting/add")
@@ -430,6 +525,7 @@ def waiting_add():
     if form_value("title"):
         fields = task_fields_from_form()
         orphaned(fields.get("project_id"), fields.get("ground"), say="it")
+        stay_in_view(fields)
         db.add_task(conn(), fields.pop("title"), today=today(), step="waiting", **fields)
     return back("waiting")
 
@@ -447,7 +543,7 @@ def hide_tickled(rows):
 def someday():
     """H0's someday tasks; what's tickled to a later date is out of sight until then. Someday projects have their
     own tab."""
-    tasks, toggle = hide_tickled(db.someday_tasks(conn()))
+    tasks, toggle = hide_tickled(filtered(db.someday_tasks(conn())))
     return render_template("someday.html", tasks=tasks, project_groups=db.project_groups(conn()), **toggle)
 
 
@@ -458,6 +554,7 @@ def someday_add():
         add_project_from_form("someday")
     elif form_value("title"):
         fields = task_fields_from_form()
+        stay_in_view(fields)
         db.add_task(conn(), fields.pop("title"), today=today(), ground=1, step="someday",
                     **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
     return back("someday")
@@ -909,7 +1006,7 @@ def calendar_view():
         last = recur.add_months(first, 1) - timedelta(days=1)
         start, end = sunday(first), sunday(last) + timedelta(days=6)
     by_day = defaultdict(list)  # iso date -> [task]; a repeat shows only on its due date, no future copies
-    for t in db.dated_tasks(conn(), start, end):
+    for t in filtered(db.dated_tasks(conn(), start, end)):
         by_day[t["due_date"]].append(t)
     calendars = app.config.get("CALENDARS", CALENDARS)
     events, cal_errors = extcal.events(calendars, start, end)

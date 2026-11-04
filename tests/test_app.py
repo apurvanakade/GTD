@@ -2290,7 +2290,7 @@ def test_a_bang_that_isnt_a_reminder_stays_in_the_title(client, conn, title, fla
     ("/calendar", {}),
 ])
 def test_add_lines_take_due_repeat_and_reminder_in_any_order(client, conn, url, data):
-    client.post(url, data={"title": "pay rent *monthly !oct 30 9am @nov 1", **data})
+    client.post(url, data={"title": "pay rent *monthly !oct 30 9am ^nov 1", **data})
     t = conn.execute("SELECT * FROM tasks WHERE title = 'pay rent'").fetchone()
     assert (t["due_date"], t["recur"], local(t["remind_at"])) == ("2026-11-01", "monthly", datetime(2026, 10, 30, 9, 0))
 
@@ -2302,9 +2302,9 @@ def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
 
 
 @pytest.mark.parametrize("title, flashed", [
-    ("pay rent @blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
+    ("pay rent ^blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
     ("a @ b", None), ("5 * 3", None), ("mail bob@x.com", None),
-    ("Call @home about taxes", None), ("fix it *really soon", None),  # several words, no date: just a title
+    ("Call ^home about taxes", None), ("fix it *really soon", None),  # several words, no date: just a title
 ])
 def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, flashed):
     html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
@@ -2314,19 +2314,19 @@ def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, fla
 
 
 def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
-    hint = "@fri due · *weekly repeat · !3pm remind"
+    hint = "^fri due · *weekly repeat · !3pm remind"
     pid = db.add_project(conn, "P")
     for url in ("/inbox", "/next", "/waiting", "/calendar"):
         assert client.get(url).get_data(as_text=True).count(hint) == 2, url  # its add line, and the capture dialog
     assert client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True).count(hint) == 1  # in a frame: no dialog
     assert client.get("/projects").get_data(as_text=True).count(hint) == 1  # the dialog only
-    assert "<kbd>@fri</kbd> <kbd>*weekly</kbd> <kbd>!3pm</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
+    assert "<kbd>@home</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay
 
 
 def test_capture_confirms_the_reminder(client, conn):
     html = client.post("/capture", data={"title": "call back !tomorrow 3pm"}, follow_redirects=True).get_data(as_text=True)
     assert "Added to inbox: call back · reminder Fri Oct 23, 15:00" in html
-    html = client.post("/capture", data={"title": "pay rent @nov 1 *monthly"}, follow_redirects=True).get_data(as_text=True)
+    html = client.post("/capture", data={"title": "pay rent ^nov 1 *monthly"}, follow_redirects=True).get_data(as_text=True)
     assert "Added to inbox: pay rent · due 2026-11-01 · ↻ monthly" in html
 
 
@@ -2658,7 +2658,7 @@ def title_of(g, id):
 def test_task_rows_show_the_project_not_the_area(client, conn):
     ids = seed(conn)
     page = client.get("/next").get_data(as_text=True)
-    assert f'<a class="proj" href="/projects/{ids["active"]}">Kitchen</a></span>' in page
+    assert f'<a class="proj" href="/projects/{ids["active"]}">Kitchen</a>' in page
 
 def test_project_page_lists_its_abandoned_steps_below_completed(client, conn):
     pid = db.add_project(conn, "Garden")
@@ -2950,7 +2950,7 @@ def test_h0_tasks_can_be_someday(client, conn):
 
 
 def test_someday_add_line_makes_a_task_or_a_project(client, conn):
-    r = client.post("/someday/add", data={"title": "learn Italian @dec 1"}, headers={"Referer": "/someday"})
+    r = client.post("/someday/add", data={"title": "learn Italian ^dec 1"}, headers={"Referer": "/someday"})
     assert r.headers["Location"].endswith("/someday")
     t = db.someday_tasks(conn)[0]
     assert (t["title"], t["ground"], t["step"], t["tickle_on"]) == ("learn Italian", 1, "someday", "2026-12-01")
@@ -3059,3 +3059,152 @@ def test_an_embedded_task_page_has_no_chrome(client, conn):
     html = client.get(f"/tasks/{tid}?embed=overlay").get_data(as_text=True)
     assert "<nav" not in html and 'class="bar"' not in html and "capture-dialog" not in html
     assert 'name="title"' in html
+
+
+# --- contexts --------------------------------------------------------------
+
+def names(conn, title):
+    """The contexts of the open task with this title."""
+    t = conn.execute("SELECT id FROM tasks WHERE title = ? AND state = 'open'", (title,)).fetchone()
+    return sorted((db.get_task(conn, t["id"])["contexts"] or "").split())
+
+
+def test_title_mark_sets_contexts(client, conn):
+    r = client.post("/capture", data={"title": "call bob @home ^fri @phone"}, follow_redirects=True)
+    assert names(conn, "call bob") == ["home", "phone"] and db.inbox_tasks(conn)[0]["due_date"]
+    assert "@home" in r.get_data(as_text=True) and "@phone" in r.get_data(as_text=True)  # capture's flash echoes it
+    client.post("/capture", data={"title": "other @HOME"})  # one context whatever the case: the first spelling stays
+    assert names(conn, "other") == ["home"] and len(db.contexts(conn)) == 2
+    for title in ("walk @5km", "call @home about taxes", "see @/notes", "@home", "mail bob@x"):  # none is a context
+        client.post("/capture", data={"title": title})
+        assert names(conn, title) == [], title
+    pid = db.add_project(conn, "P")
+    client.post(f"/projects/{pid}/tasks", data={"title": "step @desk"})
+    client.post("/waiting/add", data={"title": "w @desk"})
+    client.post("/someday/add", data={"title": "s @desk"})
+    client.post("/next/add", data={"title": "n @desk", "project_id": "h0"})
+    client.post("/calendar", data={"title": "c @desk", "due_date": "2026-10-23", "project_id": "h0"})
+    assert all(names(conn, t) == ["desk"] for t in ("step", "w", "s", "n", "c"))
+    # The task page's title stays as typed; a repeat's next instance keeps its contexts; a revived task too.
+    tid = db.add_task(conn, "weekly @x", contexts=["gym"], ground=1, step="next", recur="weekly", due_date="2026-10-22")
+    client.post(f"/tasks/{tid}", data={"title": "weekly @x"})
+    assert db.get_task(conn, tid)["contexts"] == "gym"
+    db.complete_task(conn, tid, TODAY)
+    assert names(conn, "weekly @x") == ["gym"]
+    db.revive_task(conn, tid)
+    assert db.get_task(conn, tid)["contexts"] == "gym"
+
+
+def test_task_page_picks_contexts(client, conn):
+    tid = db.add_task(conn, "t", contexts=["home"])
+    db.add_task(conn, "u", contexts=["desk"])
+    html = client.get(f"/tasks/{tid}?embed=overlay").get_data(as_text=True)
+    assert re.search(r'name="context" value="home" checked', html) and re.search(r'name="context" value="desk">', html)
+    assert 'name="new_context"' in html
+    fetch = {"X-Requested-With": "fetch"}
+    assert client.post(f"/tasks/{tid}/contexts", data={"context": ["desk"], "new_context": "@deep work"},
+                       headers=fetch).status_code == 204  # one word, however it's typed
+    assert sorted(db.get_task(conn, tid)["contexts"].split()) == ["deep-work", "desk"]
+    assert client.post(f"/tasks/{tid}/contexts", headers=fetch).status_code == 204
+    assert db.get_task(conn, tid)["contexts"] is None
+    assert [x["name"] for x in db.contexts(conn)][0] == "deep-work"  # kept, and new ones on top
+    assert client.post("/tasks/999/contexts", headers=fetch).status_code == 404
+    assert "@desk" in client.get("/inbox").get_data(as_text=True)  # the row shows them
+
+
+def test_context_filter_is_global_but_for_the_working_lists_only(client, conn):
+    ids = seed(conn)
+    x = {r["name"]: r["id"] for r in db.contexts(conn)}
+    main = lambda url: client.get(url).get_data(as_text=True).split("<main>")[1]  # the timer's pill names "call mum" too
+    client.set_cookie("contexts", str(x["morning"]))
+    next_html = main("/next")
+    assert ">buy tiles<" in next_html and ">call mum<" not in next_html
+    assert 'class="ctx-filter"' in next_html and "@morning" in next_html
+    assert ">parcel from Ann<" not in main("/waiting")
+    assert ">learn Italian<" in main("/someday")
+    assert ">write a book<" not in main("/someday?tickled=1")
+    cal = main("/calendar?m=2026-10")
+    assert ">buy tiles<" in cal and "call mum<" not in cal
+    # Several checked: any of them. A deleted context's id means nothing; none left, no filter.
+    client.set_cookie("contexts", f"{x['morning']}-{x['errands']}-999")
+    html = main("/waiting")
+    assert ">parcel from Ann<" in html and ">quote from Bob<" not in html
+    client.set_cookie("contexts", "999")
+    assert ">call mum<" in main("/next")
+    # Not on the inbox (where everything lands), the project pages, the review or Done; their counts are the whole truth.
+    client.set_cookie("contexts", str(x["errands"]))
+    assert ">inbox item<" in main("/inbox")
+    assert ">lay tiles<" in main(f"/projects/{ids['active']}?embed=overlay")
+    assert ">call mum<" in main("/review?step=nexts")
+    assert 'class="ctx-filter"' not in main("/inbox")
+    assert 'class="ctx-filter"' not in main("/projects")
+    # An emptied list says so, rather than claiming it's clear.
+    client.set_cookie("contexts", str(x["gone"]))
+    html = main("/next")
+    assert 'class="empty clear"' not in html and "Nothing in this context." in html
+    html = main("/waiting")
+    assert 'class="empty clear"' not in html and "Nothing in this context." in html
+    assert "Nothing in this context." not in main("/inbox")
+    done = db.add_task(conn, "done morning", ground=1, step="next", contexts=["morning"])
+    db.complete_task(conn, done, TODAY)
+    client.set_cookie("contexts", str(x["errands"]))
+    assert ">done morning<" not in main("/next?done=1")  # Show completed too
+
+
+def test_a_task_added_on_a_filtered_list_stays_in_view(client, conn):
+    db.add_task(conn, "t", contexts=["home"])
+    home = db.contexts(conn)[0]["id"]
+    client.set_cookie("contexts", str(home))
+    on = lambda page: {"Referer": f"http://localhost{page}"}
+    client.post("/next/add", data={"title": "a", "project_id": "h0"}, headers=on("/next"))
+    client.post("/waiting/add", data={"title": "b", "project_id": "h0"}, headers=on("/waiting"))
+    client.post("/someday/add", data={"title": "c"}, headers=on("/someday"))
+    client.post("/calendar", data={"title": "d", "project_id": "h0", "due_date": "2026-10-23"}, headers=on("/calendar"))
+    assert all(names(conn, t) == ["home"] for t in "abcd")
+    r = client.post("/next/add", data={"title": "e @desk", "project_id": "h0"}, headers=on("/next"), follow_redirects=True)
+    assert names(conn, "e") == ["desk"] and "hides" in r.get_data(as_text=True)  # a mark wins, and it's told
+    client.post("/capture", data={"title": "f"}, headers=on("/next"))
+    client.post("/someday/add", data={"title": "g"}, headers=on("/review"))  # the review isn't filtered
+    pid = db.add_project(conn, "P")
+    client.post(f"/projects/{pid}/tasks", data={"title": "h"}, headers=on("/next"))
+    assert all(names(conn, t) == [] for t in "fgh")
+
+
+def test_reordering_a_filtered_list_leaves_the_hidden_rows_in_place(client, conn):
+    a, b, c, d = (db.add_task(conn, t, ground=1, step="next", contexts=["x"] if t in "ac" else []) for t in "abcd")
+    titles = lambda: [t["title"] for t in db.next_list(conn)]
+    assert titles() == ["d", "c", "b", "a"]
+    client.set_cookie("contexts", str(db.contexts(conn)[0]["id"]))
+    client.post("/tasks/order", data={"ids": f"{a},{c}"}, headers={"X-Requested-With": "fetch"})  # c,a → a,c
+    assert titles() == ["d", "a", "b", "c"]  # they swapped slots; b and d didn't move
+
+
+def test_managing_contexts_on_site_info(client, conn):
+    fetch = {"X-Requested-With": "fetch"}
+    html = client.get("/next").get_data(as_text=True)
+    assert ">Site info</h2>" in html and "Keyboard shortcuts" in html and 'class="context-list"' not in html
+    t = db.add_task(conn, "t", contexts=["a"])
+    u = db.add_task(conn, "u", contexts=["b"])
+    db.add_task(conn, "v", contexts=["a", "b"])
+    db.complete_task(conn, db.add_task(conn, "w", contexts=["a"]), TODAY)
+    rows = {x["name"]: x for x in db.contexts(conn)}
+    assert [x["name"] for x in db.contexts(conn)] == ["b", "a"] and rows["a"]["open"] == 2  # new ones on top, open tasks counted
+    html = client.get("/next").get_data(as_text=True)
+    assert 'class="context-list" data-reorder="/contexts/order"' in html and 'value="a"' in html
+    assert client.post("/contexts/order", data={"ids": f"{rows['a']['id']},{rows['b']['id']}"}, headers=fetch).status_code == 204
+    assert [x["name"] for x in db.contexts(conn)] == ["a", "b"]
+    # Rename: one word, the tasks follow; blank or unusable, nothing changes.
+    r = client.post(f"/contexts/{rows['a']['id']}/rename", data={"name": " deep work "}, headers=fetch)
+    assert r.json["name"] == "deep-work" and r.json["id"] == rows["a"]["id"] and db.get_task(conn, t)["contexts"] == "deep-work"
+    for bad in ("", "5km", "a/b"):
+        r = client.post(f"/contexts/{rows['a']['id']}/rename", data={"name": bad}, headers=fetch)
+        assert r.json["name"] == "deep-work" and r.json["flashes"]
+    # Renamed onto another: they merge, a task with both keeping just the one.
+    r = client.post(f"/contexts/{rows['b']['id']}/rename", data={"name": "DEEP-WORK"}, headers=fetch)
+    assert r.json == {"id": rows["a"]["id"], "name": "deep-work", "open": 3, "flashes": []}
+    assert [x["name"] for x in db.contexts(conn)] == ["deep-work"] and db.get_task(conn, u)["contexts"] == "deep-work"
+    assert names(conn, "v") == ["deep-work"]
+    # Delete: the context goes, its tasks stay.
+    assert client.post(f"/contexts/{rows['a']['id']}/delete", headers=fetch).status_code == 204
+    assert db.contexts(conn) == [] and db.get_task(conn, t)["contexts"] is None and db.get_task(conn, t)["state"] == "open"
+    assert client.post("/contexts/999/rename", data={"name": "x"}, headers=fetch).status_code == 404

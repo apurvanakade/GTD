@@ -462,6 +462,8 @@ def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
     page.goto(live + "/next")
     page.keyboard.press("?")
     assert page.locator(".help-dialog").evaluate("d => d.open")
+    # Focus starts on no field: just after closing it's still there for a moment, and a field would swallow the next key.
+    assert page.evaluate("document.activeElement.tagName") == "H2"
     page.keyboard.press("n")  # ignored while the overlay is open
     page.keyboard.press("Escape")
     assert not page.locator(".help-dialog").evaluate("d => d.open")
@@ -1299,3 +1301,165 @@ def test_an_areas_balance_slider_saves_in_place_on_its_page_and_h2(page, live, c
     assert row(page, "Home").locator(".balance output").text_content() == "A bit too little"
     page.wait_for_timeout(300)
     assert db.horizons(conn)["area"][0]["balance"] == -1 and page.evaluate("window.stay")
+
+
+def contexts_row(page, name):
+    return page.locator(f".context-list li:has(input[name=context_name][value={name}])")
+
+
+def test_site_info_filters_every_working_list_but_not_the_inbox(page, live):
+    page.goto(live + "/calendar?m=2026-10")
+    assert page.locator(".ev", has_text="call mum").count() == 1
+    page.keyboard.press("?")
+    assert page.locator(".help-dialog h2").text_content() == "Site info"
+    tick = lambda name: contexts_row(page, name).locator("input[type=checkbox]")
+    with page.expect_navigation():  # at once, under Site info, which stays open on the same tick
+        tick("morning").check()
+    assert page.locator(".help-dialog").evaluate("d => d.open") and tick("morning").is_checked()
+    assert tick("morning").evaluate("c => c === document.activeElement")
+    assert page.locator(".ev", has_text="call mum").count() == 0
+    assert page.locator(".ev", has_text="buy tiles").count() == 1
+    with page.expect_navigation():  # another: any of them
+        tick("errands").check()
+    assert page.locator(".help-dialog").evaluate("d => d.open")
+    assert tick("morning").is_checked() and tick("errands").is_checked()
+    with page.expect_navigation():  # "Show all" too
+        page.locator(".help-dialog .ctx-clear").click()
+    assert page.locator(".help-dialog").evaluate("d => d.open")
+    assert page.locator(".ev", has_text="call mum").count() == 1
+    with page.expect_navigation():
+        tick("morning").check()
+    page.keyboard.press("Escape")  # closing it reloads nothing more, and it stays closed
+    page.reload()
+    assert not page.locator(".help-dialog").evaluate("d => d.open")
+    page.goto(live + "/next")
+    assert page.locator(".ctx-open").text_content() == "@morning"
+    assert page.locator("main li.task", has_text="call mum").count() == 0
+    assert row(page, "buy tiles").locator(".ctx").text_content() == "@morning"
+    page.goto(live + "/someday")
+    assert row(page, "learn Italian").count() == 1
+    page.goto(live + "/inbox")
+    assert row(page, "inbox item").count() == 1 and page.locator(".ctx-open").count() == 0
+    page.goto(live + "/waiting")
+    assert row(page, "quote from Bob").count() == 0
+    with page.expect_navigation():  # the header's × clears it, everywhere
+        page.locator(".ctx-filter .ctx-clear").click()
+    assert row(page, "quote from Bob").count() == 1 and page.locator(".ctx-open").count() == 0
+    page.keyboard.press("?")
+    assert not contexts_row(page, "morning").locator("input[type=checkbox]").is_checked()
+
+
+def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):
+    answers = []
+    page.on("dialog", lambda d: (answers.append(d.message), d.accept() if "Delete" in d.message else d.dismiss()))
+    page.goto(live + "/next")
+    page.keyboard.press("?")
+    assert [x["name"] for x in db.contexts(conn)] == ["gone", "errands", "morning"]
+    ids = {x["name"]: x["id"] for x in db.contexts(conn)}
+    morning = page.locator(f'.context-list li[data-id="{ids["morning"]}"]')  # by id: its name is about to change
+    morning.locator(".grip").drag_to(contexts_row(page, "gone"))  # a real drag on the grip
+    page.wait_for_timeout(200)
+    assert [x["name"] for x in db.contexts(conn)][0] == "morning"
+    # Rename, with the Enter key; the rows follow once the overlay closes.
+    box = morning.locator("input[name=context_name]")
+    box.fill("deep work")
+    with page.expect_response(lambda r: r.url.endswith("/rename")):
+        box.press("Enter")
+    sync_api.expect(box).to_have_value("deep-work")
+    with page.expect_navigation():
+        page.keyboard.press("Escape")
+    assert row(page, "buy tiles").locator(".ctx").text_content() == "@deep-work"
+    # Onto another's name: it asks; turned down, nothing changes.
+    page.keyboard.press("?")
+    morning = page.locator(f'.context-list li[data-id="{ids["morning"]}"]')
+    box = morning.locator("input[name=context_name]")
+    box.fill("errands")
+    box.press("Enter")
+    sync_api.expect(box).to_have_value("deep-work")
+    assert "Merge" in answers[-1]
+    # Delete asks first; its tasks stay.
+    with page.expect_response(lambda r: r.url.endswith("/delete")):
+        morning.hover()
+        morning.locator(".delete").click()
+    assert "Delete @deep-work" in answers[-1]
+    assert [x["name"] for x in db.contexts(conn)] == ["gone", "errands"]
+    with page.expect_navigation():
+        page.keyboard.press("Escape")
+    assert row(page, "buy tiles").locator(".ctx").count() == 0
+
+
+def test_at_offers_contexts_and_the_task_page_picks_them(page, live, conn):
+    page.goto(live + "/inbox")
+    title = page.locator("main form.capture input[name=title]")
+    title.click()
+    title.type("ring vet @mo")
+    offer = page.locator(".ctx-suggest:not([hidden]) a")
+    sync_api.expect(offer).to_have_text(["@morning"])
+    title.press("Enter")  # takes the offer, doesn't add the task
+    assert title.input_value() == "ring vet @morning "
+    assert offer.count() == 0
+    with page.expect_navigation():
+        title.press("Enter")
+    t = next(t for t in db.inbox_tasks(conn) if t["title"] == "ring vet")
+    assert t["contexts"] == "morning"
+    title = page.locator("main form.capture input[name=title]")
+    title.type("x @new")  # nothing to offer: Enter adds it
+    assert offer.count() == 0
+    title.fill("y @errands")
+    title.dispatch_event("input")
+    assert offer.count() == 0  # typed in full
+    # In the capture dialog, over its top layer, right under the box; Esc leaves what's typed, in the open dialog.
+    page.goto(live + "/projects")
+    page.keyboard.press("/")
+    page.keyboard.type("buy @")
+    sync_api.expect(offer).to_have_count(3)
+    box = page.locator(".capture-dialog input[name=title]").bounding_box()
+    at = page.locator(".ctx-suggest").bounding_box()
+    assert abs(at["y"] - (box["y"] + box["height"])) < 8 and abs(at["x"] - box["x"]) < 1
+    page.keyboard.press("Escape")
+    assert offer.count() == 0 and page.locator(".capture-dialog").evaluate("d => d.open")
+    page.keyboard.press("Escape")
+    # The task page: a click saves, without touching what's typed elsewhere; a typed name adds and ticks it.
+    page.goto(live + f"/tasks/{t['id']}?embed=overlay")
+    picks = page.locator("form.contexts")
+    with page.expect_response(lambda r: r.url.endswith("/contexts")):
+        picks.get_by_text("@errands").click()
+    assert sorted(db.get_task(conn, t["id"])["contexts"].split()) == ["errands", "morning"]
+    box = picks.locator("input[name=new_context]")
+    box.fill("deep work")
+    with page.expect_response(lambda r: r.url.endswith("/contexts")):
+        box.press("Enter")
+    assert "deep-work" in db.get_task(conn, t["id"])["contexts"].split()
+    assert box.input_value() == "" and picks.get_by_text("@deep-work").locator("input").is_checked()
+
+
+def test_a_context_typed_on_a_tasks_own_title(page, live, conn):
+    """Typed on an existing task's title, a @mark comes off when the title is left, not on autosave's pause."""
+    tid = db.add_task(conn, "Journal")
+    page.goto(live + f"/tasks/{tid}?embed=overlay")
+    title = page.locator("input[name=title]")
+    title.click()
+    title.press("End")
+    title.type(" @mor")
+    offer = page.locator(".ctx-suggest:not([hidden]) a")
+    sync_api.expect(offer).to_have_text(["@morning"])
+    page.wait_for_timeout(2300)  # autosave saves the half-typed text, which makes no context
+    assert [x["name"] for x in db.contexts(conn)] == ["gone", "errands", "morning"]
+    title.press("Tab")  # takes the offer
+    assert title.input_value() == "Journal @morning "
+    with page.expect_response(lambda r: r.url.endswith("/contexts")):
+        page.locator("textarea[name=notes] + .md-editor, .md-editor").first.click()  # leaves the title
+    assert title.input_value() == "Journal"
+    assert page.locator("form.contexts").get_by_text("@morning").locator("input").is_checked()
+    assert db.get_task(conn, tid)["contexts"] == "morning"
+    page.wait_for_timeout(300)
+    assert db.get_task(conn, tid)["title"] == "Journal"
+    # A new one, several, and with Enter; what it had stays. Words that aren't a mark stay in the title.
+    title.fill("Journal @deep @quiet")
+    with page.expect_response(lambda r: r.url.endswith("/contexts")):
+        title.press("Enter")
+    page.wait_for_load_state()
+    assert sorted(db.get_task(conn, tid)["contexts"].split()) == ["deep", "morning", "quiet"]
+    assert page.locator("input[name=title]").input_value() == "Journal"
+    page.wait_for_timeout(300)
+    assert db.get_task(conn, tid)["title"] == "Journal"

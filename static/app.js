@@ -170,6 +170,177 @@ document.querySelectorAll('.balance').forEach(b => {
   input.addEventListener('input', () => { b.classList.remove('unset'); b.querySelector('output').textContent = words[+input.value + 3]; });
   input.addEventListener('change', () => post(b.dataset.url, new URLSearchParams({balance: input.value})));
 });
+// Contexts: one word, starting with a letter, as app.py's CONTEXT; spaces typed in a box become hyphens.
+const contextName = raw => { const n = raw.trim().replace(/^@/, '').replace(/\s+/g, '-'); return /^\p{L}[\p{L}\p{N}_-]*$/u.test(n) ? n : null; };
+const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();
+// A task's contexts (context_picker() in _task.html): a click saves in the background. A name typed in the box turns
+// on the context of that name, or a new one; so does a @mark ending the title, peeled off once the title is left (or
+// on Enter), not on autosave's pause, so a half-typed name makes no context.
+const turnOnContext = (f, name) => {
+  let pick = [...f.querySelectorAll('[name=context]')].find(c => sameName(c.value, name));
+  if (!pick) {
+    const label = document.createElement('label');
+    pick = Object.assign(document.createElement('input'), {type: 'checkbox', name: 'context', value: name});
+    label.append(pick, '@' + name);
+    f.elements.new_context.before(label);
+  }
+  pick.checked = true;
+};
+document.addEventListener('change', e => {
+  const el = e.target, f = document.querySelector('form.contexts');
+  if (!f || el.name !== 'title' || !el.form || !('saveOnChange' in el.form.dataset)) return;
+  let m, marks = 0;
+  while ((m = el.value.match(/\s+@(\p{L}[\p{L}\p{N}_-]*)\s*$/u))) {
+    turnOnContext(f, m[1]);
+    el.value = el.value.slice(0, m.index);
+    marks++;
+  }
+  if (marks) post(f.action, new FormData(f));
+});
+document.addEventListener('submit', e => {
+  if (!e.target.matches('form.contexts')) return;
+  e.preventDefault();
+  const box = e.target.elements.new_context;
+  box.blur();  // its change saves it
+  box.focus();
+});
+document.addEventListener('change', e => {
+  const f = e.target.closest('form.contexts');
+  if (!f) return;
+  const box = f.elements.new_context;
+  if (e.target === box) {
+    const name = contextName(box.value);
+    if (!name) { if (box.value.trim()) toast(['A context is one word, starting with a letter.']); return; }
+    turnOnContext(f, name);
+    box.value = '';
+  }
+  post(f.action, new FormData(f));
+});
+// Site info (the ? overlay): its contexts. A tick filters the working lists (the `contexts` cookie, read by app.py) at
+// once: a filtered page redraws under the overlay, which opens again on the same tick, before the first paint. A
+// filtered list's header says what's showing, and its × clears it. A name saves when left, a name another context has
+// asks first, as a merge; ✕ asks first.
+(() => {
+  const dialog = document.querySelector('.help-dialog');
+  if (!dialog) return;  // in a frame
+  const list = dialog.querySelector('.context-list'), showAll = dialog.querySelector('h3 .ctx-clear');
+  // Redraw a filtered page now, Site info staying open (read below, on the way back); elsewhere the cookie is enough.
+  const applyFilter = focus => {
+    if (!document.querySelector('.ctx-filter')) return;
+    try { sessionStorage.siteInfo = focus; } catch {}
+    location.reload();
+  };
+  let reopen = null;
+  try { reopen = sessionStorage.siteInfo; sessionStorage.removeItem('siteInfo'); } catch {}
+  if (reopen) {
+    dialog.showModal();
+    list?.querySelector(`[data-id="${reopen}"] input[type=checkbox]`)?.focus();
+  }
+  let stale = false;  // a rename or delete: the rows under the overlay no longer hold
+  const setFilter = ids => { document.cookie = `contexts=${ids.join('-')}; path=/; max-age=31536000; SameSite=Lax`; };
+  const saveFilter = () => {
+    const ids = [...(list?.querySelectorAll('li:has(input[type=checkbox]:checked)') ?? [])].map(li => li.dataset.id);
+    setFilter(ids);
+    showAll.hidden = !ids.length;
+  };
+  dialog.addEventListener('close', () => { if (stale) location.reload(); });
+  showAll.addEventListener('click', () => {
+    list?.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = false; });
+    saveFilter();
+    applyFilter('all');
+  });
+  document.addEventListener('click', e => {
+    if (e.target.closest('.ctx-open')) dialog.showModal();
+    if (e.target.closest('.ctx-filter .ctx-clear')) { setFilter([]); location.reload(); }
+  });
+  if (!list) return;
+  const nameBox = li => li.querySelector('input[name=context_name]');
+  list.addEventListener('change', async e => {
+    const li = e.target.closest('li'), box = e.target;
+    if (box.type === 'checkbox') { saveFilter(); applyFilter(li.dataset.id); return; }
+    const name = contextName(box.value);
+    const other = name && [...list.children].find(o => o !== li && sameName(nameBox(o).value, name));
+    if (other && !confirm(`@${nameBox(other).value} already exists. Merge @${box.defaultValue} into it? Its tasks move over.`)) {
+      box.value = box.defaultValue;
+      return;
+    }
+    let row;
+    try {
+      const r = await fetch(`/contexts/${li.dataset.id}/rename`, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams({name: box.value})});
+      if (!r.ok) throw r.status;
+      row = await r.json();
+    } catch { return location.reload(); }
+    toast(row.flashes);
+    stale = true;
+    box.value = box.defaultValue = row.name;
+    if (String(row.id) === li.dataset.id) return;
+    const into = list.querySelector(`[data-id="${row.id}"]`), tick = c => c.querySelector('input[type=checkbox]');
+    tick(into).checked ||= tick(li).checked;  // merged: a filter on it follows
+    into.querySelector('.count').textContent = row.open || '';
+    li.remove();
+    saveFilter();
+  });
+  list.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.name === 'context_name') e.target.blur(); });
+  list.addEventListener('click', async e => {
+    const li = e.target.closest('.delete')?.closest('li');
+    if (!li || !confirm(`Delete @${nameBox(li).value}? Its tasks stay, just without it.`)) return;
+    if (!await post(`/contexts/${li.dataset.id}/delete`)) return;
+    li.remove();
+    saveFilter();
+    stale = true;
+  });
+})();
+// Typing @ at the end of a task's title (a line showing the marks' hint: split_title() in app.py; a task's own page)
+// offers the contexts so far, best first: ↑ ↓ move, Tab, Enter or a click takes one, Esc leaves it as typed. A name typed in full,
+// or one that's new, offers nothing, so Enter adds the task.
+(() => {
+  const names = document.body.dataset.contexts.split(' ').filter(Boolean);
+  if (!names.length) return;
+  const box = Object.assign(document.createElement('div'), {className: 'suggest ctx-suggest', hidden: true});
+  let input = null, items = [], active = 0;
+  const hide = () => { box.hidden = true; items = []; };
+  const typed = el => el.value.match(/\s@([\p{L}\p{N}_-]*)$/u);
+  const show = () => {
+    box.replaceChildren(...items.map((n, i) => Object.assign(document.createElement('a'), {textContent: '@' + n, className: i === active ? 'on' : ''})));
+    (input.closest('dialog') ?? document.body).append(box);  // over a modal's top layer too
+    const r = input.getBoundingClientRect();
+    Object.assign(box.style, {left: r.left + 'px', top: r.bottom + 4 + 'px', width: Math.min(r.width, 240) + 'px'});
+    box.hidden = false;
+  };
+  const take = i => {
+    input.value = input.value.replace(/@[\p{L}\p{N}_-]*$/u, `@${items[i]} `);
+    hide();
+    input.focus();
+  };
+  document.addEventListener('input', e => {
+    const el = e.target;
+    if (!el.matches?.('input[name=title]') || !(el.form?.querySelector('.marks') || el.form && 'saveOnChange' in el.form.dataset)) return;
+    const m = typed(el), q = m?.[1].toLowerCase();
+    if (!m || names.some(n => n.toLowerCase() === q)) return hide();
+    input = el;
+    active = 0;
+    items = names.filter(n => n.toLowerCase().startsWith(q)).concat(names.filter(n => !n.toLowerCase().startsWith(q) && n.toLowerCase().includes(q))).slice(0, 8);
+    items.length ? show() : hide();
+  });
+  document.addEventListener('keydown', e => {  // before anything else that wants these keys: Enter submits, Esc closes
+    if (box.hidden) return;
+    const move = {ArrowDown: 1, ArrowUp: items.length - 1}[e.key];
+    if (move) active = (active + move) % items.length;
+    else if (e.key === 'Tab' || e.key === 'Enter') take(active);
+    else if (e.key === 'Escape') hide();
+    else return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (move) show();
+  }, true);
+  box.addEventListener('pointerdown', e => {
+    const a = e.target.closest('a');
+    if (!a) return;
+    e.preventDefault();  // the box keeps its focus
+    take([...box.children].indexOf(a));
+  });
+  document.addEventListener('focusout', e => { if (e.target === input) hide(); });
+})();
 // A message goes as soon as it's pointed at, so it's never in the way.
 document.addEventListener('mouseover', e => e.target.closest('.flashes')?.remove());
 // Messages from a background save, shown like the server's.

@@ -132,7 +132,42 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search input:focus { background: var(--card); border-color: var(--line); }
 .capture-dialog, .help-dialog, .process, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
 .capture-dialog { width: min(480px, calc(100vw - 32px)); }
-.help-dialog { max-width: 26rem; }
+/* Site info: three columns, fewer as the window narrows; nothing to scroll on a desktop. */
+.help-dialog { width: min(62rem, calc(100vw - 32px)); padding: 20px 24px 24px; }
+.help-dialog .close { position: absolute; top: 12px; right: 14px; }
+.help-dialog h2:focus { outline: none; }
+.info { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 16px 36px; align-items: start; font-size: var(--fs-m); }
+.help-dialog h3 { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 6px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); }
+.info section > h3:first-child { margin-top: 0; }
+.help-dialog .bookmarklet { margin: 0; }
+.help-dialog h3 button { padding: 0 4px; font-size: var(--fs-s); font-weight: 400; }
+.context-list { list-style: none; margin: 0; padding: 0; font-size: var(--fs-m); }
+.context-list li { display: flex; align-items: center; gap: 6px; padding: 1px 6px; border-radius: 6px; }
+.context-list li:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.context-list li.dragging { opacity: .4; }
+.context-list .grip { cursor: grab; color: var(--muted); user-select: none; opacity: .5; }
+.context-list li:hover .grip { opacity: 1; }
+.context-list input[type=checkbox] { width: auto; margin: 0; }
+.context-list .at { color: var(--muted); margin-right: -6px; }
+.context-list input[name=context_name] { flex: 1 1 0; min-width: 0; padding: 2px 4px; font-size: inherit; background: transparent; border-color: transparent; }
+.context-list input[name=context_name]:is(:hover, :focus) { border-color: var(--line); }
+.context-list .count { color: var(--muted); font-size: var(--fs-s); min-width: 1.5em; text-align: right; }
+.context-list .delete { visibility: hidden; padding: 0 4px; font-size: var(--fs-s); }
+.context-list li:is(:hover, :focus-within) .delete { visibility: visible; }
+/* What the context filter is showing, in a filtered list's header; nothing without one. */
+.ctx-filter { display: inline-flex; align-items: center; }
+.ctx-filter:empty { display: none; }
+.ctx-filter button { padding: 2px 4px; font-size: var(--fs-s); color: var(--accent); }
+/* A task's contexts: words a click turns on, no boxes. */
+.contexts { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin: 8px 0 0; color: var(--muted); font-size: var(--fs-m); }
+.contexts > span { margin-right: 6px; }
+.contexts label { padding: 2px 6px; border-radius: 6px; cursor: pointer; user-select: none; }
+.contexts label:hover { background: var(--soft); }
+.contexts label:has(:checked) { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.contexts label:has(:focus-visible) { outline: 1px solid var(--accent); }
+.contexts label input { position: absolute; opacity: 0; width: 0; height: 0; }
+.contexts input[name=new_context] { width: 6em; padding: 2px 6px; font-size: inherit; }
+.suggest.ctx-suggest { position: fixed; right: auto; max-height: 40vh; }  /* placed by app.js, under the box, in a dialog too */
 /* Process: the item, then one quiet line under a rule: the question and its answers; only a live File is filled. */
 .process, .overlay { width: min(1000px, calc(100vw - 64px)); padding: 16px 24px 20px; }
 /* Every record's overlay (app.js): its page in a frame, sized to fit up to the window (then it scrolls inside, so a
@@ -316,6 +351,7 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .task .name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
 .task .name .title { margin-right: 6px; }
 .task .proj { color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
+.task .ctx { color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
 .task .date { min-width: 6.4em; text-align: right; }
 .task .step { min-width: 4.2em; }
 .task .recur, .task .remind { width: 1em; text-align: center; }
@@ -514,8 +550,8 @@ a.who:hover { color: var(--fg); }
   .date-field .picker { top: 0; right: 0; bottom: 0; width: 2.4em; height: auto; pointer-events: auto; font-size: 16px; }
 }
 
-.help-dialog dl { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 0; }
-.help-dialog dt { text-align: right; white-space: nowrap; }
+.help-dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .85rem; margin: 0; }
+.help-dialog dt { white-space: nowrap; }
 .help-dialog dd { margin: 0; }
 .help-dialog kbd { font: inherit; font-size: .85em; padding: 0 .4em; border: 1px solid currentColor; border-radius: 4px; opacity: .8; }
 

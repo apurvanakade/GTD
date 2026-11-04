@@ -12,7 +12,8 @@
   {# The project follows the title, in the same text flow; the meta column keeps only step, date and repeat. #}
   <span class="name"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
     {%- if project and t.project_title %} <a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
-    {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}</span>
+    {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
+    {%- if t.contexts %} <span class="ctx">{% for n in t.contexts.split() %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</span>{% endif %}</span>
   <span class="meta">
     {# On a project page (project=False) every step is named; elsewhere only a later one stands out. #}
     {% if not project and t.project_id and not closed %}<span class="step">{{ t.step }}</span>{% elif t.step == 'later' and not closed %}<span>{{ t.step }}</span>{% endif %}
@@ -41,6 +42,14 @@
 {# A task list (Inbox, Waiting, Someday), dragged by ⠿ to reorder (/tasks/order) or onto the drop panel. #}
 {% macro task_list(tasks) %}<ul class="tasks" data-reorder="{{ url_for('tasks_order') }}">{% for t in tasks %}{{ row(t, grip=True) }}{% endfor %}</ul>{% endmacro %}
 
+{# What's left of a list the context filter emptied: a sentence, since the big ✓ would claim the list is clear. #}
+{% macro nothing_here() %}<ul class="tasks"><li class="empty">Nothing in this context.</li></ul>{% endmacro %}
+
+{# The filtered lists' header (the working lists only): what the context filter is showing; a click opens Site info to
+   change it, × clears it (static/app.js). Empty with no filter, but always there: it marks the page as one the filter
+   thins, so a change redraws it. #}
+{% macro context_chip() %}<span class="ctx-filter">{% if context_filter %}<button type="button" class="ctx-open" title="{{ hidden_by_filter }} hidden: change the filter ( ? )">{% for n in context_filter %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</button><button type="button" class="ctx-clear icon" title="Show every context" aria-label="Show every context">×</button>{% endif %}</span>{% endmacro %}
+
 {# Next: rows folded into due bands (BANDS in app.py); static/app.js remembers which are open, per page. Each band
    reorders on its own. #}
 {% macro banded(tasks, project=True, empty='') %}
@@ -50,7 +59,7 @@
   <ul class="tasks soon" data-reorder="{{ url_for('tasks_order') }}">{% for t in rows %}{{ row(t, project=project, grip=True) }}{% endfor %}</ul>
 </details>
 {% else %}
-<ul class="tasks"><li class="empty clear">{{ empty }}</li></ul>
+{% if context_filter %}{{ nothing_here() }}{% else %}<ul class="tasks"><li class="empty clear">{{ empty }}</li></ul>{% endif %}
 {% endfor %}
 {% endmacro %}
 
@@ -81,6 +90,17 @@
    from that day. Saves when changed; the hint shows how it reads. #}
 {% macro tickler(value) %}
 <label class="tickler" title="Tickler: out of sight until this date, then back in the Inbox">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
+{% endmacro %}
+
+{# A task's contexts: one click each, saved in the background (static/app.js); a new one is named in the box. A form
+   of its own, not the task form's: it saves on its own route, and leaves title, notes and dates alone. #}
+{% macro context_picker(t) %}
+<form method="post" class="contexts" action="{{ url_for('task_contexts', id=t.id) }}">
+  <span>Context</span>
+  {% set mine = t.contexts.split() if t.contexts else [] %}
+  {% for x in contexts %}<label><input type="checkbox" name="context" value="{{ x.name }}"{% if x.name in mine %} checked{% endif %}>@{{ x.name }}</label>{% endfor %}
+  <input name="new_context" placeholder="new…" aria-label="New context" autocomplete="off" size="8">
+</form>
 {% endmacro %}
 
 {# The drop panel's task targets, in the nav's order: H0 with that step (task_move() in app.py). #}
@@ -167,7 +187,7 @@
 {% endmacro %}
 
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
-{% macro title_marks() %}<p class="hint marks">@fri due · *weekly repeat · !3pm remind</p>{% endmacro %}
+{% macro title_marks() %}<p class="hint marks">^fri due · *weekly repeat · !3pm remind · @home context</p>{% endmacro %}
 
 {# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
 {% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', marks=False) %}

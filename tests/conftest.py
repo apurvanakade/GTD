@@ -84,5 +84,12 @@ def seed(c):
     db.link_project(c, active, goal)
     db.link_project(c, stalled, work)
     db.link_task(c, vacuum, area)
+    # Contexts: morning on next actions and a someday task, errands on a waiting task too, gone on nothing still open.
+    db.set_task_contexts(c, 2, ["morning"])  # "buy tiles"
+    db.set_task_contexts(c, italian, ["morning"])
+    db.set_task_contexts(c, vacuum, ["morning", "errands"])
+    parcel = c.execute("SELECT id FROM tasks WHERE title = 'parcel from Ann'").fetchone()[0]
+    db.set_task_contexts(c, parcel, ["errands"])
+    db.set_task_contexts(c, finished, ["gone"])
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
             "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum}

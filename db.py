@@ -141,6 +141,19 @@ CREATE TABLE IF NOT EXISTS task_areas (
   task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
   area_id INTEGER NOT NULL REFERENCES horizons(id) ON DELETE CASCADE
 );
+-- Contexts: a task's tags, made by first use, kept in the order dragged on Site info. Tasks only. One word each
+-- (the title mark @name ends at a space), one spelling whatever the case.
+CREATE TABLE IF NOT EXISTS contexts (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  position INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS task_contexts (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  context_id INTEGER NOT NULL REFERENCES contexts(id) ON DELETE CASCADE,
+  PRIMARY KEY (task_id, context_id)
+);
+CREATE INDEX IF NOT EXISTS task_contexts_context ON task_contexts(context_id);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
 # Stored in the file's user_version once SCHEMA has run on it, so a connection skips it until SCHEMA changes.
@@ -151,8 +164,10 @@ TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "gro
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
+# `contexts`: its context names, space-separated, in their dragged order; NULL with none.
 TASK_COLS = f"""t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
-  lp.position AS list_position"""
+  lp.position AS list_position, (SELECT group_concat(name, ' ') FROM (SELECT x.name FROM task_contexts tc
+    JOIN contexts x ON x.id = tc.context_id WHERE tc.task_id = t.id ORDER BY x.position)) AS contexts"""
 TASK_FROM = "FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id"
 TASK_SELECT = f"SELECT {TASK_COLS} {TASK_FROM}"
 # The list an open task is in: inbox, next, waiting or someday (its step), or none (a later step, a closed task).
@@ -162,6 +177,9 @@ LIST = "CASE WHEN t.state != 'open' OR t.step = 'later' THEN NULL ELSE coalesce(
 LISTED = "lp.position IS NULL, lp.position"
 # Next's order (and the lists drawn from it): as dragged; unplaced ones soonest due first, undated ones last.
 NEXT_ORDER = f"{LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC"
+PLAIN_ORDER = f"{LISTED}, t.created_at DESC, t.id DESC"  # Inbox's and Someday's
+WAITING_ORDER = f"{LISTED}, NOT t.ground, t.created_at DESC, t.id DESC"  # unplaced ones H0's first
+LIST_ORDER = {"inbox": PLAIN_ORDER, "next": NEXT_ORDER, "waiting": WAITING_ORDER, "someday": PLAIN_ORDER}
 
 # An H0 someday task: a single someday / maybe item. Its due date is its tickler: out of sight until then.
 MAYBE = "t.state = 'open' AND t.step = 'someday'"
@@ -244,14 +262,15 @@ def _top(c, table, where, arg):
 
 
 @atomic
-def add_task(c, title, today=None, **fields):
-    """`today` is for _fit_step()."""
+def add_task(c, title, today=None, contexts=(), **fields):
+    """`today` is for _fit_step(); `contexts`: names, made if new."""
     if fields.get("project_id") and "position" not in fields:  # a new step goes to the top, under the next action
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}, today=today))
     _arrive(c, id, None)
     _reopen_project(c, id)
     _next_to_top(c, id, was_next=False)
+    set_task_contexts(c, id, contexts)
     return id
 
 
@@ -284,9 +303,20 @@ def _arrive(c, id, was):
 
 @atomic
 def reorder_tasks(c, ids):
-    """Number a task list's tasks in the given order (Inbox, a band of Next, Waiting, Someday); closed ones are ignored."""
-    c.executemany("""INSERT OR REPLACE INTO list_positions (task_id, position)
-        SELECT id, ? FROM tasks WHERE id = ? AND state = 'open'""", [(n, id) for n, id in enumerate(ids)])
+    """A task list's dragged rows (Inbox, a band of Next, Waiting, Someday, what the context filter leaves of them), in
+    their new order: they take the places those rows hold in the whole list, so its other rows don't move. Those in no
+    list (closed ones) are ignored."""
+    moved = [id for id in ids if list_of(c, id)]
+    if not moved:
+        return
+    which = list_of(c, moved[0])
+    whole = [r[0] for r in c.execute(f"""SELECT t.id FROM tasks t LEFT JOIN list_positions lp ON lp.task_id = t.id
+        WHERE {LIST} = ? ORDER BY {LIST_ORDER[which]}""", (which,))]
+    here = set(whole) & set(moved)
+    order = iter([id for id in moved if id in here])
+    placed = [next(order) if id in here else id for id in whole]
+    c.executemany("INSERT OR REPLACE INTO list_positions (task_id, position) VALUES (?, ?)",
+                  [(id, n) for n, id in enumerate(placed)])
 
 
 def _reopen_project(c, id):
@@ -405,6 +435,8 @@ def complete_task(c, id, today, now=None):
                           ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
         c.execute("INSERT INTO task_areas (task_id, area_id) SELECT ?, area_id FROM task_areas WHERE task_id = ?",
                   (new_id, id))  # and keeps its area
+        c.execute("INSERT INTO task_contexts (task_id, context_id) SELECT ?, context_id FROM task_contexts WHERE task_id = ?",
+                  (new_id, id))  # and its contexts
         if t["list_position"] is not None:  # the next instance takes this one's place in its list
             c.execute("UPDATE list_positions SET position = ? WHERE task_id = ?", (t["list_position"], new_id))
     return new_id
@@ -424,8 +456,7 @@ def mark_reminded(c, id, now):
 def tasks_with_step(c, step):
     """Open tasks at this step (project and H0 tasks; inbox items have none), in their list's order (Waiting's:
     unplaced ones H0's first, newest first)."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.step = ?
-        ORDER BY {LISTED}, NOT t.ground, t.created_at DESC, t.id DESC""", (step,)).fetchall()
+    return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY {WAITING_ORDER}", (step,)).fetchall()
 
 
 def next_actions(c, today):
@@ -440,7 +471,7 @@ def h0_actions(c):
 
 
 def inbox_tasks(c):
-    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY {LISTED}, t.created_at DESC, t.id DESC").fetchall()
+    return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY {PLAIN_ORDER}").fetchall()
 
 
 def next_list(c):
@@ -479,6 +510,65 @@ def counts(c, today):
         "flagged": {s: one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL AND status = ?", s)
                     for s in ("active", "waiting")},
     }
+
+
+# --- contexts --------------------------------------------------------------
+
+def contexts(c):
+    """Every context in its dragged order, new ones on top, with `open`, its open tasks."""
+    return c.execute("""SELECT x.*, (SELECT count(*) FROM task_contexts tc JOIN tasks t ON t.id = tc.task_id
+        WHERE tc.context_id = x.id AND t.state = 'open') AS open FROM contexts x ORDER BY x.position, x.id""").fetchall()
+
+
+def _context_id(c, name):
+    """A context by name, whatever the case; made, on top of the list, the first time it's used."""
+    row = c.execute("SELECT id FROM contexts WHERE name = ?", (name,)).fetchone()
+    if row:
+        return row["id"]
+    return c.execute("INSERT INTO contexts (name, position) VALUES (?, ?)",
+                     (name, _top(c, "contexts", "? = 1", 1))).lastrowid
+
+
+@atomic
+def set_task_contexts(c, id, names):
+    """A task's contexts are now exactly these names."""
+    c.execute("DELETE FROM task_contexts WHERE task_id = ?", (id,))
+    c.executemany("INSERT OR IGNORE INTO task_contexts (task_id, context_id) VALUES (?, ?)",
+                  [(id, _context_id(c, name)) for name in names])
+
+
+def tasks_in_contexts(c, ids):
+    """The ids of tasks in any of these contexts."""
+    marks = ", ".join("?" * len(ids))
+    return {r[0] for r in c.execute(f"SELECT task_id FROM task_contexts WHERE context_id IN ({marks})", list(ids))}
+
+
+def get_context(c, id):
+    return next((x for x in contexts(c) if x["id"] == id), None)
+
+
+@atomic
+def rename_context(c, id, name):
+    """Rename a context, or, if another already has that name, merge it into that one. Returns the id it ends up as."""
+    other = c.execute("SELECT id FROM contexts WHERE name = ? AND id != ?", (name, id)).fetchone()
+    if not other:
+        c.execute("UPDATE contexts SET name = ? WHERE id = ?", (name, id))
+        return id
+    c.execute("""INSERT OR IGNORE INTO task_contexts (task_id, context_id)
+        SELECT task_id, ? FROM task_contexts WHERE context_id = ?""", (other["id"], id))
+    delete_context(c, id)
+    return other["id"]
+
+
+@atomic
+def delete_context(c, id):
+    """The context goes; its tasks stay, without it."""
+    c.execute("DELETE FROM contexts WHERE id = ?", (id,))
+
+
+@atomic
+def reorder_contexts(c, ids):
+    c.executemany("UPDATE contexts SET position = ? WHERE id = ?", [(n, id) for n, id in enumerate(ids)])
 
 
 # --- search ----------------------------------------------------------------
@@ -652,7 +742,7 @@ def someday_tasks(c):
     """H0's someday tasks, in their list's order, each with `reviewed_at` and its due date as `tickle_on`, as a project has."""
     return c.execute(f"""SELECT {TASK_COLS}, t.due_date AS tickle_on,
           (SELECT r.reviewed_at FROM task_reviews r WHERE r.task_id = t.id) AS reviewed_at
-        {TASK_FROM} WHERE {MAYBE} ORDER BY {LISTED}, t.created_at DESC, t.id DESC""").fetchall()
+        {TASK_FROM} WHERE {MAYBE} ORDER BY {PLAIN_ORDER}""").fetchall()
 
 
 def someday_to_review(c, today):

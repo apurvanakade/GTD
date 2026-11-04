@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, add_form with context %}
+{% from "_task.html" import project_select, add_form, context_chip with context %}
 {% block title %}Calendar{% endblock %}
 {% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
 {% block actions %}{% set p = 'w' if week else 'm' %}
+{{ context_chip() }}
 <span class="seg">
   <a href="{{ url_for('calendar_view', **{p: prev}) }}" title="Previous {{ 'week' if week else 'month' }}" aria-label="Previous {{ 'week' if week else 'month' }}">‹</a>
   <a href="{{ url_for('calendar_view', w=this_week) if week else url_for('calendar_view', m=this_month) }}">Today</a>
@@ -33,7 +34,7 @@
       {% for t in by_day.get(iso, []) %}
       {% set kind = 'inbox' if t.inbox else 'someday' if t.project_status == 'someday' or t.step == 'someday'
                     else 'waiting' if 'waiting' in (t.step, t.project_status) else t.step %}
-      <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}" draggable="true" data-due="{{ url_for('task_due', id=t.id) }}"
+      <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}{% for n in (t.contexts or '').split() %} @{{ n }}{% endfor %}" draggable="true" data-due="{{ url_for('task_due', id=t.id) }}"
          class="ev k-{{ kind }}{% if iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>
       {% endfor %}
     </td>

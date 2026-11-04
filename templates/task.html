@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, date_input with context %}
+{% from "_task.html" import project_select, date_input, context_picker with context %}
 {% block title %}{{ t.title }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -58,4 +58,5 @@
         {{- 'sent' if t.reminded_at }}</span></label>
   </div>
 </form>
+{{ context_picker(t) }}
 {% endblock %}
