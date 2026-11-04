@@ -1199,8 +1199,6 @@ def horizon_view(id):
                           notes=(request.form.get("notes") or "").strip())
         if "outcome" in request.form and h["level"] in ("goal", "area"):
             db.set_horizon_outcome(c, id, request.form["outcome"])
-        if "vision" in request.form and h["level"] == "area":
-            db.set_area_vision(c, id, request.form["vision"])
         if "area" in request.form and h["level"] == "goal":
             area = request.form["area"]
             try:

@@ -40,11 +40,7 @@
     <input name="outcome" value="{{ h.outcome or '' }}" placeholder="{{ 'Done when…' if h.level == 'goal' else 'Kept up when…' }}" aria-label="{{ 'Desired outcome' if h.level == 'goal' else 'Standard' }}" title="{{ 'What done looks like' if h.level == 'goal' else 'What kept up looks like' }}" data-submit>
   </div>
   {% endif %}
-  {% if h.level == 'area' %}
-  <div class="title-line outcome">
-    <textarea name="vision" rows="1" placeholder="In 3–5 years…" aria-label="Vision" title="Its part of the vision (H4): what it looks like in 3–5 years" data-submit>{{ h.vision or '' }}</textarea>
-  </div>
-  {% elif h.level == 'goal' %}
+  {% if h.level == 'goal' %}
   <div class="title-line serves">
     <select name="area" data-submit aria-label="Area" title="The area (H2) it serves">
       <option value="">Serves no area…</option>
@@ -53,7 +49,7 @@
     {% if h.area_id %}<a class="open-area" href="{{ url_for('horizon_view', id=h.area_id) }}" title="Open its area" aria-label="Open its area">↗</a>{% endif %}
   </div>
   {% endif %}
-  <textarea name="notes" rows="10" placeholder="{% if h.level == 'goal' %}Why it matters, target date…{% elif h.level == 'area' %}Recurring responsibilities, what's off right now…{% endif %}">{{ h.notes }}</textarea>
+  <textarea name="notes" rows="10" placeholder="{% if h.level == 'goal' %}Why it matters, target date…{% elif h.level == 'area' %}Recurring responsibilities…{% endif %}">{{ h.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
 </form>
 {% if links %}

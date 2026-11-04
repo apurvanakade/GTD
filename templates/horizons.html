@@ -51,7 +51,7 @@
       "Add each as an area with the add line above. A good area name is a noun, not a task: “Health”, “Finances”, “Teaching”, not “Go to the gym”.",
       "Aim for roughly 8–15 in total. Merge areas that are really the same thing; split one that's too broad to think about at once.",
       "Open each area and write its standard in the “Kept up when…” line: what “kept up” looks like (“Annual checkup done; exercise 3×/week; sleep 7h”).",
-      "Write its line in the vision (“In 3–5 years…”), then link its goals, projects and upkeep actions on its page.",
+      "Link its goals, projects and upkeep actions on its page, and write its line under “Area by area” on the vision card (H4).",
       "Ask: is it at its standard right now? If not, write what's off in its notes, and create a project (H1) or next action (H0) to fix it.",
     ],
     'examples': "Health · Finances · Home · Family · Friends · Career · Teaching · Research · Admin · Learning · Fun & rest",
@@ -129,7 +129,7 @@
     </form>
     {% if level == 'purpose' %}{{ guide(guides.purpose) }}{% endif %}
     {% endfor %}
-    {# The vision, area by area: each area's line, saved in the background as it's left (its page has it too). #}
+    {# The vision, area by area: each area's line, saved in the background as it's left; only here. #}
     <h3>Area by area</h3>
     <ul class="tasks visions">
       {% for a in items.area %}

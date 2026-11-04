@@ -2604,13 +2604,14 @@ def test_horizons_link_up_and_down(client, conn):
     # A repeat's next instance stays under its area.
     new = db.complete_task(conn, ids["vacuum"], TODAY)
     assert conn.execute("SELECT area_id FROM task_areas WHERE task_id = ?", (new,)).fetchone()[0] == home
-    # An area's vision line: on its page and on the purpose & vision card, which lists them under the vision.
+    # An area's vision line: only on the purpose & vision card, which lists them under the vision.
+    assert 'name="vision"' not in client.get(f"/horizons/{home}?embed=overlay").get_data(as_text=True)
     client.post(f"/horizons/{work}/vision", data={"vision": " Teaching what I love "})
     assert db.get_horizon(conn, work)["vision"] == "Teaching what I love"
     vision = client.get("/horizons?level=purpose").get_data(as_text=True)
     assert ">A calm house we love</textarea>" in vision and ">Teaching what I love</textarea>" in vision
     assert f'action="/horizons/{work}/vision" data-background' in vision
-    client.post(f"/horizons/{home}", data={"title": "Home", "notes": "", "vision": ""})  # blank clears it
+    client.post(f"/horizons/{home}/vision", data={"vision": ""})  # blank clears it
     assert db.get_horizon(conn, home)["vision"] is None
     assert client.post(f"/horizons/{goal}/vision", data={"vision": "x"}).status_code == 400  # areas only
     # Deleting an area drops its links, not what hung from it.
