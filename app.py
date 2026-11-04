@@ -1161,6 +1161,8 @@ BALANCE = {-3: "Far too little", -2: "Too little", -1: "A bit too little", 0: "B
 HORIZON_STEPS = ("purpose", "goal", "area", "projects", "ground")
 HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS}, "purpose": "H5 · H4 · Purpose & vision",
                   "projects": "H1 · Projects", "ground": "H0 · Ground level"}
+HORIZON_FLOORS = (("H5", "purpose", None), ("H4", "purpose", "vision"), ("H3", "goal", None),  # label, card, place on it
+                  ("H2", "area", None), ("H1", "projects", None), ("H0", "ground", None))
 
 
 @app.route("/horizons")
@@ -1169,7 +1171,7 @@ def horizons_view():
     if level not in HORIZON_STEPS:
         level = None  # the overview: every horizon, folded out
     c = conn()
-    return render_template("horizons.html", balance_words=BALANCE, levels=HORIZON_LEVELS, steps=HORIZON_STEPS, step=level, titles=HORIZON_TITLES,
+    return render_template("horizons.html", balance_words=BALANCE, levels=HORIZON_LEVELS, steps=HORIZON_STEPS, floors=HORIZON_FLOORS, step=level, titles=HORIZON_TITLES,
                            items=db.horizons(c), projects=db.projects(c), ground=db.h0_actions(c),
                            graph=None if level else db.horizon_graph(c, BALANCE))
 

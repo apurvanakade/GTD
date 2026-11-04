@@ -1,10 +1,9 @@
 {% extends "base.html" %}
 {% from "_task.html" import row, add_form with context %}
-{% from "_deck.html" import stepper %}
 {% from "_balance.html" import balance %}
 {% block title %}Horizons{% endblock %}
 {% block heading %}<h1>Horizons of focus</h1>{% endblock %}
-{# One horizon shows at a time, H5 down to H0, like the weekly review's steps. #}
+{# One horizon shows at a time, reached directly by its elevator button. Not a sequence: no ‹ › or ← →. #}
 {# Each card's guide: what the level is, concrete steps, examples, and how often to revisit it.
    The one place besides the review's cards that explains at length, since the horizons are unfamiliar ground. #}
 {% set guides = {
@@ -93,7 +92,7 @@
 </div>
 {% endmacro %}
 {% block crumb %}{% if step %}<a href="{{ url_for('horizons_view') }}">Horizons</a>{% endif %}{% endblock %}
-{% block actions %}{% if step %}{{ stepper('horizons_view', 'level', steps, step, titles=titles) }}{% endif %}{% endblock %}
+{% block actions %}<span class="floors">{% for label, s, anchor in floors %}<a class="floor{{ ' on' if s == step }}" href="{{ url_for('horizons_view', level=s, _anchor=anchor) }}" title="{{ titles[s] }}"{% if s == step %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</span>{% endblock %}
 {% block body %}
 {% if not step %}
 {# The overview: every horizon as one map (static/graph.js draws db.horizon_graph(), embedded below; another view of
@@ -121,7 +120,7 @@
     {# Purpose (H5), then vision (H4): a note each, autosaved, its guide right under it; under the vision's note, each
        area's part of it. #}
     {% for level in ('purpose', 'vision') %}{% set h = items[level][0] %}
-    <h3>{{ levels|selectattr(0, 'eq', level)|map(attribute=1)|first }}</h3>
+    <h3{% if level == 'vision' %} id="vision"{% endif %}>{{ levels|selectattr(0, 'eq', level)|map(attribute=1)|first }}</h3>
     <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
       <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', level)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
       <p class="autosave hint" aria-live="polite"></p>

@@ -543,6 +543,10 @@ a.who:hover { color: var(--fg); }
 .graph.focus line.lit { stroke: var(--muted); }
 .graph .hidden { display: none; }
 /* Under the map, one line per level: its swatch shows or hides it there, its name opens its card. */
+.floors { display: flex; flex-wrap: wrap; gap: 6px; }
+.floor { width: 32px; height: 32px; display: grid; place-items: center; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--muted); color: var(--fg); font-size: var(--fs-xs); font-weight: 600; text-decoration: none; }
+.floor:hover { background: var(--soft); text-decoration: none; }
+.floor.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
 .levels { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: var(--fs-s); }
 .levels li { display: flex; align-items: center; gap: 6px; }
 .levels a { color: var(--fg); }

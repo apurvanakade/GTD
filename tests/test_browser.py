@@ -874,14 +874,6 @@ def test_clicking_a_rows_button_does_not_open_it(page, live):
     assert page.url == live + "/projects"
 
 
-def test_horizons_arrow_keys_move_between_levels(page, live):
-    page.goto(live + "/horizons?level=goal")
-    page.keyboard.press("ArrowRight")
-    page.wait_for_url("**/horizons?level=area")
-    page.locator(".rail .dot").first.click()
-    page.wait_for_url("**/horizons?level=purpose")
-
-
 def test_horizons_map(page, live, conn):
     """The overview draws every horizon as a graph: hovering lights a node's neighbours, a swatch hides a level (H0
     actions start hidden), a click opens a record's overlay, and the purpose & vision card's area lines save in place."""

@@ -644,10 +644,14 @@ def horizon_card(html):
 
 
 def test_horizons_show_one_level_at_a_time(client, conn):
-    """Like the weekly review: one card per horizon, H5 down to H0, and a rail of dots to move between them."""
+    """One card per horizon, reached directly by its elevator button (H5 … H0), on the overview too, where none is lit."""
     seed(conn)
     html = client.get("/horizons").get_data(as_text=True)
-    assert 'class="horizon-map"' in html and 'class="dot' not in html  # the overview: the map, no rail
+    floors = lambda page: re.findall(r'<a class="floor( on)?" href="([^"]+)"[^>]*>(H\d)</a>', page)
+    assert 'class="horizon-map"' in html
+    assert floors(html) == [("", "/horizons?level=purpose", "H5"), ("", "/horizons?level=purpose#vision", "H4"),
+                            ("", "/horizons?level=goal", "H3"), ("", "/horizons?level=area", "H2"),
+                            ("", "/horizons?level=projects", "H1"), ("", "/horizons?level=ground", "H0")]  # none lit
     assert html.count('class="swatch') == len(HORIZON_STEPS) == 5  # a line per level under it (H5 and H4 share one)
     for step in HORIZON_STEPS:
         assert f'href="/horizons?level={step}"' in html
@@ -656,8 +660,11 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     assert '<a href="/horizons">Horizons</a>' in client.get("/horizons?level=goal").get_data(as_text=True)  # crumb back
     top = client.get("/horizons?level=purpose").get_data(as_text=True)
     assert horizon_card(top)[0] == "purpose" and not ADD_LINE.search(top)  # no add line there
-    assert 'rel="prev"' not in top and 'href="/horizons?level=goal" rel="next"' in top
+    assert [label for on, _, label in floors(top) if on] == ["H5", "H4"]  # they share this card
+    assert 'id="vision"' in top
     goal = client.get("/horizons?level=goal").get_data(as_text=True)
+    assert [label for on, _, label in floors(goal) if on] == ["H3"]
+    assert 'rel="prev"' not in goal and 'rel="next"' not in goal  # not a sequence
     key, card = horizon_card(goal)
     assert key == "goal" and "Ship the kitchen" in card and "Home" not in card
     assert '<input type="hidden" name="level" value="goal">' in goal  # the add line adds to the card shown
