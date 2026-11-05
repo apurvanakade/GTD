@@ -179,31 +179,35 @@ def task_fields_from_form(current=None):
     return fields
 
 
-# Each parser reports an unreadable value through `say` (flash, unless split_title() decides it was no mark at all).
-def parse_due(raw, say=flash):
+def warn(message):
+    """Something typed couldn't be read. A flash, and the bookmarklet's popup stays open to show it (capture())."""
+    flash(message)
+    g.warned = True
+
+
+def parse_due(raw):
     """A due date typed in words as ISO, or None, flashed."""
     due = dates.parse(raw, today())
     if not due:
-        say(f"Didn't understand date “{raw}” – try “tomorrow”, “saturday” or “oct 30”.")
+        warn(f"Didn't understand date “{raw}” – try “tomorrow”, “saturday” or “oct 30”.")
     return due and due.isoformat()
 
 
-def parse_recur(raw, say=flash):
+def parse_recur(raw):
     """A repeat rule, or None, flashed."""
     if not recur.parse(raw):
-        say(f"Didn't understand repeat rule “{raw}” – try “weekly” or “every 6 months”.")
+        warn(f"Didn't understand repeat rule “{raw}” – try “weekly” or “every 6 months”.")
         return None
     return raw
 
 
-def parse_reminder(raw, say=flash):
-    """A reminder typed in words (local time) as a UTC ISO time, or None, flashed, when unreadable or already past
-    (that one always: it was understood)."""
+def parse_reminder(raw):
+    """A reminder typed in words (local time) as a UTC ISO time, or None, flashed, when unreadable or already past."""
     when = dates.parse_when(raw, local_now())
     if not when:
-        say(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
+        warn(f"Didn't understand reminder “{raw}” – try “tomorrow 9am”, “fri 14:00” or “in 2 hours”.")
     elif when <= local_now():
-        flash(f"Reminder “{raw}” has already passed – not set.")
+        warn(f"Reminder “{raw}” has already passed – not set.")
     else:
         return db.iso(when.astimezone())
 
@@ -211,14 +215,18 @@ def parse_reminder(raw, say=flash):
 CONTEXT = re.compile(r"[^\W\d_][\w-]*")  # one word, starting with a letter, so @5km and @/notes stay in a title
 
 
-def parse_context(raw, say=None):
-    """A @mark's context name, or None: not one, so it's just the title's own words. Nothing to flash."""
-    return raw if CONTEXT.fullmatch(raw) else None
+def parse_context(raw):
+    """A context name, or None, flashed: one word, starting with a letter."""
+    if CONTEXT.fullmatch(raw):
+        return raw
+    warn(f"Didn't understand context “{raw}” – a context is one word, starting with a letter.")
 
 
 def context_name(raw):
-    """A name typed in a box (a task's new context, a rename): spaces become hyphens. None if it can't be one."""
-    return parse_context(re.sub(r"\s+", "-", (raw or "").strip().removeprefix("@")))
+    """A name typed in a box (a task's new context, a rename): spaces become hyphens. None, flashed, if it can't be one;
+    blank if blank, with nothing to say."""
+    name = re.sub(r"\s+", "-", (raw or "").strip().removeprefix("@"))
+    return name and parse_context(name)
 
 
 def contexts_from_form():
@@ -237,13 +245,14 @@ TITLE_MARK = re.compile(r"\s([\^*!@])(\S[^\^*!@]*?)\s*$")
 
 def split_title(title):
     """(title, fields) with the trailing marks peeled off the end. The first unusable one (and all before it) stays
-    in the title, so nothing typed is lost. It's flashed only when it's one word (`@blah`): several that don't read
-    ("call @home about taxes") are just the title's own words."""
+    in the title, so nothing typed is lost, and is flashed."""
     fields = {}
     while m := TITLE_MARK.search(title):
         name, parse = TITLE_MARKS[m.group(1)]
-        quiet = len(m.group(2).split()) > 1
-        value = (name == "contexts" or name not in fields) and parse(m.group(2), say=(lambda _: None) if quiet else flash)
+        if name != "contexts" and name in fields:
+            warn(f"Only one {m.group(1)} mark: “{m.group(1)}{m.group(2)}” stays in the title.")
+            break
+        value = parse(m.group(2))
         if not value:
             break
         if name == "contexts":
@@ -336,7 +345,7 @@ def capture():
             parts += [f"@{name}" for name in fields.get("contexts", ())]
             flash(" · ".join(parts))
     if fetched():  # the capture dialog, in the background: whatever is open under it stays
-        return {"flashes": get_flashed_messages()}
+        return {"flashes": get_flashed_messages(), "warned": g.get("warned", False)}
     return back()
 
 
@@ -445,8 +454,8 @@ def context_rename(id):
     now is."""
     x = db.get_context(conn(), id) or abort(404)
     name = context_name(request.form.get("name"))
-    if not name:
-        flash("A context is one word, starting with a letter.")
+    if not form_value("name"):
+        warn("A context needs a name.")
     x = db.get_context(conn(), db.rename_context(conn(), id, name) if name else id)
     return {"id": x["id"], "name": x["name"], "open": x["open"], "flashes": get_flashed_messages()}
 

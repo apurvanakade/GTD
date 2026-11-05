@@ -2322,6 +2322,7 @@ def test_a_project_add_line_takes_a_bang_time(client, conn):
 @pytest.mark.parametrize("title, flashed", [
     ("Yes! do it", None), ("wow !", None), ("!3pm", None),  # not a trailing " !time" after a title
     ("call back !blah", "Didn&#39;t understand reminder"), ("call back !yesterday", "has already passed"),
+    ("call back !sometime next spring", "Didn&#39;t understand reminder"),  # several words too
 ])
 def test_a_bang_that_isnt_a_reminder_stays_in_the_title(client, conn, title, flashed):
     html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
@@ -2349,13 +2350,26 @@ def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
 @pytest.mark.parametrize("title, flashed", [
     ("pay rent ^blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
     ("a @ b", None), ("5 * 3", None), ("mail bob@x.com", None),
-    ("Call ^home about taxes", None), ("fix it *really soon", None),  # several words, no date: just a title
+    ("Call ^home about taxes", "Didn&#39;t understand date"), ("fix it *really soon", "Didn&#39;t understand repeat rule"),
+    ("walk @5km", "Didn&#39;t understand context"), ("call @home about taxes", "Didn&#39;t understand context"),
 ])
-def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, flashed):
+def test_an_unreadable_mark_stays_in_the_title_and_warns(client, conn, title, flashed):
     html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
     t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
     assert (t["title"], t["due_date"], t["recur"]) == (title, None, None)
     assert flashed in html if flashed else "understand" not in html
+
+
+def test_every_add_line_warns_of_what_it_couldnt_read(client, conn):
+    def warned(data):
+        return client.post("/capture", data=data, headers={"X-Requested-With": "fetch"}).get_json()
+    plain = warned({"title": "fine ^fri"})
+    assert plain["warned"] is False and "understand" not in " ".join(plain["flashes"])
+    for data, words in [({"title": "a ^fri ^sat"}, "Only one ^"), ({"title": "b", "remind_at": "blah"}, "understand reminder"),
+                        ({"title": "c", "new_context": "5km"}, "understand context")]:
+        r = warned(data)
+        assert r["warned"] is True and words in " ".join(r["flashes"]), data
+    assert db.inbox_tasks(conn)[2]["title"] == "a ^fri"  # the mark that couldn't apply stays in the title
 
 
 def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):

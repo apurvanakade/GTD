@@ -101,7 +101,7 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
   refreshNav();
 });
 // The bookmarklet's popup (capture.html): adds in the background and closes; opened some other way, it stays to add
-// more. "Bookmark link" makes a title optional (the page's is used). Esc closes it.
+// more, or if something typed couldn't be read. "Bookmark link" makes a title optional (the page's is used). Esc closes it.
 (f => {
   if (!f) return;
   const title = f.elements.title, link = f.elements.link;
@@ -117,9 +117,10 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
     try {
       const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams(new FormData(f))});
       if (!r.ok) throw r.status;
-      toast((await r.json()).flashes);
+      const {flashes, warned} = await r.json();
+      toast(flashes);
+      if (!warned) window.close();  // else it stays, or the warning would go with it
     } catch { return location.reload(); }
-    window.close();
     f.reset();
     f.querySelector('.md-editor')?.replaceChildren();
     linked();

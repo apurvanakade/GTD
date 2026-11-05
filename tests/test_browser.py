@@ -146,6 +146,21 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     assert (t["title"], t["notes"]) == ("Someday / maybe", f"[Someday / maybe]({live}/someday)")
 
 
+def test_the_bookmarklet_popup_stays_open_to_show_a_warning(page, live, conn):
+    page.goto(live + "/capture?url=https://ex.com/&title=Ex")  # a plain tab can't close itself, so open it as a popup
+    popup_opened = page.evaluate("window.open(location.href, 'p', 'popup') && true")
+    popup = page.context.pages[-1]
+    popup.wait_for_load_state()
+    assert popup_opened
+    popup.fill("input[name=title]", "read it !sometime next spring")
+    popup.press("input[name=title]", "Enter")
+    popup.locator(".flash", has_text="understand reminder").wait_for()
+    assert not popup.is_closed()
+    assert popup.input_value("input[name=title]") == ""  # it was added: Enter again wouldn't add it twice
+    assert db.inbox_tasks(conn)[0]["title"] == "read it !sometime next spring"
+    popup.close()
+
+
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
     page.goto(live + "/next")
     page.keyboard.press("f")
