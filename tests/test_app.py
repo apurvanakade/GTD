@@ -854,7 +854,12 @@ def test_bookmarklet_captures_a_page(client, conn):
     """The bookmarklet (in the ? overlay) opens /capture in a popup; "Bookmark link" files the page as a link in the notes."""
     assert b"javascript:" in client.get("/next").data
     html = client.get("/capture?url=https://ex.com/a_(b)&title=Ex [1]").get_data(as_text=True)
-    assert "<nav" not in html and 'name="link"' in html and "https://ex.com/a_(b)" in html
+    assert "<nav" not in html and "https://ex.com/a_(b)" in html
+    assert re.search(r'name="link"[^>]* checked', html) and 'name="notes"' in html  # the link is on by default
+    client.post("/capture", data={"title": "with notes", "link": "https://ex.com/", "page_title": "Ex", "notes": "why"})
+    assert db.inbox_tasks(conn)[0]["notes"] == "[Ex](https://ex.com/)\nwhy"
+    conn.execute("DELETE FROM tasks")
+    conn.commit()
     client.post("/capture", data={"title": "", "link": "https://ex.com/a_(b) c", "page_title": "Ex [1]\n"})
     client.post("/capture", data={"title": "read it", "link": "https://ex.com/", "page_title": ""})
     client.post("/capture", data={"title": "just a thought", "page_title": "Ex"})  # box unticked: no link
@@ -1260,7 +1265,9 @@ def test_project_page_times_each_step(client, conn):
     ("in 3 days", date(2026, 10, 25)), ("in 2 weeks", date(2026, 11, 5)), ("in 1 month", date(2026, 11, 22)),
     ("oct 30", date(2026, 10, 30)), ("30 Oct", date(2026, 10, 30)), ("jan 5", date(2027, 1, 5)),
     ("jan 5 2028", date(2028, 1, 5)), ("2026-12-01", date(2026, 12, 1)),
-    ("feb 30", None), ("blah", None), ("", None),
+    ("04-15-2027", date(2027, 4, 15)), ("4/15/2027", date(2027, 4, 15)), ("4/15/27", date(2027, 4, 15)),
+    ("12/25", date(2026, 12, 25)), ("1-5", date(2027, 1, 5)),  # month first; no year means the next one
+    ("feb 30", None), ("2/30", None), ("13-01-2027", None), ("blah", None), ("", None),
 ])
 def test_natural_dates(text, expected):
     assert dates.parse(text, TODAY) == expected
@@ -2069,6 +2076,7 @@ AT = datetime(2026, 10, 22, 14, 30)  # Thursday afternoon, local
     ("tomorrow", datetime(2026, 10, 23, 9, 0)), ("in 2 hours", datetime(2026, 10, 22, 16, 30)),
     ("in 30 min", datetime(2026, 10, 22, 15, 0)), ("in 3 days", datetime(2026, 10, 25, 9, 0)),
     ("2026-10-30 09:00", datetime(2026, 10, 30, 9, 0)), ("2026-10-30T18:45", datetime(2026, 10, 30, 18, 45)),
+    ("04-15-2027 10am", datetime(2027, 4, 15, 10, 0)), ("11/2 at 5pm", datetime(2026, 11, 2, 17, 0)),
     ("tomorrow 25:00", None), ("tomorrow 13pm", None), ("blah 9am", None), ("blah", None), ("", None),
 ])
 def test_natural_times(text, expected):
@@ -2276,6 +2284,34 @@ def test_a_trailing_bang_time_on_an_add_line_sets_a_reminder(client, conn, url, 
     assert local(t["remind_at"]) == datetime(2026, 10, 23, 15, 0)
 
 
+def test_a_numeric_date_in_a_bang_mark_sets_the_reminder(client, conn):
+    client.post("/capture", data={"title": "Cancel dashpass !04-15-2027 10am"})
+    t = db.inbox_tasks(conn)[0]
+    assert t["title"] == "Cancel dashpass" and local(t["remind_at"]) == datetime(2027, 4, 15, 10, 0)
+
+
+@pytest.mark.parametrize("page, url, data", [
+    ("/inbox", "/capture", {}), ("/next", "/next/add", {"project_id": "h0"}), ("/waiting", "/waiting/add", {}),
+    ("/someday", "/someday/add", {}), ("/calendar", "/calendar", {"due_date": "2026-10-30"}),
+])
+def test_task_add_lines_take_a_reminder_and_contexts(client, conn, page, url, data):
+    db.add_task(conn, "seen", contexts=["home"])
+    html = client.get(page).get_data(as_text=True)
+    assert 'name="remind_at"' in html and 'name="context" value="home"' in html and 'name="new_context"' in html
+    client.post(url, data={"title": "call bob @phone", "remind_at": "tomorrow 3pm", "context": "home",
+                           "new_context": "at desk", **data})
+    t = conn.execute("SELECT * FROM tasks WHERE title = 'call bob'").fetchone()
+    assert local(t["remind_at"]) == datetime(2026, 10, 23, 15, 0)
+    assert {r["name"] for r in conn.execute("SELECT name FROM contexts c JOIN task_contexts x ON x.context_id = c.id "
+                                            "WHERE x.task_id = ?", (t["id"],))} == {"home", "at-desk", "phone"}
+
+
+def test_capture_with_its_boxes_left_blank(client, conn):
+    r = client.post("/capture", data={"title": "plain", "remind_at": "", "new_context": ""}, follow_redirects=True)
+    assert r.status_code == 200 and "reminder" not in r.get_data(as_text=True)
+    assert db.inbox_tasks(conn)[0]["remind_at"] is None
+
+
 def test_a_project_add_line_takes_a_bang_time(client, conn):
     pid = db.add_project(conn, "Kitchen")
     client.post(f"/projects/{pid}/tasks", data={"title": "call plumber  !in 30 min"})
@@ -2325,8 +2361,9 @@ def test_an_unreadable_due_or_repeat_stays_in_the_title(client, conn, title, fla
 def test_the_add_syntax_is_shown_where_tasks_are_added(client, conn):
     hint = "^fri due · *weekly repeat · !3pm remind"
     pid = db.add_project(conn, "P")
-    for url in ("/inbox", "/next", "/waiting", "/calendar"):
+    for url in ("/inbox", "/next", "/waiting"):
         assert client.get(url).get_data(as_text=True).count(hint) == 2, url  # its add line, and the capture dialog
+    assert client.get("/calendar").get_data(as_text=True).count(hint) == 3  # the day's dialog too
     assert client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True).count(hint) == 1  # in a frame: no dialog
     assert client.get("/projects").get_data(as_text=True).count(hint) == 1  # the dialog only
     assert "<kbd>@home</kbd>" in client.get("/next").get_data(as_text=True)  # the ? overlay

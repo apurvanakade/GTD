@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, add_form, context_chip with context %}
+{% from "_task.html" import project_select, add_form, add_extras, title_marks, context_chip with context %}
 {% block title %}Calendar{% endblock %}
 {% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
 {% block actions %}{% set p = 'w' if week else 'm' %}
@@ -15,11 +15,22 @@
 </span>
 {% endblock %}
 {% block body %}
-{% call add_form(url_for('calendar_view'), 'Add a dated next action…', id='cal-add', marks=True) %}
+{% macro fields() %}
   <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
   {{ project_select() }}
   <input name="recur" placeholder="repeats…" aria-label="Repeats">
-{% endcall %}
+{% endmacro %}
+{% call add_form(url_for('calendar_view'), 'Add a dated next action…', marks=True) %}{{ fields() }}{% endcall %}
+{#- A day number opens this, on that day (the script below). #}
+<dialog class="day-dialog">
+  <form method="post" action="{{ url_for('calendar_view') }}">
+    <h2>Add</h2>
+    <input name="title" placeholder="Add a dated next action…" autocomplete="off" required>
+    {{ title_marks() }}
+    <div class="extras">{{ fields() }}{{ add_extras() }}</div>
+    <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
+  </form>
+</dialog>
 <table class="cal{% if week %} week{% endif %}">
   <thead><tr>{% for d in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
   <tbody data-filtered>
@@ -51,11 +62,15 @@ const cal = document.querySelector('.cal');
 cal.addEventListener('click', e => {
   const b = e.target.closest('.day');
   if (!b) return;
-  const f = document.getElementById('cal-add');
+  const d = document.querySelector('.day-dialog'), f = d.querySelector('form');
+  f.reset();
   f.due_date.value = b.dataset.date;
-  f.title.placeholder = `Add on ${b.dataset.label}…`;
-  f.title.focus();
+  d.querySelector('h2').textContent = `Add on ${b.dataset.label}`;
+  d.showModal();
+  f.elements.title.focus();
 });
+// A press beside a task would sweep a selection across the days. Not user-select: none, which stops the tasks dragging.
+cal.addEventListener('selectstart', e => e.preventDefault());
 // Drag a task onto another day to move its due date; it moves in place and is saved in the background.
 let dragged = null;
 cal.addEventListener('dragstart', e => {

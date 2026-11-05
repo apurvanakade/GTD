@@ -138,7 +138,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     with page.expect_popup() as info:
         page.evaluate(code)
     popup = info.value
-    popup.check("input[name=link]")
+    assert popup.is_checked("input[name=link]") and popup.locator(".md-editor").count() == 1
     assert popup.get_attribute("input[name=title]", "placeholder") == "Someday / maybe"
     with popup.expect_event("close"):  # listening first: it can close before a later wait starts
         popup.press("input[name=title]", "Enter")
@@ -434,13 +434,56 @@ def test_new_option_reveals_the_name_box(page, live):
     assert page.locator("select[name=project_id] option:checked").inner_text() == "Garage"
 
 
-def test_clicking_a_calendar_day_sets_the_add_date(page, live):
-    page.goto(live + "/calendar")
+def test_clicking_a_calendar_day_opens_an_add_dialog(page, live, conn):
+    page.goto(live + "/calendar?m=2026-10")
     page.locator('.cal .day[data-date="2026-10-29"]').click()
-    title = page.locator("main form.add input[name=title]")
+    dialog = page.locator(".day-dialog")
+    assert dialog.evaluate("d => d.open") and "29 Oct" in dialog.locator("h2").text_content()
     assert page.evaluate("document.activeElement.name") == "title"
-    assert "29 Oct" in title.get_attribute("placeholder")
-    assert page.locator("main form.add input[name=due_date]").input_value() == "2026-10-29"
+    assert dialog.locator("[name=due_date]").input_value() == "2026-10-29"
+    dialog.locator("[name=title]").fill("left over")  # cancelled: not on the next day's
+    page.keyboard.press("Escape")
+    page.locator('.cal .day[data-date="2026-10-28"]').click()
+    assert dialog.locator("[name=title]").input_value() == "" and dialog.locator("[name=due_date]").input_value() == "2026-10-28"
+    dialog.locator("[name=title]").fill("from the dialog")
+    dialog.locator("[name=remind_at]").fill("tomorrow 3pm")
+    dialog.locator("label", has_text="@morning").click()
+    with page.expect_navigation():
+        page.keyboard.press("Enter")
+    assert page.url.endswith("/calendar?m=2026-10")  # stays on this month
+    t = conn.execute("SELECT * FROM tasks WHERE title = 'from the dialog'").fetchone()
+    assert t["due_date"] == "2026-10-28" and t["remind_at"] and "morning" in db.get_task(conn, t["id"])["contexts"]
+
+
+def test_an_add_line_context_can_be_picked_before_typing(page, live, conn):
+    """Its extra fields show only while the line is in use: pressing a word mustn't fold them away under the mouse."""
+    page.goto(live + "/next")
+    line = page.locator("main form.add")
+    line.locator("[name=title]").focus()
+    word = line.locator(".contexts label", has_text="@morning")
+    word.click()
+    assert word.locator("input").is_checked() and word.is_visible()
+    line.locator("[name=title]").fill("picked first")
+    with page.expect_navigation():
+        line.locator("[name=title]").press("Enter")
+    t = conn.execute("SELECT id FROM tasks WHERE title = 'picked first'").fetchone()
+    assert "morning" in db.get_task(conn, t["id"])["contexts"]
+
+
+def test_dragging_across_rows_or_days_selects_no_text(page, live):
+    def sweep(start, end):
+        a, b = start.bounding_box(), end.bounding_box()
+        page.mouse.move(a["x"] + a["width"] - 4, a["y"] + a["height"] / 2)
+        page.mouse.down()
+        page.mouse.move(b["x"] + 4, b["y"] + b["height"] / 2, steps=8)
+        page.mouse.up()
+        return page.evaluate("getSelection().toString()")
+    page.goto(live + "/next")
+    rows = page.locator("main ul.tasks > li.task")
+    assert sweep(rows.nth(0), rows.nth(2)) == ""
+    page.goto(live + "/calendar?m=2026-10")
+    cells = page.locator(".cal td")
+    assert sweep(cells.nth(1), cells.nth(10)) == ""
 
 
 def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, conn):
@@ -1304,8 +1347,9 @@ def test_site_info_filters_every_working_list_but_not_the_inbox(page, live, conn
     tick("morning").check()
     page.locator(".ev", has_text="call mum").wait_for(state="detached")
     page.keyboard.press("Escape")  # closing it reloads nothing more, and it stays closed
-    page.locator(".cal .day").first.click()  # the redrawn grid still works: a day number sets the add line's date
-    assert page.locator("#cal-add [name=due_date]").input_value() == page.locator(".cal .day").first.get_attribute("data-date")
+    page.locator(".cal .day").first.click()  # the redrawn grid still works: a day number opens its add dialog
+    assert page.locator(".day-dialog [name=due_date]").input_value() == page.locator(".cal .day").first.get_attribute("data-date")
+    page.keyboard.press("Escape")
     assert page.evaluate("window.stay") == 1
     page.reload()
     assert not page.locator(".help-dialog").evaluate("d => d.open")

@@ -97,10 +97,18 @@
 {% macro context_picker(t) %}
 <form method="post" class="contexts" action="{{ url_for('task_contexts', id=t.id) }}">
   <span>Context</span>
-  {% set mine = t.contexts.split() if t.contexts else [] %}
+  {{ context_words(t.contexts.split() if t.contexts else []) }}
+</form>
+{% endmacro %}
+{% macro context_words(mine=()) %}
   {% for x in contexts %}<label><input type="checkbox" name="context" value="{{ x.name }}"{% if x.name in mine %} checked{% endif %}>@{{ x.name }}</label>{% endfor %}
   <input name="new_context" placeholder="new…" aria-label="New context" autocomplete="off" size="8">
-</form>
+{% endmacro %}
+
+{# What every line adding a task offers besides its title, as the task page does: a reminder and contexts. #}
+{% macro add_extras() %}
+{{ date_input(placeholder='remind: tomorrow 9am…', name='remind_at', label='Remind', type='datetime-local') }}
+<span class="contexts">{{ context_words() }}</span>
 {% endmacro %}
 
 {# The drop panel's task targets, in the nav's order: H0 with that step (task_move() in app.py). #}
@@ -194,7 +202,7 @@
   <span class="plus" aria-hidden="true">+</span>
   <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
   <button class="primary" title="{{ label }} (Enter)" aria-label="{{ label }}">{{ button }}</button>
-  {% if caller is defined or marks %}<div class="add-more">{{ caller() if caller is defined }}{{ title_marks() if marks }}</div>{% endif %}
+  {% if caller is defined or marks %}<div class="add-more">{{ caller() if caller is defined }}{% if marks %}{{ add_extras() }}{{ title_marks() }}{% endif %}</div>{% endif %}
 </form>
 {% endmacro %}
 

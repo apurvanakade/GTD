@@ -1,4 +1,4 @@
-{% from "_task.html" import title_marks %}<!doctype html>
+{% from "_task.html" import title_marks, add_extras with context %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -87,7 +87,7 @@
       </dl>
       <h3>From any web page</h3>
       {#- A bookmarklet: a popup of /capture (capture.html) with the page's link on offer. #}
-      <p class="bookmarklet"><a href="javascript:void window.open('{{ app_url }}/capture?url='+encodeURIComponent(location.href)+'&amp;title='+encodeURIComponent(document.title),'gtd-capture','popup,width=480,height=280')" title="Drag to the bookmarks bar">＋ GTD</a> — drag to the bookmarks bar</p>
+      <p class="bookmarklet"><a href="javascript:void window.open('{{ app_url }}/capture?url='+encodeURIComponent(location.href)+'&amp;title='+encodeURIComponent(document.title),'gtd-capture','popup,width=480,height=480')" title="Drag to the bookmarks bar">＋ GTD</a> — drag to the bookmarks bar</p>
     </section>
     <section>
       <h3>Go to</h3>
@@ -100,6 +100,7 @@
     <h2>Add to inbox</h2>
     <input name="title" placeholder="What's on your mind?" autocomplete="off" required>
     {{ title_marks() }}
+    <div class="extras">{{ add_extras() }}</div>
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>

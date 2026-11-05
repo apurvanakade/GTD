@@ -105,10 +105,12 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
 (f => {
   if (!f) return;
   const title = f.elements.title, link = f.elements.link;
-  link?.addEventListener('change', () => {
-    title.required = !link.checked;
-    title.placeholder = link.checked ? f.elements.page_title.value || link.value : "What's on your mind?";
-  });
+  const linked = () => {
+    title.required = !link?.checked;
+    title.placeholder = link?.checked ? f.elements.page_title.value || link.value : "What's on your mind?";
+  };
+  link?.addEventListener('change', linked);
+  linked();
   document.addEventListener('keydown', e => { if (e.key === 'Escape') window.close(); });
   f.addEventListener('submit', async e => {
     e.preventDefault();
@@ -119,7 +121,8 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
     } catch { return location.reload(); }
     window.close();
     f.reset();
-    title.required = true;
+    f.querySelector('.md-editor')?.replaceChildren();
+    linked();
     title.focus();
   });
 })(document.querySelector('form.capture.popup'));
@@ -454,7 +457,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
   const listOf = e => e.target.closest?.('ul[data-reorder]');
-  // Only the grip starts a drag, so titles stay links and text stays selectable.
+  // Only the grip starts a drag, so titles stay links.
   document.addEventListener('pointerdown', e => { if (listOf(e)) { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; } });
   document.addEventListener('pointerup', e => listOf(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
   document.addEventListener('dragstart', e => {

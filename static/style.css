@@ -130,8 +130,13 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search { flex: 1 1 0; min-width: 120px; position: relative; }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
-.capture-dialog, .help-dialog, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
-.capture-dialog { width: min(480px, calc(100vw - 32px)); }
+.capture-dialog, .day-dialog, .help-dialog, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
+.capture-dialog, .day-dialog { width: min(480px, calc(100vw - 32px)); }
+/* A dialog's or the popup's fields beyond the title (add_extras() in _task.html). */
+.extras { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.extras > * { flex: 1 1 160px; width: auto; min-width: 0; }
+.extras > .contexts { flex: 1 0 100%; margin: 0; }
+.day-dialog .marks { margin: 6px 0 0; font-size: var(--fs-s); }
 /* Site info: three columns, fewer as the window narrows; nothing to scroll on a desktop. */
 .help-dialog { width: min(62rem, calc(100vw - 32px)); padding: 20px 24px 24px; }
 .help-dialog .close { position: absolute; top: 12px; right: 14px; }
@@ -181,15 +186,17 @@ body.embed main :is(input, textarea, .md-editor) { background: transparent; bord
 body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-color: var(--line); }
 .popup { padding: 16px; }  /* the bookmarklet's window (capture.html) */
 .popup h2 { margin-top: 0; }
-body.embed .popup input[name=title] { width: 100%; border-color: var(--line); }
+body.embed .popup :is(input[name=title], input[name=remind_at], input[name=new_context], .md-editor) { border-color: var(--line); }
+body.embed .popup input[name=title] { width: 100%; }
+.popup .md-editor { margin-top: 8px; }
 .popup :is(.marks, .bookmark) { font-size: var(--fs-s); }
 .popup .bookmark { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .popup .bookmark input { width: auto; margin: 0; }
 body.embed .title-line { padding-right: 8rem; }  /* room for the overlay's ‹ › × */
 body.embed .edit .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
 body.embed .edit .fields .hint.when { display: inline; min-height: 0; }  /* no centering here to keep still */
-:is(.capture-dialog, .help-dialog, .overlay, .reached)::backdrop { background: rgb(0 0 0 / .35); }
-:is(.capture-dialog, .help-dialog, .reached) h2 { margin-top: 0; }
+:is(.capture-dialog, .day-dialog, .help-dialog, .overlay, .reached)::backdrop { background: rgb(0 0 0 / .35); }
+:is(.capture-dialog, .day-dialog, .help-dialog, .reached) h2 { margin-top: 0; }
 .suggest {
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
@@ -245,6 +252,9 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
 .add .add-more input[name="recur"], .add .add-more input[name="notes"] { flex: 1 1 180px; }
 .add:focus-within > .primary, .add:has(input[name="title"]:not(:placeholder-shown)) > .primary { visibility: visible; }
 .add:focus-within .add-more, .add:has(input[name="title"]:not(:placeholder-shown)) .add-more { display: flex; }
+.add:has(.add-more:active) .add-more, .add:has(.contexts :checked) .add-more { display: flex; }  /* pressing a context word moves the focus off the box */
+.add .add-more > .contexts { flex: 1 0 100%; margin: 0; }
+.add .add-more > .date-field { flex: 1 1 200px; }
 
 /* Picking "＋ New…" reveals the name box next to the select. */
 input[name="new_project"] { display: none; }
@@ -343,6 +353,8 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .task form { margin: 0; }
 .task.overdue .date, .date.overdue { color: var(--danger); font-weight: 600; }
 .task.flagged .title { color: var(--warn); }
+/* A press that misses the grip would otherwise sweep a selection across the rows. */
+li.task { user-select: none; }
 .task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
 .task:hover .grip { opacity: 1; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */

@@ -1,4 +1,5 @@
-"""Natural-language dates: "tomorrow", "saturday", "next week", "in 3 days", "oct 30", or ISO "2026-10-30".
+"""Natural-language dates: "tomorrow", "saturday", "next week", "in 3 days", "oct 30", "4/15", "04-15-2027" (month
+first) or ISO "2026-10-30".
 Reminder times add a time of day: "tomorrow 9am", "fri 14:00", "in 2 hours"."""
 import calendar
 import re
@@ -20,6 +21,16 @@ TIME_LAST = re.compile(rf"(?:^|\s)(?:at\s+)?{CLOCK}$")
 TIME_FIRST = re.compile(rf"^{CLOCK}(?:\s|$)")
 DEFAULT_TIME = time(9, 0)  # a reminder given only a date
 MONTH_DAY = re.compile(r"^(?:([a-z]+)\s+(\d{1,2})|(\d{1,2})\s+([a-z]+))(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$")
+NUMERIC = re.compile(r"^(\d{1,2})([/-])(\d{1,2})(?:\2(\d{4}|\d{2}))?$")  # month first: 4/15, 04-15-2027, 4/15/27
+
+
+def _dated(month, day, year, today):
+    """That date, or None if there's no such day. No year means the next one: "jan 5" in October is next January."""
+    try:
+        d = date(year or today.year, month, day)
+        return date(today.year + 1, month, day) if not year and d < today else d
+    except ValueError:
+        return None
 
 
 def parse(text, today):
@@ -57,15 +68,12 @@ def parse(text, today):
     if m:
         month = MONTHS.get(m.group(1) or m.group(4))
         day = int(m.group(2) or m.group(3))
-        year = int(m.group(5)) if m.group(5) else None
         if month:
-            try:
-                d = date(year or today.year, month, day)
-                if not year and d < today:  # "jan 5" in October means next January
-                    d = date(today.year + 1, month, day)
-                return d
-            except ValueError:
-                return None
+            return _dated(month, day, int(m.group(5)) if m.group(5) else None, today)
+    m = NUMERIC.match(s)
+    if m:
+        year = m.group(4) and int(m.group(4))
+        return _dated(int(m.group(1)), int(m.group(3)), year and (year + 2000 if year < 100 else year), today)
     return None
 
 

@@ -170,7 +170,10 @@ def task_fields_from_form(current=None):
                 fields["remind_at"] = remind_at
     if current is None and fields.get("title"):
         fields["title"], typed = split_title(fields["title"])
+        picked = [*contexts_from_form(), *typed.pop("contexts", ())]  # contexts add up, from the picks and the title
         fields.update(typed)  # typed into the title: wins over the line's own boxes
+        if picked:
+            fields["contexts"] = picked
     if fields.get("recur") and not fields.get("due_date"):
         fields["due_date"] = today().isoformat()
     return fields
@@ -216,6 +219,12 @@ def parse_context(raw, say=None):
 def context_name(raw):
     """A name typed in a box (a task's new context, a rename): spaces become hyphens. None if it can't be one."""
     return parse_context(re.sub(r"\s+", "-", (raw or "").strip().removeprefix("@")))
+
+
+def contexts_from_form():
+    """The form's context words (`context`, one per tick) and a new one's name (`new_context`)."""
+    picks = [context_name(raw) for raw in [*request.form.getlist("context"), request.form.get("new_context")]]
+    return [name for name in picks if name]
 
 
 # An add line's title can end with these, in any order: "pay rent ^nov 1 *monthly !oct 30 9am @home". Each needs a
@@ -297,13 +306,13 @@ def capture_page():
 
 
 def bookmark(fields):
-    """The popup's "Bookmark link": the page goes into the notes as a Markdown link, its title the task's if none."""
+    """The popup's "Bookmark link": the page goes on top of the notes as a Markdown link, its title the task's if none."""
     link = form_value("link")
     if not link:
         return
     name = re.sub(r"\s+", " ", re.sub(r"[\[\]]", "", request.form.get("page_title", ""))).strip() or link
     fields["title"] = fields.get("title") or name
-    fields["notes"] = f"[{name}]({quote(link, safe=SAFE_URL)})"
+    fields["notes"] = "\n".join(filter(None, [f"[{name}]({quote(link, safe=SAFE_URL)})", fields.get("notes")]))
 
 
 SAFE_URL = ":/?#[]@!$&'*+,;=%~"  # all but ( ) and spaces, which would end a Markdown link
@@ -322,7 +331,7 @@ def capture():
                 parts.append(f"due {fields['due_date']}")
             if "recur" in fields:
                 parts.append(f"↻ {fields['recur']}")
-            if "remind_at" in fields:
+            if fields.get("remind_at"):
                 parts.append(f"reminder {local_minute(fields['remind_at'], WHEN)}")
             parts += [f"@{name}" for name in fields.get("contexts", ())]
             flash(" · ".join(parts))
@@ -417,10 +426,9 @@ def stay_in_view(fields):
 
 @app.post("/tasks/<int:id>/contexts")
 def task_contexts(id):
-    """The task page's context picks (`context`, one per tick) and a new one's name (`new_context`)."""
+    """The task page's context picks."""
     db.get_task(conn(), id) or abort(404)
-    picks = [context_name(raw) for raw in [*request.form.getlist("context"), request.form.get("new_context")]]
-    db.set_task_contexts(conn(), id, [name for name in picks if name])
+    db.set_task_contexts(conn(), id, contexts_from_form())
     return ("", 204) if fetched() else back()
 
 
