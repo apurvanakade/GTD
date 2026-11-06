@@ -1,4 +1,4 @@
-{% from "_task.html" import title_marks, add_extras with context %}<!doctype html>
+{% from "_task.html" import add_form, title_marks, add_extras with context %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -112,6 +112,8 @@
 {# Messages float over the page and fade, so a record page opened on its title (below) still shows them. #}
 {% with flashes = get_flashed_messages() %}{% if flashes %}<div class="flashes" role="status">{% for m in flashes %}<p class="flash">{{ m }}</p>{% endfor %}</div>{% endif %}{% endwith %}
 <main>
+  {#- The task lists' one add line (CAPTURE_VIEWS): it always captures to the inbox, where a task's destination is decided. #}
+  {% if capture_line %}{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', marks=True) }}{% endif %}
   {# Every page: an optional link up, the heading with its few actions, then the page (add line, list). #}
   <header class="page">
     {% block crumb %}{% endblock %}

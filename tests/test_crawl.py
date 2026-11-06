@@ -161,14 +161,21 @@ def test_every_link_works(client, conn):
 
 
 def test_every_page_has_the_same_skeleton(client, conn):
-    """One layout everywhere: header (title + actions), then the add line, then the list."""
+    """One layout everywhere: header (title + actions), then the add line, then the list. The four task lists share one
+    capture line instead, the same on each, above the header."""
     seed(conn)
     pages, _ = crawl(client)
     checked = 0
+    capture_lines = set()
     for url, page in pages.items():
         if not page or "<main>" not in page.html:
             continue
         main = re.sub(r'<p class="flash">.*?</p>', "", page.html.split("<main>")[1]).strip()
+        if urlsplit(url).path in ("/inbox", "/next", "/waiting", "/someday"):
+            capture_line, main = main.split('<header class="page">', 1)
+            assert capture_line.startswith('<form method="post" action="/capture"'), url
+            capture_lines.add(capture_line)
+            main = '<header class="page">' + main
         assert main.startswith('<header class="page">'), url
         header = main[:main.index("</header>")]
         assert "<h1>" in header or 'class="big"' in main, url  # edit pages: the big title input is the heading
@@ -184,6 +191,7 @@ def test_every_page_has_the_same_skeleton(client, conn):
                     assert adds[0] < main.index(later), (url, later)
         checked += 1
     assert checked > 25
+    assert len(capture_lines) == 1
 
 
 def copy_db(src, dest):

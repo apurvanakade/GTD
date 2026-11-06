@@ -243,6 +243,7 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 24px; padding: 6px 10px;
   background: var(--card); border: 1px solid var(--muted); border-radius: 10px;
 }
+main > .capture { margin-top: 24px; }  /* first on the page, in the header's place */
 .add:focus-within { border-color: var(--accent); }
 .add .plus { color: var(--accent); font-size: 1.25rem; line-height: 1; width: 20px; text-align: center; }
 .add input[name="title"] { flex: 1 1 200px; width: auto; min-width: 0; border-color: transparent; background: transparent; padding: 6px 4px; }

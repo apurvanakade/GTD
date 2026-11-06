@@ -65,6 +65,9 @@ def same_origin_only():
         abort(403)
 
 
+CAPTURE_VIEWS = ("inbox", "next_view", "waiting", "someday")  # the task lists: base.html puts the capture line on them
+
+
 @app.context_processor
 def template_globals():
     timer = db.timer_running(conn())
@@ -73,7 +76,8 @@ def template_globals():
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
-            "overlays": [] if embed else opened(), "app_url": GTD_URL or request.host_url.rstrip("/"),
+            "capture_line": request.endpoint in CAPTURE_VIEWS, "overlays": [] if embed else opened(),
+            "app_url": GTD_URL or request.host_url.rstrip("/"),
             "contexts": db.contexts(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
             "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0)}
 

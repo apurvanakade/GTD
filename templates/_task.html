@@ -193,10 +193,6 @@
 {% else %}<ul class="tasks"><li class="empty">{{ empty }}</li></ul>{% endif %}
 {% endmacro %}
 
-{# The add line of every task list (Inbox, Next, Waiting, Someday): it always captures to the inbox, where a task's
-   destination is decided. #}
-{% macro capture_line() %}{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', marks=True) }}{% endmacro %}
-
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
 {% macro title_marks() %}<p class="hint marks">^fri due · *weekly repeat · !3pm remind · @home context</p>{% endmacro %}
 
