@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "_task.html" import task_list, add_form, pin_button, move_panel, context_chip, nothing_here with context %}
+{% from "_task.html" import task_list, capture_line, pin_button, move_panel, context_chip, nothing_here with context %}
 {% block title %}Someday / maybe{% endblock %}
 {% block actions %}{{ context_chip() }}<span data-filtered>{% if tickled %}<a class="tickled-toggle" href="{{ tickled_url }}" title="{{ tickled }} out of sight until their tickler date">{{ 'Hide tickled' if show_tickled else 'Show tickled' }}</a>{% endif %}</span>
   {%- if tasks or context_filter %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
-{{ add_form(url_for('someday_add'), 'Someday I might…', marks=True) }}
+{{ capture_line() }}
 {# H0's someday tasks: drag one onto Next or a project to commit to it. Someday projects have their own tab. #}
 <div data-filtered>{% if tasks %}{{ task_list(tasks) }}{% elif context_filter %}{{ nothing_here() }}{% else %}<ul class="tasks"><li class="empty">Nothing parked here.</li></ul>{% endif %}</div>
 {% if tasks or context_filter %}{{ move_panel(current='someday') }}{% endif %}

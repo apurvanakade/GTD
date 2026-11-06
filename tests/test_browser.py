@@ -104,7 +104,7 @@ def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
 
 
 def test_plus_inbox_dialog_captures(page, live, conn):
-    page.goto(live + "/next")
+    page.goto(live + "/projects")
     page.click(".add-inbox")
     assert page.locator(".capture-dialog").evaluate("d => d.open")
     page.fill(".capture-dialog input[name=title]", "from the dialog")
@@ -116,7 +116,11 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.wait_for_selector(".flashes", state="detached")
     assert not page.locator(".capture-dialog").evaluate("d => d.open") and page.evaluate("window.mark") == 1
     assert any(t["title"] == "from the dialog" for t in db.inbox_tasks(conn))
+    page.click(".add-inbox")
+    page.mouse.click(5, 5)  # beside it, on the backdrop: closed
+    assert not page.locator(".capture-dialog").evaluate("d => d.open")
     # ⌘/ captures while typing, in an overlay's notes too; the overlay stays open under it.
+    page.goto(live + "/next")
     row(page, "vacuum").locator(".title").click()
     task_overlay(page)
     page.frame_locator("dialog.overlay iframe").locator(".md-editor").click()
@@ -129,9 +133,6 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     assert any(t["title"] == "while typing" for t in db.inbox_tasks(conn))
     page.mouse.click(5, 5)  # beside it, on the backdrop: closed
     page.wait_for_selector("dialog.overlay", state="detached")
-    page.click(".add-inbox")
-    page.mouse.click(5, 5)  # so does any dialog
-    assert not page.locator(".capture-dialog").evaluate("d => d.open")
     # The bookmarklet opens a popup; "Bookmark link" with no title files the page under its own title, and it closes.
     page.goto(live + "/someday")
     code = page.locator(".bookmarklet a").get_attribute("href").removeprefix("javascript:")
@@ -162,7 +163,7 @@ def test_the_bookmarklet_popup_stays_open_to_show_a_warning(page, live, conn):
 
 
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
-    page.goto(live + "/next")
+    page.goto(live + "/projects")
     page.keyboard.press("f")
     assert page.evaluate("document.activeElement.name") == "q"
     page.locator("body").click(position={"x": 5, "y": 5})
@@ -369,11 +370,12 @@ def test_drag_reorders_someday_projects(page, live, conn):
     assert titles() == ["Someday proj", "Another dream"]
 
 
-def test_slash_on_inbox_focuses_its_add_box(page, live):
-    page.goto(live + "/inbox")
-    page.keyboard.press("/")
-    assert page.evaluate("document.activeElement.closest('main form.add') !== null")
-    assert not page.locator(".capture-dialog").evaluate("d => d.open")
+def test_slash_on_a_task_list_focuses_its_add_box(page, live):
+    for path in ("/inbox", "/next", "/waiting", "/someday"):
+        page.goto(live + path)
+        page.keyboard.press("/")
+        assert page.evaluate("document.activeElement.closest('main form.add') !== null"), path
+        assert not page.locator(".capture-dialog").evaluate("d => d.open"), path
 
 
 def test_project_row_arrow_folds_out_its_steps(page, live):

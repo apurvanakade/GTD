@@ -493,7 +493,7 @@ def next_view():
 
 
 def add_next_action():
-    """Add the form's task as a next action (beside any its project has), the inbox if orphaned."""
+    """The calendar's add line: the form's task as a next action (beside any its project has), the inbox if orphaned."""
     if not form_value("title"):  # before reading the form, which may create a "＋ New…" project
         return
     fields = task_fields_from_form()
@@ -502,12 +502,6 @@ def add_next_action():
     orphaned(pid, fields.get("ground"), say="it")
     stay_in_view(fields)
     db.add_task(conn(), fields.pop("title"), today=today(), **fields)
-
-
-@app.post("/next/add")
-def next_add():
-    add_next_action()
-    return back("next_view")
 
 
 def soon(due):
@@ -537,16 +531,6 @@ def waiting():
     return render_template("waiting.html", tasks=filtered(db.tasks_with_step(c, "waiting")), project_groups=db.project_groups(c))
 
 
-@app.post("/waiting/add")
-def waiting_add():
-    if form_value("title"):
-        fields = task_fields_from_form()
-        orphaned(fields.get("project_id"), fields.get("ground"), say="it")
-        stay_in_view(fields)
-        db.add_task(conn(), fields.pop("title"), today=today(), step="waiting", **fields)
-    return back("waiting")
-
-
 def hide_tickled(rows):
     """Someday's rows (tasks or projects) without those tickled to a later date, unless ?tickled=1 asks for them,
     and the template variables for that toggle."""
@@ -566,12 +550,11 @@ def someday():
 
 @app.post("/someday/add")
 def someday_add():
-    """Someday's add line: an H0 someday task; the review's new ideas can make a someday project (kind=project)."""
+    """The review's new ideas: an H0 someday task or a someday project (kind=project)."""
     if request.form.get("kind") == "project":
         add_project_from_form("someday")
     elif form_value("title"):
         fields = task_fields_from_form()
-        stay_in_view(fields)
         db.add_task(conn(), fields.pop("title"), today=today(), ground=1, step="someday",
                     **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
     return back("someday")
