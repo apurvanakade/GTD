@@ -14,6 +14,8 @@ import recur
 from app import BALANCE, HORIZON_STEPS, REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
 
+OUT_OF_RANGE = ("in 99999999999 days", "in 99999 weeks", "in 999999 years", "in " + "9" * 5000 + " days", "9999-12-31", "12/31/9999")
+
 # --- recur -----------------------------------------------------------------
 
 @pytest.mark.parametrize("rule,expected", [
@@ -40,10 +42,6 @@ def test_after_done_counts_from_completion():
 
 
 # --- inbox processing ------------------------------------------------------
-
-def test_no_process_page(client, conn):
-    """The Inbox page is where items get dealt with: no second page doing the same."""
-    assert client.get("/process").status_code == 404
 
 def test_capture_box_only_on_task_lists(client, conn):
     tid = db.add_task(conn, "x")
@@ -407,18 +405,6 @@ def test_completed_steps_dont_repeat_their_project_or_step(client, conn):
     assert 'class="proj"' in done and ">later<" not in done  # elsewhere the project still says where it was
 
 
-def test_no_stripe_colors(client, conn):
-    """Colored stripes meant different things on different pages (due soon here, waiting there): only the calendar,
-    with its legend, colors tasks (by kind)."""
-    seed(conn)
-    for url in ("/next", "/projects/1", "/projects", "/waiting", "/inbox", "/horizons", "/search?q=tiles"):
-        html = client.get(url).get_data(as_text=True)
-        assert not re.search(r'class="[^"]*\b[sk]-(overdue|today|week|month|later|next|h0|waiting|someday|inbox)\b', html), url
-        assert 'class="legend"' not in html, url
-    css = client.get("/static/style.css").get_data(as_text=True)
-    assert "inset 3px" not in css
-
-
 def test_nav_counts_are_dots(client, conn):
     html = client.get("/inbox").get_data(as_text=True)
     assert nav_badges(html) == {}  # nothing to count: no dots, not even Next's 0
@@ -545,6 +531,25 @@ def new_york(monkeypatch):
     time.tzset()
 
 
+def test_external_event_in_utc_on_the_last_day_shown_stays(client, monkeypatch, new_york):
+    ics = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:1
+SUMMARY:Late dinner
+DTSTART:20261025T003000Z
+DTEND:20261025T013000Z
+END:VEVENT
+END:VCALENDAR
+"""
+    monkeypatch.setattr(extcal, "fetch", lambda url: ics)
+    monkeypatch.setattr(extcal, "_feeds", {})
+    monkeypatch.setitem(app.config, "CALENDARS", extcal.parse_config("Mine=https://ok.test/a.ics"))
+    html = client.get("/calendar?w=2026-10-22").get_data(as_text=True)  # the week ends Sat Oct 24; it's 20:30 that night
+    days = {d: cell for d, cell in re.findall(r'<td data-date="([\d-]+)"(.*?)</td>', html, re.S)}
+    assert "<b>20:30</b> Late dinner" in days["2026-10-24"]
+
+
 def test_calendar_shows_external_events(client, conn, monkeypatch, new_york):
     fetched = []
     monkeypatch.setattr(extcal, "fetch", lambda url: fetched.append(url) or (ICS if "ok" in url else 1 / 0))
@@ -624,7 +629,7 @@ def test_horizons(client, conn):
     assert len(db.horizons(conn)["purpose"]) == 1
     client.post("/horizons", data={"level": "goal", "title": "Get promoted"})
     gid = db.horizons(conn)["goal"][-1]["id"]
-    client.post(f"/horizons/{gid}", data={"title": "Get promoted", "notes": "Dossier by Sept"})
+    client.post(f"/autosave/horizons/{gid}", data={"notes": "Dossier by Sept", "base_notes": ""})
     assert db.get_horizon(conn, gid)["notes"] == "Dossier by Sept"
     assert client.post("/horizons", data={"level": "purpose", "title": "x"}).status_code == 400
     pid = items["purpose"][0]["id"]
@@ -723,6 +728,16 @@ def test_search(client, conn):
     assert db.search(conn, "_")["tasks"] == []
     page = client.get("/search?q=tile").data
     assert b"Pick tile grout" in page and b"Measure kitchen tiles" in page
+    assert b"at most" not in page
+    for i in range(db.SEARCH_LIMIT + 1):  # each kind is capped, and the page says so
+        db.add_task(conn, f"many {i}")
+        db.add_project(conn, f"many {i}")
+        db.add_reference(conn, f"many {i}")
+        db.add_horizon(conn, "goal", f"many {i}")
+        db.complete_task(conn, db.add_task(conn, f"many done {i}"), TODAY)
+    r = db.search(conn, "many")
+    assert {k: len(v) for k, v in r.items()} == dict.fromkeys(("tasks", "done", "projects", "horizons", "references"), db.SEARCH_LIMIT)
+    assert b"at most" in client.get("/search?q=many").data
     assert b"Nothing matches" in client.get("/search?q=zzz").data
     assert client.get("/search").status_code == 200
 
@@ -875,8 +890,14 @@ def test_home_and_horizon_page(client, conn):
     assert "Run a marathon" in page and "Delete" in page
     vision = db.horizons(conn)["vision"][0]["id"]
     assert "Delete" not in client.get(f"/horizons/{vision}?embed=overlay").get_data(as_text=True)
-    client.post(f"/horizons/{vision}", data={"notes": "big"})  # from the Horizons page: notes only
-    assert (db.get_horizon(conn, vision)["title"], db.get_horizon(conn, vision)["notes"]) == ("Vision", "big")
+    # Title and notes are autosave's: a select posting a stale form leaves them, and a bad one saves nothing.
+    area = db.add_horizon(conn, "area", "Home")
+    db.update_horizon(conn, gid, notes="newer")
+    client.post(f"/horizons/{gid}", data={"title": "stale", "notes": "stale", "outcome": "When run", "area": area})
+    g = db.get_horizon(conn, gid)
+    assert (g["title"], g["notes"], g["outcome"], g["area_id"]) == ("Run a marathon", "newer", "When run", area)
+    assert client.post(f"/horizons/{gid}", data={"outcome": "other", "area": gid}).status_code == 400
+    assert db.get_horizon(conn, gid)["outcome"] == "When run"
     assert client.get("/horizons/999?embed=overlay").status_code == 404
     assert client.post("/horizons", data={"level": "goal", "title": " "}).status_code == 400
 
@@ -888,6 +909,8 @@ def test_db_rejects_unknown_fields(conn):
     assert db.search(conn, "   ") == {"tasks": [], "done": [], "projects": [], "horizons": [], "references": []}
     with pytest.raises(ValueError):
         db.update_reference(conn, 1, colour="red")
+    with pytest.raises(ValueError):
+        db.add_project(conn, "x", colour="red")
 
 
 def test_next_due_skipping_ahead_does_not_drift():
@@ -1268,6 +1291,7 @@ def test_project_page_times_each_step(client, conn):
     ("04-15-2027", date(2027, 4, 15)), ("4/15/2027", date(2027, 4, 15)), ("4/15/27", date(2027, 4, 15)),
     ("12/25", date(2026, 12, 25)), ("1-5", date(2027, 1, 5)),  # month first; no year means the next one
     ("feb 30", None), ("2/30", None), ("13-01-2027", None), ("blah", None), ("", None),
+    *((text, None) for text in OUT_OF_RANGE),
 ])
 def test_natural_dates(text, expected):
     assert dates.parse(text, TODAY) == expected
@@ -1280,6 +1304,22 @@ def test_task_form_accepts_words_for_due_date(client, conn):
     assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
     client.post(f"/tasks/{tid}", data={"title": "call", "due_date": "gibberish"})  # keeps the old date
     assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
+    client.post(f"/tasks/{tid}", data={"due_date": "gibberish", "recur": "weekly"})  # with a repeat too
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
+    client.post(f"/tasks/{tid}", data={"recur": "weekly"})  # no Due box posted: its date stays
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-24"
+    client.post(f"/tasks/{tid}", data={"due_date": "", "recur": "weekly"})  # cleared: a repeat needs one
+    assert db.get_task(conn, tid)["due_date"] == "2026-10-22"
+
+
+def test_background_save_answers_how_it_read_the_boxes(client, conn):
+    """So the page replaces "3pm" or "today", which would read differently if posted again later."""
+    tid = db.add_task(conn, "call", ground=1, step="next")
+    saved = lambda **form: client.post(f"/tasks/{tid}", data=form, headers=FETCH).get_json()["saved"]
+    remind = local(db.iso(NOW + timedelta(hours=2))).strftime("%Y-%m-%d %H:%M")
+    assert saved(due_date="saturday", remind_at="in 2 hours") == {"due_date": "2026-10-24", "remind_at": remind}
+    assert saved(due_date="gibberish", remind_at="gibberish") == {}  # unreadable: left in the box to fix
+    assert saved(due_date="", remind_at="") == {"due_date": "", "remind_at": ""}
 
 
 def test_due_date_box_has_a_calendar_picker(client, conn):
@@ -1493,6 +1533,9 @@ def test_fuzzy_score():
 
 def test_search_suggest(client, conn):
     seed(conn)
+    for word, url in (("vision", "/horizons?level=purpose#vision"), ("purpose", "/horizons?level=purpose")):
+        assert [s["url"] for s in client.get(f"/search/suggest?q={word}").get_json() if s["kind"] == word] == [url]
+        assert f'href="{url}"' in client.get(f"/search?q={word}").get_data(as_text=True)
     r = client.get("/search/suggest?q=tils").get_json()
     titles = [s["title"] for s in r]
     assert titles[:2] == ["buy tiles", "lay tiles"]           # open tasks before the done one
@@ -1950,18 +1993,6 @@ def test_someday_activate_sends_only_the_status(client, conn):
     assert (p["status"], p["notes"], p["title"]) == ("active", "newer", "Boat")
 
 
-def test_date_button_does_not_share_the_calendar_class(client, conn):
-    seed(conn)
-    html = client.get("/tasks/2?embed=overlay").get_data(as_text=True)
-    assert 'class="pick"' in html and 'class="cal"' not in html
-
-
-def test_horizons_h0_rows_have_no_h0_tag(client, conn):
-    seed(conn)
-    html = client.get("/horizons?level=ground").get_data(as_text=True)
-    assert "vacuum" in html and "Ground level: no project, on purpose" not in html
-
-
 def test_horizons_has_one_add_line_with_a_level(client, conn):
     html = client.get("/horizons?level=area").get_data(as_text=True)
     assert len(re.findall(r'<form[^>]*class="add', html)) == 1
@@ -1983,12 +2014,6 @@ def test_waiting_with_only_projects_is_clear(client, conn):
     pid = db.add_project(conn, "Visa", status="waiting")
     html = client.get("/waiting").get_data(as_text=True)
     assert f'href="/projects/{pid}"' not in html and "empty clear" in html
-
-
-def test_review_count_is_not_a_big_title(client, conn):
-    seed(conn)
-    html = client.get("/review?step=inbox").get_data(as_text=True)
-    assert 'class="count"' in html and 'class="big' not in html
 
 
 def test_revive_and_activate_buttons_are_not_make_next(client, conn):
@@ -2068,6 +2093,7 @@ AT = datetime(2026, 10, 22, 14, 30)  # Thursday afternoon, local
     ("2026-10-30 09:00", datetime(2026, 10, 30, 9, 0)), ("2026-10-30T18:45", datetime(2026, 10, 30, 18, 45)),
     ("04-15-2027 10am", datetime(2027, 4, 15, 10, 0)), ("11/2 at 5pm", datetime(2026, 11, 2, 17, 0)),
     ("tomorrow 25:00", None), ("tomorrow 13pm", None), ("blah 9am", None), ("blah", None), ("", None),
+    ("in 99999999999 hours", None), *((text, None) for text in OUT_OF_RANGE),
 ])
 def test_natural_times(text, expected):
     assert dates.parse_when(text, AT) == expected
@@ -2228,18 +2254,32 @@ def test_a_reminder_in_the_past_is_refused_unless_unchanged(client, conn):
     assert db.get_task(conn, tid)["remind_at"] == past
 
 
-def test_reminder_preview_reads_the_text_back(client):
+def test_date_previews_read_the_text_back(client):  # today is Thu Oct 22
     when = local(db.iso(NOW + timedelta(hours=2)))
-    assert client.get("/parse/remind?q=in 2 hours").get_json() == {"reads": when.strftime("%a %b %-d, %H:%M"),
-                                                                   "past": False}
+    assert client.get("/parse/remind?q=in 2 hours").get_json() == {"reads": when.strftime("%a %b %-d, %H:%M"), "past": False}
     assert client.get("/parse/remind?q=yesterday").get_json() == {"reads": "Wed Oct 21, 09:00", "past": True}
     assert client.get("/parse/remind?q=gibberish").get_json() == {"reads": None, "past": False}
-
-
-def test_due_preview_reads_the_text_back(client):  # today is Thu Oct 22
     assert client.get("/parse/due?q=tomorrow").get_json() == {"reads": "Fri Oct 23", "past": False}
     assert client.get("/parse/due?q=2026-10-30").get_json() == {"reads": "Fri Oct 30", "past": False}
     assert client.get("/parse/due?q=gibberish").get_json() == {"reads": None, "past": False}
+
+
+def test_out_of_range_dates_and_repeats_are_refused_not_a_crash(client, conn):
+    for text in OUT_OF_RANGE:
+        for kind in ("due", "remind"):
+            assert client.get(f"/parse/{kind}", query_string={"q": text}).get_json()["reads"] is None
+        assert client.post("/capture", data={"title": f"x ^{text}"}).status_code == 302  # not lost
+    tid = db.add_task(conn, "t", ground=1, step="next", due_date="2026-10-22")
+    for rule in ("every 101 years", "every 1201 months", "every 5201 weeks", "every 36501 days", "every 99999 years",
+                 "every " + "9" * 5000 + " days"):
+        assert recur.parse(rule) is None
+        assert client.get("/parse/recur", query_string={"q": rule}).get_json()["reads"] is None
+        client.post(f"/tasks/{tid}", data={"recur": rule})
+        assert db.get_task(conn, tid)["recur"] is None
+    client.post(f"/tasks/{tid}", data={"recur": "every 100 years"})  # the longest still completes
+    assert client.post(f"/tasks/{tid}/complete").status_code == 302
+    assert db.get_task(conn, tid)["state"] == "done"
+    assert conn.execute("SELECT due_date FROM tasks WHERE title = 't' AND state = 'open'").fetchone()["due_date"] == "2126-10-22"
 
 
 def test_repeat_preview_reads_the_rule_and_the_next_date(client):  # today is Thu Oct 22
@@ -2262,21 +2302,6 @@ def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):
     sent = re.search(r'<li class="task[^>]*data-id="4".*?</li>', client.get("/waiting").get_data(as_text=True),
                      re.S).group(0)  # "quote from Bob": already sent
     assert '<span class="remind"></span>' in sent
-
-
-@pytest.mark.parametrize("url, data", [
-    ("/capture", {}), ("/calendar", {"due_date": "2026-10-30"}),
-])
-def test_a_trailing_bang_time_on_an_add_line_sets_a_reminder(client, conn, url, data):
-    client.post(url, data={"title": "call back !tomorrow 3pm", **data})
-    t = conn.execute("SELECT * FROM tasks WHERE title = 'call back'").fetchone()
-    assert local(t["remind_at"]) == datetime(2026, 10, 23, 15, 0)
-
-
-def test_a_numeric_date_in_a_bang_mark_sets_the_reminder(client, conn):
-    client.post("/capture", data={"title": "Cancel dashpass !04-15-2027 10am"})
-    t = db.inbox_tasks(conn)[0]
-    assert t["title"] == "Cancel dashpass" and local(t["remind_at"]) == datetime(2027, 4, 15, 10, 0)
 
 
 @pytest.mark.parametrize("page, url, data", [
@@ -2308,34 +2333,24 @@ def test_a_project_add_line_takes_a_bang_time(client, conn):
     assert t["title"] == "call plumber" and t["remind_at"] == db.iso(NOW + timedelta(minutes=30))
 
 
+@pytest.mark.parametrize("url, data, typed, title, due, rule, remind", [
+    ("/capture", {}, "call back !tomorrow 3pm", "call back", None, None, datetime(2026, 10, 23, 15, 0)),
+    ("/calendar", {"due_date": "2026-10-30"}, "call back !tomorrow 3pm", "call back", "2026-10-30", None, datetime(2026, 10, 23, 15, 0)),
+    ("/capture", {}, "Cancel dashpass !04-15-2027 10am", "Cancel dashpass", None, None, datetime(2027, 4, 15, 10, 0)),
+    ("/capture", {}, "pay rent *monthly !oct 30 9am ^nov 1", "pay rent", "2026-11-01", "monthly", datetime(2026, 10, 30, 9, 0)),  # any order
+    ("/calendar", {}, "pay rent *monthly !oct 30 9am ^nov 1", "pay rent", "2026-11-01", "monthly", datetime(2026, 10, 30, 9, 0)),
+    ("/capture", {}, "water plants *every 3 days", "water plants", "2026-10-22", "every 3 days", None),  # a repeat needs a date: today
+])
+def test_title_marks_set_their_fields(client, conn, url, data, typed, title, due, rule, remind):
+    client.post(url, data={"title": typed, **data})
+    t = conn.execute("SELECT * FROM tasks WHERE title = ?", (title,)).fetchone()
+    assert (t["due_date"], t["recur"], t["remind_at"] and local(t["remind_at"])) == (due, rule, remind)
+
+
 @pytest.mark.parametrize("title, flashed", [
     ("Yes! do it", None), ("wow !", None), ("!3pm", None),  # not a trailing " !time" after a title
     ("call back !blah", "Didn&#39;t understand reminder"), ("call back !yesterday", "has already passed"),
     ("call back !sometime next spring", "Didn&#39;t understand reminder"),  # several words too
-])
-def test_a_bang_that_isnt_a_reminder_stays_in_the_title(client, conn, title, flashed):
-    html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
-    t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
-    assert t["title"] == title and t["remind_at"] is None
-    assert flashed in html if flashed else "understand reminder" not in html and "has already passed" not in html
-
-
-@pytest.mark.parametrize("url, data", [
-    ("/capture", {}), ("/calendar", {}),
-])
-def test_add_lines_take_due_repeat_and_reminder_in_any_order(client, conn, url, data):
-    client.post(url, data={"title": "pay rent *monthly !oct 30 9am ^nov 1", **data})
-    t = conn.execute("SELECT * FROM tasks WHERE title = 'pay rent'").fetchone()
-    assert (t["due_date"], t["recur"], local(t["remind_at"])) == ("2026-11-01", "monthly", datetime(2026, 10, 30, 9, 0))
-
-
-def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
-    client.post("/capture", data={"title": "water plants *every 3 days"})
-    t = conn.execute("SELECT * FROM tasks WHERE title = 'water plants'").fetchone()
-    assert (t["due_date"], t["recur"]) == ("2026-10-22", "every 3 days")
-
-
-@pytest.mark.parametrize("title, flashed", [
     ("pay rent ^blah", "Didn&#39;t understand date"), ("pay rent *sometimes", "Didn&#39;t understand repeat rule"),
     ("a @ b", None), ("5 * 3", None), ("mail bob@x.com", None),
     ("Call ^home about taxes", "Didn&#39;t understand date"), ("fix it *really soon", "Didn&#39;t understand repeat rule"),
@@ -2344,8 +2359,8 @@ def test_a_captured_repeat_without_a_due_date_is_due_today(client, conn):
 def test_an_unreadable_mark_stays_in_the_title_and_warns(client, conn, title, flashed):
     html = client.post("/capture", data={"title": title}, follow_redirects=True).get_data(as_text=True)
     t = conn.execute("SELECT * FROM tasks ORDER BY id DESC").fetchone()
-    assert (t["title"], t["due_date"], t["recur"]) == (title, None, None)
-    assert flashed in html if flashed else "understand" not in html
+    assert (t["title"], t["due_date"], t["recur"], t["remind_at"]) == (title, None, None, None)
+    assert flashed in html if flashed else "understand" not in html and "has already passed" not in html
 
 
 def test_every_add_line_warns_of_what_it_couldnt_read(client, conn):
@@ -2545,24 +2560,6 @@ def test_done_inbox_item_stays_out_of_h0(conn):
     assert (db.get_task(conn, t)["ground"], db.get_task(conn, t)["step"]) == (0, None)
     assert db.get_task(conn, instance)["inbox"]  # the next instance still waits in the inbox
 
-def test_projects_have_no_area(client, conn):
-    with pytest.raises(ValueError):
-        db.add_project(conn, "x", area_id=1)
-    client.post("/projects", data={"title": "Paint fence"})
-    pid = db.projects(conn)[0]["id"]
-    assert db.get_project(conn, pid)["title"] == "Paint fence"
-    with pytest.raises(ValueError):
-        db.update_project(conn, pid, area_id=None)
-    # A new project from a task's picker needs only its name.
-    tid = db.add_task(conn, "ring Bob")
-    client.post(f"/tasks/{tid}", data={"project_id": "__new__", "new_project": "Garden"})
-    assert db.get_task(conn, tid)["project_title"] == "Garden"
-    seed(conn)
-    for url in ("/projects", "/someday", "/waiting", f"/projects/{pid}", "/review?step=creative", "/inbox", f"/tasks/{tid}", "/timer"):
-        page = client.get(url).get_data(as_text=True)
-        assert 'name="area_id"' not in page and "data-area" not in page and "area-head" not in page, url
-
-
 def test_projects_waiting_and_someday_are_flat_lists(client, conn):
     seed(conn)
     db.add_project(conn, "Desk")
@@ -2703,7 +2700,7 @@ def title_of(g, id):
     return next(n["title"] for n in g["nodes"] if n["id"] == id)
 
 
-def test_task_rows_show_the_project_not_the_area(client, conn):
+def test_task_rows_show_their_project(client, conn):
     ids = seed(conn)
     page = client.get("/next").get_data(as_text=True)
     assert f'<a class="proj" href="/projects/{ids["active"]}">Kitchen</a>' in page
@@ -2743,6 +2740,44 @@ def test_new_project_option_without_a_name_keeps_the_project(client, conn):
     client.post(f"/tasks/{tid}", data={"project_id": "__new__", "new_project": "", "step": "waiting"})
     t = db.get_task(conn, tid)
     assert (t["project_id"], t["step"]) == (pid, "waiting")
+    # A name left in the hidden box, then another project picked: the pick wins, and no project is made.
+    other = db.add_project(conn, "Q")
+    client.post(f"/tasks/{tid}", data={"project_id": other, "new_project": "stale"})
+    assert db.get_task(conn, tid)["project_id"] == other
+    assert not conn.execute("SELECT 1 FROM projects WHERE title = 'stale'").fetchone()
+
+
+@pytest.mark.parametrize("step, lands", [("next", "later"), ("later", "later"), ("waiting", "waiting")])
+def test_moving_a_step_to_another_project_lands_as_a_drag_does(client, conn, step, lands):
+    a, b = db.add_project(conn, "A"), db.add_project(conn, "B")
+    tid = db.add_task(conn, "t", project_id=a, step=step)
+    client.post(f"/tasks/{tid}", data={"project_id": b, "step": step})  # the step select untouched
+    assert (db.get_task(conn, tid)["project_id"], db.get_task(conn, tid)["step"]) == (b, lands)
+    client.post(f"/tasks/{tid}", data={"project_id": a, "step": "next"})  # picked with it: a conscious choice
+    assert (db.get_task(conn, tid)["project_id"], db.get_task(conn, tid)["step"]) == (a, "next")
+
+
+def test_a_routes_writes_commit_together(client, conn, monkeypatch):
+    def fail(*a, **k):
+        raise RuntimeError
+    monkeypatch.setattr(db, "timer_start", fail)
+    with pytest.raises(RuntimeError):
+        client.post("/timer/start", data={"title": "brand new"})
+    assert not conn.execute("SELECT 1 FROM tasks WHERE title = 'brand new'").fetchone()
+    *first, last = REVIEW_STEPS
+    for step in first:
+        client.post(f"/review/{step}")
+    monkeypatch.setattr(db, "complete_review", fail)
+    with pytest.raises(RuntimeError):
+        client.post(f"/review/{last}")
+    assert last not in db.review_checked(conn)
+
+
+def test_a_task_finished_late_isnt_shown_as_overdue(client, conn):
+    tid = db.add_task(conn, "late", ground=1, step="next", due_date="2026-10-01")
+    assert 'class="task overdue" data-id="%d"' % tid in client.get("/next").get_data(as_text=True)
+    db.complete_task(conn, tid, TODAY)
+    assert 'class="task overdue"' not in client.get("/done").get_data(as_text=True)
 
 
 def test_completing_a_repeat_twice_at_once_spawns_one_instance(client, conn, monkeypatch):

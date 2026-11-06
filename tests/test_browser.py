@@ -979,6 +979,23 @@ def test_remind_box_previews_how_it_reads(page, live):
     sync_api.expect(hint).to_have_text("")
 
 
+def test_a_saved_box_shows_how_it_was_read(page, live, conn):
+    """Typed words would read differently if posted again later (a select's submit, the next box's save)."""
+    page.goto(live + "/tasks/7?embed=overlay")
+    due, remind = page.locator("input[name=due_date]"), page.locator("input[name=remind_at]")
+    due.fill("saturday")
+    remind.focus()
+    sync_api.expect(due).to_have_value("2026-10-24")
+    remind.fill("oct 30 at 5pm")
+    due.focus()
+    sync_api.expect(remind).to_have_value("2026-10-30 17:00")
+    sync_api.expect(page.locator(".when[data-parse=remind]")).to_have_text("→ Fri Oct 30, 17:00")
+    due.fill("gibberish")
+    remind.focus()
+    page.locator(".flashes").wait_for()
+    assert due.input_value() == "gibberish" and db.get_task(conn, 7)["due_date"] == "2026-10-24"  # left to be fixed
+
+
 def test_due_and_repeat_boxes_preview_how_they_read(page, live):
     page.goto(live + "/tasks/7?embed=overlay")
     due, rule = page.locator(".when[data-parse=due]"), page.locator(".when[data-parse=recur]")
@@ -1038,9 +1055,7 @@ def test_nav_hides_and_returns_with_touch_scrolling(browser, live):
     pg.evaluate("document.querySelector('main').style.minHeight = '5000px'")
     pg.evaluate("scrollTo(0, 800)")
     pg.wait_for_function("document.body.classList.contains('nav-hidden')")
-    pg.wait_for_timeout(300)  # the slide
-    nav = pg.locator("nav").bounding_box()
-    assert nav["y"] + nav["height"] <= 1  # slid out of view
+    pg.wait_for_function("document.querySelector('nav').getBoundingClientRect().bottom <= 1")  # slid out of view
     pg.evaluate("scrollTo(0, 500)")
     pg.wait_for_function("!document.body.classList.contains('nav-hidden')")
     ctx.close()
@@ -1323,17 +1338,22 @@ def test_an_areas_balance_slider_saves_in_place_on_its_page_and_h2(page, live, c
     page.goto(live + f"/horizons/{area}?embed=overlay")
     slider = page.locator(".balance input")
     page.evaluate("window.stay = true")  # gone if the page reloads
+    assert db.horizons(conn)["area"][0]["balance"] is None
+    with page.expect_response(lambda r: r.url.endswith("/balance")):
+        slider.click()  # its middle, where an unset one already sits: that sets it
+    assert page.locator(".balance output").text_content() == "Balanced"
+    assert db.horizons(conn)["area"][0]["balance"] == 0
     slider.focus()
     for _ in range(2):
-        slider.press("ArrowLeft")
+        with page.expect_response(lambda r: r.url.endswith("/balance")):
+            slider.press("ArrowLeft")
     assert page.locator(".balance output").text_content() == "Too little"
-    page.wait_for_timeout(300)  # the save lands in the background
     assert db.horizons(conn)["area"][0]["balance"] == -2 and page.evaluate("window.stay")
     page.goto(live + "/horizons?level=area")  # H2's sliders move it too
     page.evaluate("window.stay = true")
-    row(page, "Home").locator(".balance input").press("ArrowRight")
+    with page.expect_response(lambda r: r.url.endswith("/balance")):
+        row(page, "Home").locator(".balance input").press("ArrowRight")
     assert row(page, "Home").locator(".balance output").text_content() == "A bit too little"
-    page.wait_for_timeout(300)
     assert db.horizons(conn)["area"][0]["balance"] == -1 and page.evaluate("window.stay")
 
 
@@ -1417,8 +1437,8 @@ def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):
     assert [x["name"] for x in db.contexts(conn)] == ["gone", "errands", "morning"]
     ids = {x["name"]: x["id"] for x in db.contexts(conn)}
     morning = page.locator(f'.context-list li[data-id="{ids["morning"]}"]')  # by id: its name is about to change
-    morning.locator(".grip").drag_to(contexts_row(page, "gone"))  # a real drag on the grip
-    page.wait_for_timeout(200)
+    with page.expect_response(lambda r: r.url.endswith("/contexts/order")):
+        morning.locator(".grip").drag_to(contexts_row(page, "gone"))  # a real drag on the grip
     assert [x["name"] for x in db.contexts(conn)][0] == "morning"
     # Rename, with the Enter key; the rows follow once the overlay closes.
     box = morning.locator("input[name=context_name]")
@@ -1500,10 +1520,10 @@ def test_a_context_typed_on_a_tasks_own_title(page, live, conn):
     title = page.locator("input[name=title]")
     title.click()
     title.press("End")
-    title.type(" @mor")
     offer = page.locator(".ctx-suggest:not([hidden]) a")
-    sync_api.expect(offer).to_have_text(["@morning"])
-    page.wait_for_timeout(2300)  # autosave saves the half-typed text, which makes no context
+    with page.expect_response(lambda r: "/autosave/" in r.url and r.request.method == "POST"):  # the half-typed text, which makes no context
+        title.type(" @mor")
+        sync_api.expect(offer).to_have_text(["@morning"])
     assert [x["name"] for x in db.contexts(conn)] == ["gone", "errands", "morning"]
     title.press("Tab")  # takes the offer
     assert title.input_value() == "Journal @morning "

@@ -5,7 +5,8 @@ import re
 from datetime import date, timedelta
 
 UNITS = {"daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"}
-PATTERN = re.compile(r"^(?:every (?:(\d+) )?(day|week|month|year)s?|(daily|weekly|monthly|yearly))( after (?:done|completion))?$")
+PATTERN = re.compile(r"^(?:every (?:(\d{1,5}) )?(day|week|month|year)s?|(daily|weekly|monthly|yearly))( after (?:done|completion))?$")
+MOST = {"day": 36500, "week": 5200, "month": 1200, "year": 100}  # about a century: its dates stay representable
 
 
 def _match(rule):
@@ -17,8 +18,8 @@ def parse(rule):
     m = _match(rule)
     if not m:
         return None
-    n = int(m.group(1) or 1)
-    return (n, m.group(2) or UNITS[m.group(3)]) if n > 0 else None
+    n, unit = int(m.group(1) or 1), m.group(2) or UNITS[m.group(3)]
+    return (n, unit) if 0 < n <= MOST[unit] else None
 
 
 def after_done(rule):

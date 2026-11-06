@@ -147,13 +147,14 @@ def task_fields_from_form(current=None):
             fields[name] = form_value(name)
     if "notes" in fields:
         fields["notes"] = fields["notes"] or ""
-    new_project = form_value("new_project")
     raw = request.form.get("project_id")
+    # The box stays posted, hidden, once another project is picked: it counts only with its own "＋ New…" option.
+    new_project = form_value("new_project") if raw is None or raw.startswith(NEW) else None
     if raw is not None and not (raw.startswith(NEW) and not new_project):  # "＋ New project…" with no name: unchanged
         # The picker offers "h0": ground level, a deliberate choice of no project.
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
-    if new_project:  # typed into the "new project" box; overrides the dropdown. Its group sets the status.
+    if new_project:  # typed into the "new project" box. Its group sets the status.
         status = (raw or "").removeprefix(NEW)
         fields["project_id"] = new_project_made(new_project, status=status if status in PROJECT_STATUSES else "active")
         fields["ground"] = 0
@@ -178,7 +179,8 @@ def task_fields_from_form(current=None):
         fields.update(typed)  # typed into the title: wins over the line's own boxes
         if picked:
             fields["contexts"] = picked
-    if fields.get("recur") and not fields.get("due_date"):
+    due = fields["due_date"] if "due_date" in fields else current and current["due_date"]  # an unreadable one was dropped
+    if fields.get("recur") and not due:
         fields["due_date"] = today().isoformat()
     return fields
 
@@ -696,18 +698,24 @@ def review_tick(step):
     if step not in REVIEW_STEPS:
         abort(404)
     c = conn()
-    db.toggle_review_step(c, step)
-    if db.review_checked(c) >= set(REVIEW_STEPS):
-        db.complete_review(c, today())
+    with db.transaction(c):
+        db.toggle_review_step(c, step)
+        checked = db.review_checked(c)
+        finished = checked >= set(REVIEW_STEPS)
+        if finished:
+            db.complete_review(c, today())
+    if finished:
         flash(f"Weekly review completed on {long_date(today().isoformat())}.")
         return redirect(url_for("review"))
-    return redirect(url_for("review") if step in db.review_checked(c) else url_for("review", step=step))
+    return redirect(url_for("review") if step in checked else url_for("review", step=step))
 
 
 @app.route("/search")
 def search():
     q = (request.args.get("q") or "").strip()
-    return render_template("search.html", q=q, results=db.search(conn(), q) if q else None)
+    results = db.search(conn(), q) if q else None
+    capped = bool(results) and any(len(rows) >= db.SEARCH_LIMIT for rows in results.values())
+    return render_template("search.html", q=q, results=results, capped=capped, limit=db.SEARCH_LIMIT)
 
 
 @app.route("/search/suggest")
@@ -726,8 +734,7 @@ def search_suggest():
             out.append({"title": r["title"], "url": url_for("reference_view", id=r["id"]), "kind": "reference",
                         "meta": ""})
         else:
-            url = url_for("horizon_view", id=r["id"]) if r["level"] in ("goal", "area") else url_for("horizons_view", level=r["level"])
-            out.append({"title": r["title"], "url": url, "kind": r["level"], "meta": ""})
+            out.append({"title": r["title"], "url": horizon_url(r), "kind": r["level"], "meta": ""})
     return out
 
 
@@ -750,8 +757,10 @@ def task_view(id):
         if not t["inbox"] and t["state"] == "open":
             orphaned(project_id, ground, say="this")
         db.update_task(c, id, today=today(), **fields)
-        if fetched():  # a field saved in the background: just its messages
-            return {"flashes": get_flashed_messages()}
+        if fetched():  # a field saved in the background: its messages, and how the boxes read (app.js shows them, so
+            saved = db.get_task(c, id)  # words like "3pm" aren't read again, later, by the next post of this form)
+            shown = {"due_date": saved["due_date"], "remind_at": local_minute(saved["remind_at"])}
+            return {"flashes": get_flashed_messages(), "saved": {k: v or "" for k, v in shown.items() if k in fields}}
         return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
@@ -1087,12 +1096,11 @@ def timer_start():
     if not title:
         return back("timer_view")
     t = next((t for t in db.open_tasks(c) if t["title"].lower() == title.lower()), None)
-    if t:
-        tid = t["id"]
-    else:
-        tid = db.add_task(c, title, today=today())
+    with db.transaction(c):
+        tid = t["id"] if t else db.add_task(c, title, today=today())
+        db.timer_start(c, tid, now())
+    if not t:
         flash(f"Captured to inbox: {title}")
-    db.timer_start(c, tid, now())
     return back("timer_view")
 
 
@@ -1269,6 +1277,14 @@ HORIZON_FLOORS = (("H5", "purpose", None), ("H4", "purpose", "vision"), ("H3", "
                   ("H2", "area", None), ("H1", "projects", None), ("H0", "ground", None))
 
 
+@app.template_global()
+def horizon_url(h):
+    """Where a horizon opens: a goal's or area's overlay, or its place on the card purpose and vision share."""
+    if h["level"] in ("goal", "area"):
+        return url_for("horizon_view", id=h["id"])
+    return url_for("horizons_view", level="purpose", _anchor="vision" if h["level"] == "vision" else None)
+
+
 @app.route("/horizons")
 def horizons_view():
     level = request.args.get("level")
@@ -1300,17 +1316,16 @@ def horizons_order(level):
 def horizon_view(id):
     c = conn()
     h = db.get_horizon(c, id) or abort(404)
-    if request.method == "POST":
-        db.update_horizon(c, id, title=form_value("title") or h["title"],
-                          notes=(request.form.get("notes") or "").strip())
-        if "outcome" in request.form and h["level"] in ("goal", "area"):
-            db.set_horizon_outcome(c, id, request.form["outcome"])
-        if "area" in request.form and h["level"] == "goal":
-            area = request.form["area"]
-            try:
-                db.set_goal_area(c, id, int(area) if area else None)
-            except ValueError:
-                abort(400)
+    if request.method == "POST":  # title and notes are autosave's, as on the task page
+        with db.transaction(c):
+            if "outcome" in request.form and h["level"] in ("goal", "area"):
+                db.set_horizon_outcome(c, id, request.form["outcome"])
+            if "area" in request.form and h["level"] == "goal":
+                area = request.form["area"]
+                try:
+                    db.set_goal_area(c, id, int(area) if area else None)
+                except ValueError:
+                    abort(400)
         flash("Saved.")
         return back()
     up = url_for("horizon_view", id=h["area_id"]) if h["area_id"] else url_for("horizons_view", level=h["level"])

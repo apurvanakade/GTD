@@ -168,7 +168,15 @@ document.addEventListener('change', e => {
   fieldsSaved = (async () => {
     try {
       const r = await fetch(f.action, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-      if (r.ok) { changed(); return toast((await r.json()).flashes); }
+      if (r.ok) {
+        changed();
+        const {flashes, saved} = await r.json();
+        for (const [name, value] of Object.entries(saved)) {  // how it read: "3pm" posted again later would read differently
+          const box = f.elements[name];
+          if (box.value === body.get(name) && box.value !== value) { box.value = value; box.dispatchEvent(new Event('input')); }
+        }
+        return toast(flashes);
+      }
     } catch {}
     location.reload();
   })();
@@ -178,10 +186,20 @@ document.addEventListener('keydown', e => {  // Enter in such a box saves it the
   if (e.key === 'Enter' && el.form && 'saveOnChange' in el.form.dataset && el.matches('input:not(.big)')) { e.preventDefault(); el.blur(); }
 });
 // An area's balance slider (its page, H2's rows): its word follows the drag, and letting go saves it in the background.
+// An unset one sits at 0, so letting go there fires no `change`: that's a choice too, so it's the release that counts.
 document.querySelectorAll('.balance').forEach(b => {
   const input = b.querySelector('input'), words = JSON.parse(b.dataset.words);
-  input.addEventListener('input', () => { b.classList.remove('unset'); b.querySelector('output').textContent = words[+input.value + 3]; });
-  input.addEventListener('change', () => post(b.dataset.url, new URLSearchParams({balance: input.value})));
+  let saved = b.classList.contains('unset') ? null : input.value;
+  const show = () => { b.classList.remove('unset'); b.querySelector('output').textContent = words[+input.value + 3]; };
+  const save = () => {
+    if (input.value === saved) return;
+    saved = input.value;
+    show();
+    post(b.dataset.url, new URLSearchParams({balance: saved}));
+  };
+  input.addEventListener('input', show);
+  input.addEventListener('change', save);
+  input.addEventListener('pointerdown', () => document.addEventListener('pointerup', save, {once: true}));
 });
 // Contexts: one word, starting with a letter, as app.py's CONTEXT; spaces typed in a box become hyphens.
 const contextName = raw => { const n = raw.trim().replace(/^@/, '').replace(/\s+/g, '-'); return /^\p{L}[\p{L}\p{N}_-]*$/u.test(n) ? n : null; };

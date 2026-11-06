@@ -349,7 +349,8 @@ def _fit_step(fields, current=None, today=None):
             fields["due_date"] = None
         return fields
     if "project_id" in fields:
-        if current and current["ground"] and fields.get("step") in (None, "someday"):  # out of H0: its next isn't the project's
+        moved = current and (current["ground"] or current["project_id"] != fields["project_id"])
+        if moved and fields.get("step") in (None, "someday"):  # its next isn't this project's
             fields["step"] = "waiting" if current["step"] == "waiting" else "later"
         fields["ground"] = 0
     if fields.get("step") == "someday":  # H0's only: a project's someday is the project's status
@@ -573,6 +574,9 @@ def reorder_contexts(c, ids):
 
 # --- search ----------------------------------------------------------------
 
+SEARCH_LIMIT = 50  # per kind
+
+
 def _matching(q, cols):
     """WHERE clause and args: every word of q appears (case-insensitive) in one of cols."""
     words = q.split()
@@ -584,18 +588,19 @@ def _matching(q, cols):
 
 
 def search(c, q):
-    """Tasks (open, then the latest 50 done), projects, horizons and reference whose text contains every word of q."""
+    """Tasks (open, then the latest done), projects, horizons and reference whose text contains every word of q, at
+    most SEARCH_LIMIT of each."""
     where, args = _matching(q, ["t.title", "t.notes"])
     tasks = c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND {where} ORDER BY
         {INBOX} DESC, {STEP_ORDER},
-        lower(t.title)""", args).fetchall()
+        lower(t.title) LIMIT {SEARCH_LIMIT}""", args).fetchall()
     done = _one_per_repeat(c.execute(f"""{TASK_SELECT} WHERE t.state != 'open' AND {where}
-        ORDER BY t.completed_at DESC""", args))[:50]
+        ORDER BY t.completed_at DESC""", args))[:SEARCH_LIMIT]
     where, args = _matching(q, ["title", "notes"])
     projects = c.execute(f"""SELECT * FROM projects WHERE {where}
-        ORDER BY status IN ('done', 'abandoned'), lower(title)""", args).fetchall()
-    horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title)", args).fetchall()
-    references = c.execute(f"SELECT * FROM reference WHERE {where} ORDER BY lower(title)", args).fetchall()
+        ORDER BY status IN ('done', 'abandoned'), lower(title) LIMIT {SEARCH_LIMIT}""", args).fetchall()
+    horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title) LIMIT {SEARCH_LIMIT}", args).fetchall()
+    references = c.execute(f"SELECT * FROM reference WHERE {where} ORDER BY lower(title) LIMIT {SEARCH_LIMIT}", args).fetchall()
     return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references}
 
 

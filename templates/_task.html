@@ -3,7 +3,7 @@
 {% macro row(t, project=True, set_step=False, grip=False) %}
 {% set closed = t.state != 'open' %}
 {% set pinned = grip and not project and t.step == 'next' and not closed %}
-<li class="task{% if t.due_date and t.due_date < today %} overdue{% endif %}" data-id="{{ t.id }}"{% if pinned %} data-pinned{% endif %}>
+<li class="task{% if t.due_date and t.due_date < today and not closed %} overdue{% endif %}" data-id="{{ t.id }}"{% if pinned %} data-pinned{% endif %}>
   {% if pinned %}<span class="grip" title="Drag to reorder next actions" aria-hidden="true">⠿</span>
   {% elif grip and not closed %}<span class="grip" title="Drag to reorder{% if project %}, or onto a project{% endif %}" aria-hidden="true">⠿</span>{% endif %}
   {% if t.state == 'done' %}<span class="check" title="Done" aria-hidden="true">✓</span>

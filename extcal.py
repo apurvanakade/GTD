@@ -83,7 +83,8 @@ def occurrences(cal, start, end):
     """{iso date: [event]} for the events of a parsed feed on the days start..end (inclusive), each day's in order:
     all-day ones first, then by start time. A multi-day event shows on each of its days, its time on the first."""
     by_day = defaultdict(list)
-    for ev in cal.between(start, end + timedelta(days=1)):
+    # A day wider each side: the library reads naive bounds in each event's own zone. The loop below clips to local days.
+    for ev in cal.between(start - timedelta(days=1), end + timedelta(days=2)):
         if str(ev.get("STATUS", "")).upper() == "CANCELLED":
             continue
         s = ev["DTSTART"].dt

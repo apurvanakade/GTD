@@ -22,6 +22,7 @@ TIME_FIRST = re.compile(rf"^{CLOCK}(?:\s|$)")
 DEFAULT_TIME = time(9, 0)  # a reminder given only a date
 MONTH_DAY = re.compile(r"^(?:([a-z]+)\s+(\d{1,2})|(\d{1,2})\s+([a-z]+))(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$")
 NUMERIC = re.compile(r"^(\d{1,2})([/-])(\d{1,2})(?:\2(\d{4}|\d{2}))?$")  # month first: 4/15, 04-15-2027, 4/15/27
+LAST_YEAR = 3000  # later reads as a typo, and leaves a repeat room to step forward
 
 
 def _dated(month, day, year, today):
@@ -34,7 +35,15 @@ def _dated(month, day, year, today):
 
 
 def parse(text, today):
-    """Return a date, or None if the text isn't understood. Weekdays mean the next one after today."""
+    """Return a date, or None if the text isn't understood or is out of range. Weekdays mean the next one after today."""
+    try:
+        d = _parse(text, today)
+    except (OverflowError, ValueError):
+        return None
+    return d if d and d.year <= LAST_YEAR else None
+
+
+def _parse(text, today):
     s = " ".join((text or "").lower().replace("next ", "next_").split())
     if not s:
         return None
@@ -92,6 +101,14 @@ def _clock(m):
 def parse_when(text, now):
     """Return a naive local datetime for a reminder, or None. `now` is naive local time. A date alone means
     DEFAULT_TIME; a time alone means the next one; "in N minutes|hours" counts from now."""
+    try:
+        when = _parse_when(text, now)
+    except (OverflowError, ValueError):
+        return None
+    return when if when and when.year <= LAST_YEAR else None
+
+
+def _parse_when(text, now):
     s = " ".join(re.sub(r"(\d)t(\d)", r"\1 \2", (text or "").lower()).split())  # ISO "2026-10-30T09:00"
     if not s:
         return None

@@ -5,6 +5,7 @@
 {% block body %}
 {% if results %}
 {% set r = results %}
+{% if capped %}<p class="hint">Showing at most {{ limit }} of each kind.</p>{% endif %}
 {% if r.projects %}
 <h2>Projects</h2>
 <ul class="tasks">
@@ -29,7 +30,7 @@
 <h2>Horizons</h2>
 <ul class="tasks">
   {% for h in r.horizons %}
-  <li class="task"><a class="title" href="{{ url_for('horizon_view', id=h.id) if h.level in ('goal', 'area') else url_for('horizons_view') }}">{{ h.title }}</a><span class="meta">{{ h.level }}</span></li>
+  <li class="task"><a class="title" href="{{ horizon_url(h) }}">{{ h.title }}</a><span class="meta">{{ h.level }}</span></li>
   {% endfor %}
 </ul>
 {% endif %}
