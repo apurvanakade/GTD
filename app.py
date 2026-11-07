@@ -860,6 +860,19 @@ def projects_order(status):
     return ("", 204) if fetched() else back()
 
 
+@app.post("/projects/<int:id>/move")
+def project_move(id):
+    """A project row dropped on a nav tab (Active, Waiting, Someday projects) takes that status; open projects only."""
+    c = conn()
+    p = db.get_project(c, id) or abort(404)
+    status = request.form.get("status")
+    if status not in PROJECT_STATUSES or p["status"] not in PROJECT_STATUSES:
+        abort(400)
+    if status != p["status"]:
+        db.update_project(c, id, status=status)
+    return ("", 204) if fetched() else back("projects_view")
+
+
 def add_project_from_form(status="active"):
     """The add line's new project (a project tab, the review's new ideas)."""
     if title := form_value("title"):

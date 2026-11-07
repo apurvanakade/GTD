@@ -48,6 +48,7 @@ nav .group + .group { margin-left: 8px; padding-left: 8px; border-left: 1px soli
 nav a { padding: 4px 5px; font-size: var(--fs-m); color: var(--muted); white-space: nowrap; border-bottom: 2px solid transparent; }
 nav a:hover { color: var(--fg); }
 nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
+nav a.over { color: var(--fg); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px 4px 0 0; }  /* a project dragged over its tab */
 nav .aux { display: flex; margin-left: auto; padding-left: 8px; }
 nav .aux a { font-size: var(--fs-s); }
 nav .theme-toggle { flex: none; margin-left: 2px; color: var(--muted); }

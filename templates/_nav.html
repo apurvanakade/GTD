@@ -4,7 +4,8 @@
 <nav>
   {% set ep = request.endpoint %}
   {% set status = (request.view_args or {}).get('status') %}
-  {# Three groups: working minute by minute, lists of tasks, lists of projects; each tab lists one kind. #}
+  {# Three groups: working minute by minute, lists of tasks, lists of projects; each tab lists one kind.
+     A project tab's `data-status`: a project row dropped on it takes that status (static/app.js). #}
   <span class="group">
     <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
     <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
@@ -17,9 +18,9 @@
   </span>
   <span class="group">
     <small class="caption">Projects</small>
-    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep == 'projects_view' and status == 'active' }}">Active{{ badge(counts.flagged.active, 'need a next action or outcome', 'warn') }}</a>
-    <a href="{{ url_for('projects_view', status='waiting') }}" class="{{ 'on' if ep == 'projects_view' and status == 'waiting' }}">Waiting{{ badge(counts.flagged.waiting, 'need a desired outcome', 'warn') }}</a>
-    <a href="{{ url_for('projects_view', status='someday') }}" class="{{ 'on' if ep == 'projects_view' and status == 'someday' }}">Someday</a>
+    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep == 'projects_view' and status == 'active' }}" data-status="active">Active{{ badge(counts.flagged.active, 'need a next action or outcome', 'warn') }}</a>
+    <a href="{{ url_for('projects_view', status='waiting') }}" class="{{ 'on' if ep == 'projects_view' and status == 'waiting' }}" data-status="waiting">Waiting{{ badge(counts.flagged.waiting, 'need a desired outcome', 'warn') }}</a>
+    <a href="{{ url_for('projects_view', status='someday') }}" class="{{ 'on' if ep == 'projects_view' and status == 'someday' }}" data-status="someday">Someday</a>
   </span>
   {# Weekly-review pages and Reference: pushed right and muted, out of the daily tabs' way. #}
   <span class="aux">

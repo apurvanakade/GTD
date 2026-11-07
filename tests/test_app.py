@@ -841,6 +841,14 @@ def test_projects_create_and_status(client, conn):
         client.post("/projects", data={"title": title, "status": status})
     made = {p["title"]: p["status"] for s in ("active", "waiting", "someday") for p in db.projects(conn, s)}
     assert (made["boat"], made["visa"], made["odd"]) == ("someday", "waiting", "active")
+    # Dropped on a nav tab: the open status it names, in the background; a closed project or another status is refused.
+    move = lambda id, status: client.post(f"/projects/{id}/move", data={"status": status}, headers={"X-Requested-With": "fetch"})
+    boat, first = db.projects(conn, "someday")[0]["id"], db.projects(conn)[0]["id"]
+    assert move(boat, "waiting").status_code == 204
+    assert db.projects(conn, "waiting")[0]["title"] == "boat"  # on top of its new list
+    assert (move(pid, "active").status_code, move(first, "done").status_code) == (400, 400)
+    assert db.get_project(conn, pid)["status"] == "done"
+    assert move(999, "active").status_code == 404
     assert client.get("/projects/999?embed=overlay").status_code == 404
     assert client.post("/projects/999/tasks", data={"title": "x"}).status_code == 404
 

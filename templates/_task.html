@@ -185,9 +185,10 @@
 {# A tickler date still to come: faint, like the last review. #}
 {% macro until(tickle_on) %}{% if tickle_on and tickle_on > today %}<span class="until" title="Out of sight until then">until {{ tickle_on }}</span>{% endif %}{% endmacro %}
 
-{# The project tabs: one list of tight project rows, dragged to reorder (static/app.js). #}
+{# The project tabs: one list of tight project rows, dragged to reorder, or onto another project tab in the nav to
+   change status (static/app.js). #}
 {% macro project_list(ps, steps, status, empty) %}
-{% if ps %}<ul class="tasks" data-reorder="{{ url_for('projects_order', status=status) }}">
+{% if ps %}<ul class="tasks" data-reorder="{{ url_for('projects_order', status=status) }}" data-status="{{ status }}">
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
 {% else %}<ul class="tasks"><li class="empty">{{ empty }}</li></ul>{% endif %}

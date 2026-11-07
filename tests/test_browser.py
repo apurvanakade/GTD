@@ -1543,3 +1543,20 @@ def test_a_context_typed_on_a_tasks_own_title(page, live, conn):
     assert page.locator("input[name=title]").input_value() == "Journal"
     page.wait_for_timeout(300)
     assert db.get_task(conn, tid)["title"] == "Journal"
+
+
+def test_dragging_a_project_onto_a_nav_tab_moves_it(page, live, conn):
+    """A project row dropped on the nav's Active, Waiting or Someday (projects) tab gets that status; its own tab is no target."""
+    pid = db.add_project(conn, "Another dream", status="someday")
+    page.goto(live + "/projects/someday?tickled=1")
+    tab = lambda s: page.locator(f'nav a[data-status="{s}"]')
+    with page.expect_response(lambda r: r.url.endswith(f"/projects/{pid}/move")) as saved:
+        row(page, "Another dream").locator(".grip").drag_to(tab("active"))
+    assert saved.value.status == 204
+    page.wait_for_function(f"!document.querySelector('ul[data-reorder] > li.task[data-id=\"{pid}\"]')")
+    assert db.get_project(conn, pid)["status"] == "active"
+    assert db.projects(conn, "active")[0]["id"] == pid  # on top of its new list
+    assert [p["title"] for p in db.projects(conn, "someday")] == ["Someday proj"]  # the rest kept their order
+    row(page, "Someday proj").locator(".grip").drag_to(tab("someday"))  # its own tab: nothing happens
+    assert db.projects(conn, "someday")[0]["title"] == "Someday proj"
+    assert row(page, "Someday proj").count() == 1

@@ -33,7 +33,8 @@ async function refreshProjects() {
   const nav = document.querySelector('nav');
   if (!nav) return;  // in a frame: no nav
   let last = scrollY;
-  const show = on => document.body.classList.toggle('nav-hidden', !on);
+  // Shown throughout a project drag, since its tabs are drop targets (below).
+  const show = on => document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
   addEventListener('scroll', () => {
     const y = Math.max(0, Math.min(scrollY, document.documentElement.scrollHeight - innerHeight));
     if (Math.abs(y - last) < 4) return;
@@ -469,10 +470,16 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
 // Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
 // on the project tabs (active, waiting, someday); the new order is saved in the background. Shift-selected rows (move.js) go as a
 // block, if they're all in this list. Delegated, since a context filter redraws the lists (applyFilter above).
+// A project row dropped on another project tab in the nav (`nav a[data-status]`) takes that status (/projects/<id>/move) and leaves.
 (() => {
   let dragged = null, from = null, before = null, out = false;  // dragged: the rows on the move, in page order
   // Dropped on the drop panel (move.js), the rows leave: the list's order isn't saved, and stays as it was.
   document.querySelector('.drop-panel')?.addEventListener('drop', () => { out = true; });
+  const tabOf = e => {  // another project tab, while project rows are dragged
+    const a = dragged && from.dataset.status && e.target.closest?.('nav a[data-status]');
+    return a && a.dataset.status !== from.dataset.status ? a : null;
+  };
+  const unmark = () => document.querySelectorAll('nav a.over').forEach(a => a.classList.remove('over'));
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
   const listOf = e => e.target.closest?.('ul[data-reorder]');
@@ -490,8 +497,12 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     out = false;
     dragged.forEach(r => r.classList.add('dragging'));
     e.dataTransfer.effectAllowed = 'move';
+    if (list.dataset.status) document.body.classList.add('dragging-projects'), document.body.classList.remove('nav-hidden');
   });
   document.addEventListener('dragover', e => {
+    const tab = tabOf(e);
+    unmark();
+    if (tab) { e.preventDefault(); tab.classList.add('over'); return; }
     const list = listOf(e);
     if (!dragged || !list || list !== from) return;
     // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
@@ -505,8 +516,22 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     const r = over.getBoundingClientRect();
     if (e.clientY < r.top + r.height / 2) over.before(...dragged); else over.after(...dragged);
   });
-  document.addEventListener('drop', e => { if (listOf(e)) e.preventDefault(); });
+  document.addEventListener('drop', e => {
+    if (listOf(e)) e.preventDefault();
+    const tab = tabOf(e);
+    if (!tab) return;
+    e.preventDefault();
+    out = true;  // the list keeps its order; the rows leave once saved
+    const rows = dragged, status = tab.dataset.status;
+    (async () => {
+      for (const li of rows) if (!await post(`/projects/${li.dataset.id}/move`, new URLSearchParams({status}))) return;
+      rows.forEach(li => li.remove());
+      refreshNav();
+    })();
+  });
   document.addEventListener('dragend', () => {
+    unmark();
+    document.body.classList.remove('dragging-projects');
     if (!dragged) return;
     const list = from, ids = rows(list).map(li => li.dataset.id);
     dragged.forEach(r => { r.classList.remove('dragging'); r.removeAttribute('draggable'); });
