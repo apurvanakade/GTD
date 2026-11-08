@@ -801,15 +801,17 @@ def complete_then_project(id):
 
 @app.post("/tasks/<int:id>/delete")
 def delete(id):
-    """Abandons the task (it stays on Done, revivable); deleting a done or abandoned task deletes it for good."""
+    """Abandons the task (it stays on Done, revivable); deleting a done or abandoned task deletes it for good.
+    From its overlay (a fetch) the overlay then closes, back to the page under it (data-close, static/app.js)."""
     c = conn()
     t = db.get_task(c, id)
     if t and t["state"] != "open":
         db.delete_task(c, id)
     elif t:
         db.abandon_task(c, id, now())
-        return back()  # an abandoned task's page still shows it, with Revive
-    return redirect(url_for("done"))  # where closed tasks are listed; its own page is gone
+        if not fetched():
+            return back()  # an abandoned task's page still shows it, with Revive
+    return ("", 204) if fetched() else redirect(url_for("done"))  # where closed tasks are listed; its page is gone
 
 
 @app.post("/tasks/<int:id>/revive")

@@ -914,6 +914,21 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.keyboard.press("Control+ArrowUp")  # at once, before its page is in: waits for it
     page.wait_for_url(live + "/projects")
     assert page.locator("dialog.overlay").count() == 0
+    # ✕ abandons and closes the overlay, back to the page under it (reloaded); so does ✕ on a closed task, for good.
+    page.goto(live + "/next")
+    row(page, "vacuum all").locator(".title").click()
+    task_overlay(page)
+    with page.expect_navigation():
+        page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Abandon").click()
+    assert page.url == live + "/next" and page.locator("dialog.overlay").count() == 0
+    assert row(page, "vacuum all").count() == 0 and db.get_task(conn, 5)["state"] == "abandoned"
+    page.goto(live + "/done")
+    page.locator("li.task", has_text="vacuum all").locator(".title").click()
+    task_overlay(page)
+    page.once("dialog", lambda d: d.accept())
+    with page.expect_navigation():
+        page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Delete for good").click()
+    assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_task(conn, 5) is None
 
 
 def test_clicking_anywhere_on_a_row_opens_it(page, live):

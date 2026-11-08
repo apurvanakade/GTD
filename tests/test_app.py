@@ -1691,6 +1691,10 @@ def test_actions_stay_on_the_page_they_were_made_on(client, conn):
     page = f"http://localhost/tasks/{c}"
     assert loc(client.post(f"/tasks/{c}/delete", data={"next": "/next"}, headers={"Referer": page})) == f"/tasks/{c}"
     assert loc(client.post(f"/tasks/{c}/revive", headers={"Referer": "http://localhost/done"})) == "/done"
+    # From its overlay (a fetch), abandon and delete for good answer 204: the overlay closes, back to the page under it.
+    fetch = {"X-Requested-With": "fetch"}
+    assert client.post(f"/tasks/{c}/delete", headers=fetch).status_code == 204 and db.get_task(conn, c)["state"] == "abandoned"
+    assert client.post(f"/tasks/{c}/delete", headers=fetch).status_code == 204 and db.get_task(conn, c) is None
     # Moving the project to someday from a task page stays on the task page; done/waiting stay on the project.
     r = client.post(f"/projects/{pid}", data={"status": "someday"}, headers={"Referer": page})
     assert loc(r) == f"/tasks/{c}"

@@ -676,6 +676,14 @@ const listOf = a => {
 };
 if (frameElement) {
   document.addEventListener('submit', changed, true);
+  // A button with data-close (a task's ✕: abandon, delete for good) posts in the background, then closes its overlay,
+  // back to what's under it (reloaded, as changed). Bubbling, so autosave's hold (it prevents, saves, resubmits) runs first.
+  document.addEventListener('submit', async e => {
+    const by = e.submitter;
+    if (e.defaultPrevented || !by?.matches('[data-close]')) return;
+    e.preventDefault();
+    if (await post(by.formAction, new FormData(e.target, by))) frameElement.closest('dialog')?.querySelector('.close')?.click();
+  });
   document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
     if (e.key === 'Escape' && !document.querySelector('dialog[open]')) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });

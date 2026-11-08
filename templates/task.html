@@ -4,7 +4,8 @@
 {% block heading %}{% endblock %}
 {% block body %}
 {# Title and notes save themselves (autosave.js); every other field saves when it's changed (static/app.js). #}
-{#- Always in a frame (its overlay): the form stays in the frame; only ✓→ and delete-for-good leave it, for the page. #}
+{#- Always in a frame (its overlay): the form stays in the frame; only ✓→ leaves it, for the page; ✕
+     (abandon, delete for good) closes it, back to the page under it. #}
 <form method="post" class="edit" data-autosave="{{ url_for('autosave', kind='tasks', id=t.id) }}" data-save-on-change>
   <button hidden>Save</button>{# the default, so Enter in a field saves #}
   {% set running = timer and timer.task_id == t.id %}
@@ -19,11 +20,11 @@
     </span>{% endif %}
     {% if t.state != 'open' %}{# done or abandoned: the same but for the name #}
     <button formaction="{{ url_for('revive', id=t.id) }}" class="icon" title="Bring it back" aria-label="Revive">↺</button>
-    <button formaction="{{ url_for('delete', id=t.id) }}" formtarget="_top" class="icon danger" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this task for good?')">✕</button>
+    <button formaction="{{ url_for('delete', id=t.id) }}" data-close class="icon danger" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this task for good?')">✕</button>
     {% else %}
     <button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Done" aria-label="Done">✓</button>
     {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" formtarget="_top" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}
-    <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
+    <button formaction="{{ url_for('delete', id=t.id) }}" data-close class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
     {% endif %}
   </div>
   <textarea name="notes" rows="3" placeholder="Notes">{{ t.notes }}</textarea>
