@@ -13,8 +13,8 @@
     <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
     {# The timer, with the time spent; while running, the total ticks. #}
     {% if running or t.state == 'open' or seconds %}<span class="task-timer{{ ' on' if running }}">
-      {% if running %}<button formaction="{{ url_for('timer_stop') }}" title="Stop the timer" aria-label="Stop the timer">■</button>
-      {% elif t.state == 'open' %}<button formaction="{{ url_for('task_start', id=t.id) }}" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
+      {% if running %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
+      {% elif t.state == 'open' %}<button formaction="{{ url_for('task_start', id=t.id) }}" class="icon" title="Start the timer" aria-label="Start the timer">▶</button>{% endif %}
       {% if running %}<span class="clock" data-seconds="{{ seconds|int }}">{{ seconds|hms }}</span>
       {% elif seconds %}<span class="clock">{{ seconds|hm }}</span>{% endif %}
     </span>{% endif %}

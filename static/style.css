@@ -224,10 +224,8 @@ body:has(> .running-timer) { padding-bottom: 88px; }
 /* Every page: header (back link, heading, actions), add line, list. */
 header.page { margin: 24px 0 14px; }
 header.page .crumb { margin: 0 0 4px; color: var(--muted); font-size: var(--fs-m); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-/* A task page's timer, on its title line: as easy to spot as ▶ on the lists. */
+/* A task page's timer, on its title line: a ghost button like ✓ and ✕ beside it. */
 .task-timer { display: inline-flex; gap: 8px; align-items: center; margin: 0 6px; }
-.task-timer button { font-size: var(--fs-s); padding: 1px 10px; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; }
-.task-timer button:hover { background: var(--accent); color: var(--accent-fg); }
 .task-timer .clock { font: var(--fs-s) ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--fg); }
 .task-timer.on .clock { color: var(--accent); }
 header.page .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
