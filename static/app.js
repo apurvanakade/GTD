@@ -676,7 +676,7 @@ const listOf = a => {
 };
 if (frameElement) {
   document.addEventListener('submit', changed, true);
-  // A button with data-close (a task's ✕: abandon, delete for good) posts in the background, then closes its overlay,
+  // A button with data-close (a task's ✕ delete for good) posts in the background, then closes its overlay,
   // back to what's under it (reloaded, as changed). Bubbling, so autosave's hold (it prevents, saves, resubmits) runs first.
   document.addEventListener('submit', async e => {
     const by = e.submitter;

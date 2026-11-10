@@ -914,14 +914,18 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.keyboard.press("Control+ArrowUp")  # at once, before its page is in: waits for it
     page.wait_for_url(live + "/projects")
     assert page.locator("dialog.overlay").count() == 0
-    # ✕ abandons and closes the overlay, back to the page under it (reloaded); so does ✕ on a closed task, for good.
+    # ✕ abandons and stays, as ✓ does: the overlay shows it abandoned, with Revive; closing reloads the page under it.
     page.goto(live + "/next")
     row(page, "vacuum all").locator(".title").click()
     task_overlay(page)
+    frame = page.frame_locator("dialog.overlay iframe")
+    frame.get_by_role("button", name="Abandon").click()
+    frame.get_by_role("button", name="Revive").wait_for()
+    assert page.locator("dialog.overlay").count() == 1 and db.get_task(conn, 5)["state"] == "abandoned"
     with page.expect_navigation():
-        page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Abandon").click()
-    assert page.url == live + "/next" and page.locator("dialog.overlay").count() == 0
-    assert row(page, "vacuum all").count() == 0 and db.get_task(conn, 5)["state"] == "abandoned"
+        page.keyboard.press("Escape")
+    assert page.url == live + "/next" and row(page, "vacuum all").count() == 0
+    # ✕ on a closed task deletes it for good and closes the overlay, back to the page under it (reloaded).
     page.goto(live + "/done")
     page.locator("li.task", has_text="vacuum all").locator(".title").click()
     task_overlay(page)
