@@ -78,9 +78,9 @@
 
 {# Type a date in words, or click 📅 for the browser's picker. static/app.js copies the pick into the text box.
    type='datetime-local' picks a time too (the Remind box). submit=True: a change saves the form (a tickler box). #}
-{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…', name='due_date', label='Due date', type='date', submit=False) %}
+{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…', name='due_date', label='Due date', type='date', submit=False, required=False) %}
 <span class="date-field">
-  <input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="{{ label }}"{% if submit %} data-submit{% endif %}>
+  <input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="{{ label }}"{% if submit %} data-submit{% endif %}{% if required %} required{% endif %}>
   <button type="button" class="pick" aria-label="Pick a {{ 'date and time' if type == 'datetime-local' else 'date' }}">📅</button>
   <input type="{{ type }}" class="picker" tabindex="-1" aria-hidden="true">
 </span>
@@ -105,10 +105,21 @@
   <input name="new_context" placeholder="new…" aria-label="New context" autocomplete="off" size="8">
 {% endmacro %}
 
-{# What every line adding a task offers besides its title, as the task page does: a reminder and contexts. #}
-{% macro add_extras() %}
-{{ date_input(placeholder='remind: tomorrow 9am…', name='remind_at', label='Remind', type='datetime-local') }}
-<span class="contexts">{{ context_words() }}</span>
+{# Every line and dialog adding a task: the task page's fields, all shown, none hidden: notes, then Due, Repeats and
+   Remind (each previewed as typed, static/app.js), contexts and the title marks' hint. `where` (a project, a step)
+   is a column of their row, before Due. #}
+{% macro task_fields(where='', due='', due_required=False) %}
+<div class="task-fields">
+  <textarea name="notes" rows="2" placeholder="notes…" aria-label="Notes"></textarea>
+  <div class="fields">
+    {%- if where %}<div class="where">{{ where }}</div>{% endif %}
+    <label>Due {{ date_input(due, required=due_required) }} <span class="hint when" data-parse="due"></span></label>
+    <label>Repeats <input name="recur" placeholder="weekly, every 2 weeks after done…"> <span class="hint when" data-parse="recur"></span></label>
+    <label>Remind {{ date_input(placeholder='tomorrow 9am, fri 14:00…', name='remind_at', label='Remind', type='datetime-local') }} <span class="hint when" data-parse="remind"></span></label>
+  </div>
+  <span class="contexts">{{ context_words() }}</span>
+  {{ title_marks() }}
+</div>
 {% endmacro %}
 
 {# The drop panel's task targets, in the nav's order: H0 with that step (task_move() in app.py). #}
@@ -197,13 +208,15 @@
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
 {% macro title_marks() %}<p class="hint marks">^fri due · *weekly repeat · !3pm remind · @home context</p>{% endmacro %}
 
-{# Every page's add line: a quiet title box. Extra fields (the call block) show only once it's in use, in CSS. #}
-{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', marks=False) %}
+{# Every page's add line: a title box, then the call block's fields. task=True: a task's, every field shown
+   (task_fields(), the call block's first, then `due`, `due_required`). #}
+{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', task=False, due='', due_required=False) %}
+{% set more = caller() if caller is defined else '' %}
 <form method="post" action="{{ action }}" class="add{{ ' ' ~ cls if cls }}"{% if id %} id="{{ id }}"{% endif %}>
   <span class="plus" aria-hidden="true">+</span>
   <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
   <button class="primary" title="{{ label }} (Enter)" aria-label="{{ label }}">{{ button }}</button>
-  {% if caller is defined or marks %}<div class="add-more">{{ caller() if caller is defined }}{% if marks %}{{ add_extras() }}{{ title_marks() }}{% endif %}</div>{% endif %}
+  {% if task %}{{ task_fields(more, due, due_required) }}{% elif more|trim %}<div class="add-more">{{ more }}</div>{% else %}{{ more }}{% endif %}
 </form>
 {% endmacro %}
 

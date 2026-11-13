@@ -431,12 +431,22 @@ def test_search_suggestions_keyboard(page, live):
     assert page.locator(".suggest").is_hidden()
 
 
-def test_add_line_reveals_its_extra_fields_on_focus(page, live):
-    page.goto(live + "/projects/1?embed=overlay")
-    more = page.locator("main form.add .add-more")
-    assert more.is_hidden()
-    page.locator("main form.add input[name=title]").focus()
-    assert more.is_visible()
+@pytest.mark.parametrize("path", ["/projects/1?embed=overlay", "/inbox", "/calendar"])
+def test_add_line_shows_every_field_once_focused(page, live, path):
+    page.goto(live + path)
+    line = page.locator("main form.add")
+    fields = (".md-editor", "[name=due_date]", "[name=recur]", "[name=remind_at]", "[name=new_context]", ".marks")
+    assert all(line.locator(f).is_hidden() for f in fields)
+    line.locator("[name=title]").focus()
+    for field in fields:
+        assert line.locator(field).is_visible(), field
+    line.locator("[name=due_date]").fill("fri")  # previewed as typed, as on the task page
+    line.locator(".hint.when[data-parse=due]", has_text="→").wait_for()
+    line.locator("[name=due_date]").fill("")
+    line.locator(".md-editor").click()
+    page.keyboard.type("a note")
+    page.locator("main h1, main .title-line").first.click()  # focus leaves the line: what's typed keeps it open
+    assert line.locator("[name=recur]").is_visible()
 
 
 def test_new_option_reveals_the_name_box(page, live):
@@ -508,6 +518,7 @@ def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, 
     ev = page.locator(".cal .ev", has_text="buy tiles")  # due Oct 1, overdue
     assert "overdue" in ev.get_attribute("class")
     target = page.locator('.cal td', has=page.locator('.day[data-date="2026-10-29"]'))
+    target.evaluate("e => e.scrollIntoView({block: 'center'})")  # below the add line: off the timer pill at the bottom
     with page.expect_response(lambda r: r.url.endswith("/due")) as saved:
         ev.drag_to(target, target_position={"x": 60, "y": 15})  # top of the cell, clear of the timer pill
     assert saved.value.status == 204
@@ -839,9 +850,10 @@ def test_a_failed_calendar_drag_reloads(page, live, conn):
     page.goto(live + "/calendar?m=2026-10")
     page.route("**/due", lambda r: r.fulfill(status=500, body=""))
     ev = page.locator(".cal .ev", has_text="buy tiles")
+    target = page.locator(".cal td", has=page.locator('.day[data-date="2026-10-29"]'))
+    target.evaluate("e => e.scrollIntoView({block: 'center'})")  # below the add line: off the timer pill at the bottom
     with page.expect_navigation():
-        ev.drag_to(page.locator(".cal td", has=page.locator('.day[data-date="2026-10-29"]')),
-                   target_position={"x": 60, "y": 15})  # clear of the timer pill
+        ev.drag_to(target, target_position={"x": 60, "y": 15})  # clear of the timer pill
     assert page.locator('td[data-date="2026-10-01"] .ev', has_text="buy tiles").count() == 1
     page.errors[:] = [e for e in page.errors if "500" not in e]  # the faked failure itself
 
@@ -1117,7 +1129,7 @@ def test_project_time_split_folds_out(page, live):
 def test_a_select_saves_typed_notes_before_it_submits(page, live, conn):
     """The server leaves title and notes to autosave, so picking a status mustn't lose what was just typed."""
     page.goto(live + "/projects/1?embed=overlay")
-    page.locator(".md-editor").click()
+    page.locator("form[data-autosave] .md-editor").click()
     page.keyboard.press("ControlOrMeta+End")
     page.keyboard.type(" typed")
     with page.expect_navigation():

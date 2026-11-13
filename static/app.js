@@ -123,7 +123,6 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
       if (!warned) window.close();  // else it stays, or the warning would go with it
     } catch { return location.reload(); }
     f.reset();
-    f.querySelector('.md-editor')?.replaceChildren();
     linked();
     title.focus();
   });
@@ -434,6 +433,7 @@ for (const hint of document.querySelectorAll('.hint.when')) {
     }, 150);
   };
   box.addEventListener('input', show);
+  box.form.addEventListener('reset', () => setTimeout(show));  // an add form, emptied after adding
   if (kind === 'recur') due.addEventListener('input', show);
   if (kind !== 'remind') show();  // what a saved date or rule means, from the start
 }

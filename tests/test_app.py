@@ -368,9 +368,9 @@ def test_calendar_week_view(client, conn):
 def test_calendar_two_week_view(client, conn):
     db.add_task(conn, "this wk", step="next", due_date="2026-10-20")
     db.add_task(conn, "next wk", step="next", due_date="2026-10-27")
-    db.add_task(conn, "after", step="next", due_date="2026-11-01")
+    db.add_task(conn, "beyond", step="next", due_date="2026-11-01")
     html = client.get("/calendar?w=2026-10-22&n=2").data.decode()
-    assert "this wk" in html and "next wk" in html and "after" not in html
+    assert "this wk" in html and "next wk" in html and "beyond" not in html
     assert "18 Oct – 31 Oct 2026" in html and html.count("<tr>") == 3  # header + two weeks
     assert "n=2&amp;w=2026-10-25" in html and "n=2&amp;w=2026-10-11" in html  # steps a week, keeps the span
     assert "18 Oct – 31 Oct 2026" in client.get("/calendar").data.decode()  # remembered
@@ -1370,7 +1370,7 @@ def test_every_task_lists_add_line_goes_to_the_inbox(client, conn, page):
     """Nothing lands on a list by accident: where a task goes is decided by processing the inbox."""
     html = client.get(page).get_data(as_text=True)
     line = html.split('<form method="post" action="/capture" class="add capture">')[1].split("</form>")[0]
-    assert 'name="project_id"' not in line and 'name="step"' not in line and 'name="due_date"' not in line
+    assert 'name="project_id"' not in line and 'name="step"' not in line
     assert 'action="/next/add"' not in html and 'action="/waiting/add"' not in html and 'action="/someday/add"' not in html
     r = client.post("/capture", data={"title": "loose"}, headers={"Referer": f"http://localhost{page}"})
     assert r.headers["Location"] == f"http://localhost{page}"  # stays where it was added
@@ -2328,17 +2328,30 @@ def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):
     assert '<span class="remind"></span>' in sent
 
 
-@pytest.mark.parametrize("page, url, data", [
-    ("/inbox", "/capture", {}), ("/next", "/capture", {}), ("/waiting", "/capture", {}),
-    ("/someday", "/capture", {}), ("/calendar", "/calendar", {"due_date": "2026-10-30"}),
+TASK_FIELDS = {"title", "notes", "due_date", "recur", "remind_at", "context", "new_context"}
+
+
+@pytest.mark.parametrize("page, url, data, forms", [
+    ("/inbox", "/capture", {}, 2), ("/next", "/capture", {}, 2), ("/waiting", "/capture", {}, 2),
+    ("/someday", "/capture", {}, 2), ("/projects", "/capture", {}, 1), ("/capture", "/capture", {}, 1),
+    ("/calendar", "/calendar", {"due_date": "2026-10-30"}, 2), ("/projects/1?embed=overlay", "/projects/1/tasks", {}, 1),
 ])
-def test_task_add_lines_take_a_reminder_and_contexts(client, conn, page, url, data):
+def test_every_task_add_form_has_every_field(client, conn, page, url, data, forms):
+    """Every line and dialog adding a task (the capture line, its dialog, the popup, a project's, the calendar's
+    line and day) offers the task page's fields: no add line has fields of its own."""
+    pid = db.add_project(conn, "Kitchen")
     db.add_task(conn, "seen", contexts=["home"])
     html = client.get(page).get_data(as_text=True)
-    assert 'name="remind_at"' in html and 'name="context" value="home"' in html and 'name="new_context"' in html
-    client.post(url, data={"title": "call bob @phone", "remind_at": "tomorrow 3pm", "context": "home",
-                           "new_context": "at desk", **data})
+    found = re.findall(rf'<form [^>]*action="{re.escape(url)}"[^>]*>.*?</form>', html, re.S)
+    assert len(found) == forms
+    for form in found:
+        assert TASK_FIELDS <= set(re.findall(r'name="(\w+)"', form)), form
+        assert all(f'data-parse="{k}"' in form for k in ("due", "recur", "remind"))  # each previewed, as on the task page
+    client.post(url, data={"title": "call bob @phone", "notes": "about the leak", "recur": "weekly",
+                           "remind_at": "tomorrow 3pm", "context": "home", "new_context": "at desk", **data})
     t = conn.execute("SELECT * FROM tasks WHERE title = 'call bob'").fetchone()
+    assert (t["notes"], t["recur"]) == ("about the leak", "weekly") and t["due_date"]
+    assert t["project_id"] == (pid if "projects/" in url else None)
     assert local(t["remind_at"]) == datetime(2026, 10, 23, 15, 0)
     assert {r["name"] for r in conn.execute("SELECT name FROM contexts c JOIN task_contexts x ON x.context_id = c.id "
                                             "WHERE x.task_id = ?", (t["id"],))} == {"home", "at-desk", "phone"}

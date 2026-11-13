@@ -251,7 +251,7 @@ function editor(ta) {
   });
 
   // Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list. A
-  // rule (- - -) isn't a list.
+  // rule (- - -) isn't a list. Kept in sync with Journal's editor.js (which also runs its typing assists here).
   function newline() {
     const t = getText(), [a, b] = selection();
     const start = t.lastIndexOf("\n", a - 1) + 1, line = t.slice(start, a);
@@ -304,6 +304,9 @@ function editor(ta) {
     record(text, sel ?? [text.length, text.length]);
     changed(text);
   };
+
+  // An add form reset after adding (the capture dialog, the popup): the editor empties with its textarea.
+  ta.form?.addEventListener("reset", () => setTimeout(() => paint(ta.value)));
 
   paint(start);
 }

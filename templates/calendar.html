@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, add_form, add_extras, title_marks, context_chip with context %}
+{% from "_task.html" import project_select, add_form, task_fields, context_chip with context %}
 {% block title %}Calendar{% endblock %}
 {% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
 {% block actions %}{% set p = 'w' if week else 'm' %}{% set q = {'n': 2} if span == 2 else {} %}
@@ -16,19 +16,13 @@
 </span>
 {% endblock %}
 {% block body %}
-{% macro fields() %}
-  <input type="date" name="due_date" value="{{ today }}" required aria-label="Due date">
-  {{ project_select() }}
-  <input name="recur" placeholder="repeats…" aria-label="Repeats">
-{% endmacro %}
-{% call add_form(url_for('calendar_view'), 'Add a dated next action…', marks=True) %}{{ fields() }}{% endcall %}
+{% call add_form(url_for('calendar_view'), 'Add a dated next action…', task=True, due=today, due_required=True) %}<label>Project {{ project_select() }}</label>{% endcall %}
 {#- A day number opens this, on that day (the script below). #}
 <dialog class="day-dialog">
   <form method="post" action="{{ url_for('calendar_view') }}">
     <h2>Add</h2>
     <input name="title" placeholder="Add a dated next action…" autocomplete="off" required>
-    {{ title_marks() }}
-    <div class="extras">{{ fields() }}{{ add_extras() }}</div>
+    {% set where %}<label>Project {{ project_select() }}</label>{% endset %}{{ task_fields(where, today, True) }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
@@ -66,6 +60,7 @@ cal.addEventListener('click', e => {
   const d = document.querySelector('.day-dialog'), f = d.querySelector('form');
   f.reset();
   f.due_date.value = b.dataset.date;
+  f.due_date.dispatchEvent(new Event('input', {bubbles: true}));  // its preview follows
   d.querySelector('h2').textContent = `Add on ${b.dataset.label}`;
   d.showModal();
   f.elements.title.focus();

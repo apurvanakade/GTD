@@ -1,4 +1,4 @@
-{% from "_task.html" import add_form, title_marks, add_extras with context %}<!doctype html>
+{% from "_task.html" import add_form, task_fields with context %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -87,7 +87,7 @@
       </dl>
       <h3>From any web page</h3>
       {#- A bookmarklet: a popup of /capture (capture.html) with the page's link on offer. #}
-      <p class="bookmarklet"><a href="javascript:void window.open('{{ app_url }}/capture?url='+encodeURIComponent(location.href)+'&amp;title='+encodeURIComponent(document.title),'gtd-capture','popup,width=480,height=480')" title="Drag to the bookmarks bar">＋ GTD</a> — drag to the bookmarks bar</p>
+      <p class="bookmarklet"><a href="javascript:void window.open('{{ app_url }}/capture?url='+encodeURIComponent(location.href)+'&amp;title='+encodeURIComponent(document.title),'gtd-capture','popup,width=560,height=680')" title="Drag to the bookmarks bar">＋ GTD</a> — drag to the bookmarks bar</p>
     </section>
     <section>
       <h3>Go to</h3>
@@ -99,8 +99,7 @@
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <h2>Add to inbox</h2>
     <input name="title" placeholder="What's on your mind?" autocomplete="off" required>
-    {{ title_marks() }}
-    <div class="extras">{{ add_extras() }}</div>
+    {{ task_fields() }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
@@ -113,7 +112,7 @@
 {% with flashes = get_flashed_messages() %}{% if flashes %}<div class="flashes" role="status">{% for m in flashes %}<p class="flash">{{ m }}</p>{% endfor %}</div>{% endif %}{% endwith %}
 <main>
   {#- The task lists' one add line (CAPTURE_VIEWS): it always captures to the inbox, where a task's destination is decided. #}
-  {% if capture_line %}{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', marks=True) }}{% endif %}
+  {% if capture_line %}{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', task=True) }}{% endif %}
   {# Every page: an optional link up, the heading with its few actions, then the page (add line, list). #}
   <header class="page">
     {% block crumb %}{% endblock %}

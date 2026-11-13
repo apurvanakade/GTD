@@ -132,12 +132,23 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
 .capture-dialog, .day-dialog, .help-dialog, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
-.capture-dialog, .day-dialog { width: min(480px, calc(100vw - 32px)); }
-/* A dialog's or the popup's fields beyond the title (add_extras() in _task.html). */
-.extras { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
-.extras > * { flex: 1 1 160px; width: auto; min-width: 0; }
-.extras > .contexts { flex: 1 0 100%; margin: 0; }
-.day-dialog .marks { margin: 6px 0 0; font-size: var(--fs-s); }
+/* A task's fields on every add line and dialog (task_fields() in _task.html): the task page's, all shown. */
+.task-fields { flex: 1 0 100%; margin-top: 8px; }
+.add .task-fields { margin-top: 0; padding-left: 28px; }
+.task-fields .md-wrap { margin-bottom: 1.4em; }  /* room for its toolbar, as the task page's autosave line gives */
+.task-fields .md-editor { min-height: 3.2em; }
+.task-fields .fields { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0 20px; }  /* [step or project,] due, repeats, remind */
+@media (max-width: 600px) { .task-fields .fields { grid-auto-flow: row; } }
+body.embed main .task-fields :is(input:not([type=checkbox]):not([name=new_context]), .md-editor) { border-color: var(--line); }  /* boxes to fill, unlike a record's quiet fields */
+.task-fields label { display: block; margin: 0 0 4px; color: var(--muted); font-size: var(--fs-m); }
+.task-fields label .date-field { margin-top: 4px; }
+.task-fields label > input { margin-top: 4px; }
+.task-fields .where :is(select, input) { display: block; width: 100%; margin-top: 4px; }
+.task-fields .where select:not(:has(option[value^="__new__"]:checked)) + input { display: none; }
+.task-fields .hint.when { display: block; min-height: 1.45em; font-size: var(--fs-s); }  /* its own line, kept: a reading arriving doesn't move the form */
+.task-fields .contexts { margin: 0; }  /* a row of its own: it grows with every context */
+.task-fields .marks { margin: 6px 0 0; font-size: var(--fs-s); }
+.capture-dialog, .day-dialog { width: min(640px, calc(100vw - 32px)); }
 /* Site info: three columns, fewer as the window narrows; nothing to scroll on a desktop. */
 .help-dialog { width: min(62rem, calc(100vw - 32px)); padding: 20px 24px 24px; }
 .help-dialog .close { position: absolute; top: 12px; right: 14px; }
@@ -187,7 +198,7 @@ body.embed main :is(input, textarea, .md-editor) { background: transparent; bord
 body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-color: var(--line); }
 .popup { padding: 16px; }  /* the bookmarklet's window (capture.html) */
 .popup h2 { margin-top: 0; }
-body.embed .popup :is(input[name=title], input[name=remind_at], input[name=new_context], .md-editor) { border-color: var(--line); }
+body.embed .popup :is(input:not([type=checkbox]), .md-editor) { border-color: var(--line); }
 body.embed .popup input[name=title] { width: 100%; }
 .popup .md-editor { margin-top: 8px; }
 .popup :is(.marks, .bookmark) { font-size: var(--fs-s); }
@@ -237,7 +248,7 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
 .seg a:hover { color: var(--fg); background: var(--soft); }
 .seg a[aria-current] { color: var(--fg); background: var(--soft); font-weight: 600; }
 
-/* The add line: one quiet title box; its extra fields show once it's in use. */
+/* The add line: a quiet title box; its fields (and ⏎) show while it's in use: focused, or anything typed or picked. */
 .add {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 24px; padding: 6px 10px;
   background: var(--card); border: 1px solid var(--muted); border-radius: 10px;
@@ -249,12 +260,10 @@ main > .capture { margin-top: 24px; }  /* first on the page, in the header's pla
 .add > .primary { width: 30px; height: 30px; padding: 0; border-radius: 50%; visibility: hidden; }
 .add .add-more { flex: 1 0 100%; display: none; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 28px; }
 .add .add-more > * { flex: 0 1 160px; width: auto; min-width: 0; }
-.add .add-more input[name="recur"], .add .add-more input[name="notes"] { flex: 1 1 180px; }
-.add:focus-within > .primary, .add:has(input[name="title"]:not(:placeholder-shown)) > .primary { visibility: visible; }
-.add:focus-within .add-more, .add:has(input[name="title"]:not(:placeholder-shown)) .add-more { display: flex; }
-.add:has(.add-more:active) .add-more, .add:has(.contexts :checked) .add-more { display: flex; }  /* pressing a context word moves the focus off the box */
-.add .add-more > .contexts { flex: 1 0 100%; margin: 0; }
-.add .add-more > .date-field { flex: 1 1 200px; }
+.add .task-fields { display: none; }
+.add:is(:focus-within, :has(input[name="title"]:not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) > .primary { visibility: visible; }
+.add:is(:focus-within, :has(input[name="title"]:not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) .add-more { display: flex; }
+.add:is(:focus-within, :has(input[name="title"]:not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) .task-fields { display: block; }
 
 /* Picking "＋ New…" reveals the name box next to the select. */
 input[name="new_project"] { display: none; }
@@ -287,8 +296,6 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
   position: fixed; top: 3.75rem; left: 50%; transform: translateX(-50%); z-index: 30; width: max-content; max-width: calc(100% - 32px);
   display: flex; flex-direction: column; gap: 6px; pointer-events: none; animation: fade-out .4s 5s forwards;
 }
-.add .add-more > .marks { flex: 1 0 100%; margin: 0; font-size: var(--fs-s); }
-.capture-dialog .marks { margin: 6px 0 0; font-size: var(--fs-s); }
 .flash { pointer-events: auto; margin: 0; background: var(--card); border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
 @keyframes fade-out { to { opacity: 0; visibility: hidden; } }
 
