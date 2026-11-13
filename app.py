@@ -1021,15 +1021,19 @@ def calendar_view():
         return back("calendar_view")
     week = None
     # A bare /calendar opens the last view used (cookie `cal_view`); an explicit ?w= or ?m= sets it.
-    if "w" in request.args or ("m" not in request.args and request.cookies.get("cal_view") == "week"):
+    # ?n=2 makes the week view two weeks (this one and the next), for planning.
+    cookie = request.cookies.get("cal_view")
+    if "w" in request.args or ("m" not in request.args and cookie in ("week", "2weeks")):
+        span = 2 if request.args.get("n") == "2" or ("w" not in request.args and cookie == "2weeks") else 1
         try:
             week = date.fromisoformat(request.args.get("w", ""))
         except ValueError:
             week = today()
         week = sunday(week)
         first = week.replace(day=1)
-        start, end = week, week + timedelta(days=6)
+        start, end = week, week + timedelta(days=7 * span - 1)
     else:
+        span = 0
         try:
             first = date.fromisoformat(request.args.get("m", "") + "-01")
         except ValueError:
@@ -1047,11 +1051,11 @@ def calendar_view():
     else:
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
     resp = make_response(render_template(
-        "calendar.html", first=first, week=week, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
+        "calendar.html", first=first, week=week, span=span, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
         by_day=by_day, events=events, calendars=[name for name, _ in calendars], cal_errors=dict(cal_errors),
         prev=prev, next=next_,
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
-    resp.set_cookie("cal_view", "week" if week else "month", max_age=365 * 86400, samesite="Lax")
+    resp.set_cookie("cal_view", ("2weeks" if span == 2 else "week") if week else "month", max_age=365 * 86400, samesite="Lax")
     return resp
 
 

@@ -365,6 +365,19 @@ def test_calendar_week_view(client, conn):
     assert "w=2026-10-18" in client.get("/calendar").data.decode()  # month view links to this week
 
 
+def test_calendar_two_week_view(client, conn):
+    db.add_task(conn, "this wk", step="next", due_date="2026-10-20")
+    db.add_task(conn, "next wk", step="next", due_date="2026-10-27")
+    db.add_task(conn, "after", step="next", due_date="2026-11-01")
+    html = client.get("/calendar?w=2026-10-22&n=2").data.decode()
+    assert "this wk" in html and "next wk" in html and "after" not in html
+    assert "18 Oct – 31 Oct 2026" in html and html.count("<tr>") == 3  # header + two weeks
+    assert "n=2&amp;w=2026-10-25" in html and "n=2&amp;w=2026-10-11" in html  # steps a week, keeps the span
+    assert "18 Oct – 31 Oct 2026" in client.get("/calendar").data.decode()  # remembered
+    client.get("/calendar?w=2026-10-22")
+    assert "18 Oct – 24 Oct 2026" in client.get("/calendar").data.decode()
+
+
 def test_calendar_remembers_the_view(client):
     assert "Oct 2026" not in client.get("/calendar").data.decode()  # month view by default
     client.get("/calendar?w=2026-11-04")

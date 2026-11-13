@@ -478,6 +478,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .cal .ev.dragging { opacity: .4; }
 .cal td.drop { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .cal.week td { height: 320px; }
+.cal.week.two td { height: 200px; }
 .cal.week .ev { white-space: normal; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0; font-size: var(--fs-xs); color: var(--muted); }
 .legend span::before {

@@ -2,16 +2,17 @@
 {% from "_task.html" import project_select, add_form, add_extras, title_marks, context_chip with context %}
 {% block title %}Calendar{% endblock %}
 {% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
-{% block actions %}{% set p = 'w' if week else 'm' %}
+{% block actions %}{% set p = 'w' if week else 'm' %}{% set q = {'n': 2} if span == 2 else {} %}
 {{ context_chip() }}
 <span class="seg">
-  <a href="{{ url_for('calendar_view', **{p: prev}) }}" title="Previous {{ 'week' if week else 'month' }}" aria-label="Previous {{ 'week' if week else 'month' }}">‹</a>
-  <a href="{{ url_for('calendar_view', w=this_week) if week else url_for('calendar_view', m=this_month) }}">Today</a>
-  <a href="{{ url_for('calendar_view', **{p: next}) }}" title="Next {{ 'week' if week else 'month' }}" aria-label="Next {{ 'week' if week else 'month' }}">›</a>
+  <a href="{{ url_for('calendar_view', **dict(q, **{p: prev})) }}" title="Previous {{ 'week' if week else 'month' }}" aria-label="Previous {{ 'week' if week else 'month' }}">‹</a>
+  <a href="{{ url_for('calendar_view', w=this_week, **q) if week else url_for('calendar_view', m=this_month) }}">Today</a>
+  <a href="{{ url_for('calendar_view', **dict(q, **{p: next})) }}" title="Next {{ 'week' if week else 'month' }}" aria-label="Next {{ 'week' if week else 'month' }}">›</a>
 </span>
 <span class="seg">
   <a href="{{ url_for('calendar_view', m=this_month) }}" {% if not week %}aria-current="page"{% endif %}>Month</a>
-  <a href="{{ url_for('calendar_view', w=this_week) }}" {% if week %}aria-current="page"{% endif %}>Week</a>
+  <a href="{{ url_for('calendar_view', w=this_week) }}" {% if span == 1 %}aria-current="page"{% endif %}>Week</a>
+  <a href="{{ url_for('calendar_view', w=this_week, n=2) }}" {% if span == 2 %}aria-current="page"{% endif %}>2 weeks</a>
 </span>
 {% endblock %}
 {% block body %}
@@ -31,7 +32,7 @@
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>
-<table class="cal{% if week %} week{% endif %}">
+<table class="cal{% if week %} week{% endif %}{% if span == 2 %} two{% endif %}">
   <thead><tr>{% for d in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
   <tbody data-filtered>
   {% for days in weeks %}
