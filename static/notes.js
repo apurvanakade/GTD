@@ -71,6 +71,107 @@ function lineHtml(line) {
   return inline(line);
 }
 
+// --- Pasted rich text (a web page, Google Docs, Word) as Markdown ---
+// Only HTML with something Markdown can carry is converted; anything else (a code editor's colored spans)
+// pastes as its plain text, whitespace and all.
+const RICH = "b,strong,i,em,s,del,strike,a[href],h1,h2,h3,h4,h5,h6,ul,ol,blockquote,pre,code,hr,table," +
+             "[style*=font-weight],[style*=font-style],[style*=line-through]";
+const BLOCK = new Set(["P", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "MAIN", "ASIDE", "NAV", "FIGURE",
+                       "FIGCAPTION", "DL", "DT", "DD", "TABLE", "THEAD", "TBODY", "TR", "ADDRESS", "DETAILS", "SUMMARY"]);
+const SKIP = new Set(["SCRIPT", "STYLE", "HEAD", "TITLE", "META", "LINK", "TEMPLATE", "NOSCRIPT", "IMG", "SVG", "BUTTON"]);
+const SAFE = /^([a-z][\w+.-]*:\/\/|mailto:)/i;  // what the renderer links (a pasted page's relative links mean nothing here)
+
+// Marks hug their text (`**a** `, not `**a **`), or the renderer wouldn't read them.
+const wrap = (s, a, b = a) => { const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/); return m[2] ? m[1] + a + m[2] + b + m[3] : s; };
+const KEYS = ["href", "bold", "italic", "strike", "code"];
+// A line's text runs (each with its style) as Markdown: neighbours sharing a style share one mark.
+function runs(segs, k = 0) {
+  if (k === KEYS.length) return segs.map(s => s.text).join("");
+  let out = "";
+  for (let i = 0; i < segs.length; ) {
+    let j = i;
+    while (j < segs.length && segs[j][KEYS[k]] === segs[i][KEYS[k]]) j++;
+    const group = segs.slice(i, j), v = group[0][KEYS[k]];
+    if (!v) out += runs(group, k + 1);
+    else if (KEYS[k] === "href") {
+      const text = group.map(s => s.text).join("").replace(/[[\]]/g, "").trim();
+      const url = v.replace(/[\s()]/g, c => encodeURIComponent(c));
+      out += !text || text === v ? (/^[a-z][\w+.-]*:\/\//i.test(v) ? url : `[${v}](${url})`) : wrap(text, "[", `](${url})`);
+    }
+    else if (KEYS[k] === "code") {
+      const text = group.map(s => s.text).join(""), ticks = text.includes("`") ? "``" : "`";
+      out += wrap(text, ticks);
+    }
+    else out += wrap(runs(group, k + 1), {bold: "**", italic: "_", strike: "~~"}[KEYS[k]]);
+    i = j;
+  }
+  return out;
+}
+
+function htmlToMarkdown(html) {
+  const body = new DOMParser().parseFromString(html, "text/html").body;  // inert: nothing runs or loads
+  if (!body.querySelector(RICH)) return null;
+  const lines = [];
+  let ctx = {quote: 0, lists: []}, lead = "", segs = [];
+  const indent = () => "> ".repeat(ctx.quote) + "  ".repeat(ctx.lists.length);
+  // A block's line is done: kept if it has any text; the next one starts at the current depth.
+  function flush() {
+    const text = runs(segs).trimEnd();
+    if (text.trim()) lines.push(lead + (segs[0]?.pre ? text : text.trimStart()));
+    if (text.trim() || !lead.trim()) { lead = indent(); segs = []; }  // a list item's marker waits for its text
+  }
+  function text(s, st) {
+    if (!st.pre) {
+      s = s.replace(/\s+/g, " ");
+      const before = segs.length ? segs[segs.length - 1].text : " ";
+      if (before.endsWith(" ")) s = s.replace(/^ /, "");
+    }
+    if (s) segs.push({...st, text: s});
+  }
+  function walk(node, st) {
+    if (node.nodeType === Node.TEXT_NODE) return text(node.data, st);
+    if (node.nodeType !== Node.ELEMENT_NODE || SKIP.has(node.tagName)) return;
+    const tag = node.tagName, css = node.style;
+    st = {...st};
+    const w = css.fontWeight;
+    if (/^(B|STRONG)$/.test(tag) || w === "bold" || +w >= 600) st.bold = true;
+    if (w === "normal" || (+w && +w < 600)) st.bold = false;
+    if (/^(I|EM)$/.test(tag) || css.fontStyle === "italic") st.italic = true;
+    if (css.fontStyle === "normal") st.italic = false;
+    if (/^(S|DEL|STRIKE)$/.test(tag) || css.textDecoration.includes("line-through")) st.strike = true;
+    if (/^(CODE|KBD|SAMP|TT)$/.test(tag)) st.code = true;
+    if (/^pre/.test(css.whiteSpace)) st.pre = true;
+    if (tag === "A") { const h = node.getAttribute("href") ?? ""; st.href = SAFE.test(h) ? h : null; }
+    const kids = () => node.childNodes.forEach(n => walk(n, st));
+    const nest = (change, f) => { const old = ctx; ctx = {...ctx, ...change}; flush(); f(); flush(); ctx = old; lead = indent(); };
+    if (tag === "BR") flush();
+    else if (tag === "HR") { flush(); lines.push(indent() + "---"); }
+    else if (/^H[1-6]$/.test(tag)) { flush(); lead = indent() + "#".repeat(+tag[1]) + " "; kids(); flush(); }
+    else if (tag === "PRE") {
+      flush();
+      lines.push(indent() + "```", ...node.textContent.replace(/\n$/, "").split("\n").map(l => indent() + l), indent() + "```");
+    }
+    else if (tag === "BLOCKQUOTE") nest({quote: ctx.quote + 1}, kids);
+    else if (tag === "UL" || tag === "OL")
+      nest({lists: [...ctx.lists, {ordered: tag === "OL", n: +(node.getAttribute("start") ?? 1)}]}, kids);
+    else if (tag === "LI") {
+      flush();
+      const list = ctx.lists[ctx.lists.length - 1] ?? {ordered: false, n: 1};
+      const box = node.querySelector(":scope > input[type=checkbox], :scope > p > input[type=checkbox]");
+      lead = "> ".repeat(ctx.quote) + "  ".repeat(Math.max(ctx.lists.length - 1, 0)) +
+             (list.ordered ? `${list.n++}. ` : "- ") + (box ? `[${box.checked ? "x" : " "}] ` : "");
+      kids();
+      flush();
+    }
+    else if (tag === "TD" || tag === "TH") { if (node.previousElementSibling) text(" | ", {}); kids(); }
+    else if (BLOCK.has(tag)) { flush(); kids(); flush(); }
+    else kids();
+  }
+  walk(body, {});
+  flush();
+  return lines.join("\n");
+}
+
 // --- The toolbar ---
 const TOOLS = [["bold", "<b>B</b>", "Bold (⌘B)"], ["italic", "<i>I</i>", "Italic (⌘I)"], ["heading", "H", "Heading"],
                ["bullet", "•", "Bullet list"], ["check", "☐", "Checklist"], ["link", "🔗", "Link"],
@@ -273,10 +374,25 @@ function editor(ta) {
     else if (t === "insertParagraph") { e.preventDefault(); newline(); }
     else if (t === "insertLineBreak") { e.preventDefault(); insert("\n"); }
     else if (t === "insertFromPaste" || t === "insertFromDrop") {
-      // Paste plain text only; pasted HTML would bring markup the renderer didn't make.
+      // Rich text comes in as Markdown (the editor holds only text); plain text as it is.
       e.preventDefault();
-      insert((e.dataTransfer?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n"));
+      const dt = e.dataTransfer, html = dt?.getData("text/html");
+      insert((html && htmlToMarkdown(html)) ?? (dt?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n"));
     }
+  });
+  // Copying or cutting gives the Markdown itself, not the rendered HTML (which pasted back would double its marks).
+  function copy(e) {
+    const sel = getSel();
+    if (!sel || sel[0] === sel[1]) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", getText().slice(...sel));
+    if (e.type === "cut") { const t = getText(); apply(t.slice(0, sel[0]) + t.slice(sel[1]), [sel[0], sel[0]]); }
+  }
+  ed.addEventListener("copy", copy);
+  ed.addEventListener("cut", copy);
+  ed.addEventListener("dragstart", e => {
+    const sel = getSel();
+    if (sel) { e.dataTransfer.clearData(); e.dataTransfer.setData("text/plain", getText().slice(...sel)); }
   });
   ed.addEventListener("keydown", e => {
     const k = e.key.toLowerCase();

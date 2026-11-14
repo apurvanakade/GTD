@@ -1262,6 +1262,45 @@ def test_enter_in_a_tickler_box_saves_once(page, live, conn):
     assert len(posts) == 1 and db.get_project(conn, 4)["tickle_on"] == "2026-11-15"
 
 
+PASTE = """([html, plain]) => {
+  const dt = new DataTransfer();
+  if (html) dt.setData("text/html", html);
+  dt.setData("text/plain", plain);
+  document.querySelector(".md-editor").dispatchEvent(new InputEvent("beforeinput",
+    {inputType: "insertFromPaste", dataTransfer: dt, bubbles: true, cancelable: true}));
+}"""
+
+
+def test_notes_paste_rich_text_as_markdown(page, live, conn):
+    pid = db.add_reference(conn, "Paste", notes="")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
+    page.locator(".md-editor").click()
+    html = ('<meta charset="utf-8"><h2>Plan</h2><p>Some <b>bold </b>and <em>italic</em>, '
+            '<a href="https://example.com/a b">a <b>link</b></a>, <code>x</code>, <s>gone</s>.</p>'
+            '<ul><li>one</li><li><p>two</p><ol><li>nested</li></ol></li></ul>'
+            '<ul><li><input type="checkbox" checked>done</li></ul>'
+            '<blockquote><p>quoted<br>twice</p></blockquote><hr><pre><code>a  b\n  c</code></pre>'
+            '<p><b style="font-weight:normal"><span style="font-weight:700">Docs</span> '
+            '<span style="font-style:italic">style</span></b></p><p><br></p>'
+            '<p><a href="javascript:alert(1)">bad</a> <a href="https://x.org">https://x.org</a></p>')
+    page.evaluate(PASTE, [html, "ignored"])
+    assert notes_text(page) == (
+        "## Plan\nSome **bold** and _italic_, [a link](https://example.com/a%20b), `x`, ~~gone~~.\n"
+        "- one\n- two\n  1. nested\n- [x] done\n> quoted\n> twice\n---\n```\na  b\n  c\n```\n"
+        "**Docs** _style_\nbad https://x.org")
+    page.evaluate(PASTE, ['<div style="color:red">  keep  spacing</div>', "\n  keep  spacing"])
+    assert notes_text(page).endswith("https://x.org\n  keep  spacing")  # no rich markup: the plain text
+    copied = page.evaluate("""() => {
+      const ed = document.querySelector(".md-editor"), r = document.createRange();
+      r.selectNodeContents(ed.querySelector(".h"));
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+      const e = new ClipboardEvent("copy", {clipboardData: new DataTransfer(), bubbles: true, cancelable: true});
+      ed.dispatchEvent(e);
+      return [e.clipboardData.getData("text/plain"), e.clipboardData.getData("text/html")];
+    }""")
+    assert copied == ["## Plan", ""]  # copying gives the Markdown, so pasting it back adds no marks
+
+
 def test_notes_editor_edge_cases(page, live, conn):
     pid = db.add_reference(conn, "Edges", notes="")
     page.goto(live + f"/reference/{pid}?embed=overlay")
