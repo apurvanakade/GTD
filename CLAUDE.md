@@ -20,7 +20,6 @@ Delete anything here that has become wrong.
 GTD                                             # open the live app: https://home.<tailnet>.ts.net (GTD_URL to override)
 GTD dev                                         # pull a fresh snapshot of live data into dev.db, run locally, open http://127.0.0.1:5005
 GTD dev --keep                                  # same, reusing the existing dev.db
-git push home main                              # deploy (after tests pass); also push origin
 uv run app.py                                   # bare dev server (GTD_HOST / GTD_PORT to override)
 uv run pytest                                   # all but the browser tests, in parallel (-n auto in pyproject.toml; ~3s)
 uv run pytest -m ""                             # everything, browser tests included (~12s)
@@ -41,23 +40,11 @@ There is no build step, linter config or JS bundler.
 
 `GTD dev` restarts a running local server when any `*.py`, template or static file is newer than `.server-started`, which it touches on every start. A server it didn't start counts as stale.
 
-## Parallel sessions: always work in a worktree
+## Runtime
 
-Several Claude sessions often run on this repo at once, so every session works in its own git worktree, never in the main checkout:
-- Start each task with `EnterWorktree` (it makes `.claude/worktrees/<name>` on a new branch from `main`). Do this before the first edit, even for a small change.
-- Run tests in the worktree as usual (`uv run pytest`); a `.venv` is per worktree, so `uv sync` first.
-- Running the app: `GTD` / `GTD dev` run the main checkout's code (the symlink points there). From a worktree use `GTD_PORT=<free port, e.g. 5006> ./gtd.sh dev`: its own code, its own `dev.db`, on a port no other session uses.
-- When done and the user agrees: commit on the worktree's branch, then merge into `main` from the main checkout (rebase first if `main` moved; never discard another session's uncommitted work there). Deploy (`git push home main`) only from `main`.
-- Once the work is merged, delete the worktree and its branch in the same session (`ExitWorktree` with remove, or `git worktree remove .claude/worktrees/<name>` then `git branch -d <branch>`); stop its dev server first (and close its tab). Don't leave finished worktrees behind.
-
-## Hosting and development
-
-The app runs on `home`, a GCP free-tier e2-micro (us-east1) reached only over Tailscale; it holds the only live copy of the DB. VM-wide setup (systemd `app@.service`, deploy hook, nightly backups, port table) lives in `~/Github/personal/GCP-home-server`, not here; `deploy/gtd.env.example` is this app's `/etc/apps/gtd.env`. It runs as `gunicorn -w 1 --threads 4` (one worker keeps the timer and SQLite simple); `connect()` sets WAL and a 5 s busy timeout.
-- Develop on the Mac only, with `GTD dev`. Never point a local server at the live DB. Don't develop on the VM (its 1 GB RAM is for the apps).
-- Deploy with `git push home main` once tests pass. The hook backs up the DB (`/var/lib/apps/gtd/backups/gtd-predeploy-*.db`), checks out, `uv sync`s and restarts; a failed start prints the journal in the push output.
-- There are no migrations: `SCHEMA` (`CREATE ... IF NOT EXISTS`) only adds what's missing. A change it can't make (a new column on an existing table, a changed `CHECK`) needs a one-off step: run it by hand on the VM (after a backup), check it first on `GTD dev`, and don't keep it in the code.
-- Rollback: `git push -f home <good-sha>:main`; if a schema change damaged data, also restore the pre-deploy backup. A backup from before a schema change needs the code of its day.
-- The VM's timezone is America/New_York (and `TZ` in the env file): `today()` and the timer's local times use the server's zone.
+- Production runs as `gunicorn -w 1 --threads 4` (one worker keeps the timer and SQLite simple); `connect()` sets WAL and a 5 s busy timeout. `deploy/gtd.env.example` is the production environment file.
+- There are no migrations: `SCHEMA` (`CREATE ... IF NOT EXISTS`) only adds what's missing. A change it can't make (a new column on an existing table, a changed `CHECK`) needs a one-off step run by hand, which is not kept in the code.
+- `today()` and the timer's local times use the server's timezone (`TZ` in the env file).
 
 ## Architecture
 
