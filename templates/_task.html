@@ -86,10 +86,10 @@
 </span>
 {% endmacro %}
 
-{# A someday item's or project's tickler date: out of sight (even in the weekly review) until then, back in the Inbox
-   from that day. Saves when changed; the hint shows how it reads. #}
+{# A someday project's tickler date: out of sight (even in the weekly review) until then, active from that day.
+   Saves when changed; the hint shows how it reads. #}
 {% macro tickler(value) %}
-<label class="tickler" title="Tickler: out of sight until this date, then back in the Inbox">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
+<label class="tickler" title="Tickler: out of sight until this date, then active">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
 {% endmacro %}
 
 {# A task's contexts: one click each, saved in the background (static/app.js); a new one is named in the box. A form

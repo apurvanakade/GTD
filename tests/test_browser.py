@@ -340,15 +340,16 @@ def test_drag_reorders_project_steps(page, live, conn):
 
 
 def test_drag_reorders_a_task_list(page, live, conn):
-    """Inbox (Next, Waiting and Someday share the code): ⠿ reorders; shift-selected rows go as a block."""
+    """Inbox (Next, Waiting and Someday share the code): ⠿ reorders; shift-selected rows go as a block. The seed's
+    tickled someday task ("sail") is in the same list, on top."""
     db.add_task(conn, "third")
     page.goto(live + "/inbox")
     titles = lambda: page.locator("ul[data-reorder] > li.task .title").all_inner_texts()
-    assert titles() == ["third", "legacy orphan", "inbox item"]
+    assert titles() == ["sail", "third", "legacy orphan", "inbox item"]
     with page.expect_response(lambda r: r.url.endswith("/tasks/order")) as saved:
         row(page, "inbox item").locator(".grip").drag_to(row(page, "third"), target_position={"x": 40, "y": 2})
     assert saved.value.status == 204
-    assert titles() == ["inbox item", "third", "legacy orphan"]
+    assert titles() == ["sail", "inbox item", "third", "legacy orphan"]
     assert [t["title"] for t in db.inbox_tasks(conn)] == ["inbox item", "third", "legacy orphan"]
     row(page, "inbox item").click(modifiers=["Shift"], position={"x": 400, "y": 10})
     row(page, "third").click(modifiers=["Shift"], position={"x": 400, "y": 10})
@@ -681,7 +682,7 @@ def test_shift_clicked_rows_drag_together(page, live, conn):
     drag_to_panel(page, row(page, "legacy orphan"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task.selected')")
     assert db.get_task(conn, 1)["project_id"] == db.get_task(conn, orphan)["project_id"] == 1
-    assert page.locator("main li.task[data-id]").count() == 0
+    assert page.locator("main li.task[data-id] .title").all_inner_texts() == ["sail"]  # the tickled someday task
 
 
 def test_an_unselected_row_drags_alone(page, live, conn):
@@ -717,7 +718,7 @@ def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live,
     # Every project list on the page has it at once, without a reload.
     assert page.locator(".drop-panel .target", has_text="Dragged").count() == 1
     drag_to_panel(page, row(page, "legacy orphan"), f'[data-project="{p["id"]}"]')
-    page.wait_for_function("!document.querySelector('main li.task[data-id]')")
+    page.wait_for_function("document.querySelectorAll('main li.task[data-id]').length == 1")  # the tickled "sail"
     assert [t["title"] for t in db.project_tasks(conn, p["id"])] == ["legacy orphan", "inbox item"]
 
 

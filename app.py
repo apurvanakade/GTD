@@ -65,6 +65,14 @@ def same_origin_only():
         abort(403)
 
 
+@app.before_request
+def tickle_projects():
+    """A someday project whose tickler date has come turns active, before anything is shown (one cheap query when
+    none has)."""
+    if request.endpoint != "static":
+        db.activate_tickled(conn(), today())
+
+
 CAPTURE_VIEWS = ("inbox", "next_view", "waiting", "someday")  # the task lists: base.html puts the capture line on them
 
 
@@ -290,7 +298,7 @@ def tickle_from_form():
 
 @app.template_global()
 def someday_url(x):
-    """A row of db.tickled() or db.someday_to_review(): a task's page or a project's."""
+    """A row of db.someday_to_review(): a task's page or a project's."""
     return url_for("task_view" if x["kind"] == "task" else "project_view", id=x["id"])
 
 
@@ -366,8 +374,8 @@ def capture():
 
 @app.route("/inbox")
 def inbox():
-    return render_template("inbox.html", tasks=db.inbox_tasks(conn()), tickled=db.tickled(conn(), today()),
-                           project_groups=db.project_groups(conn()))
+    """One task list: the inbox items, and the someday tasks whose tickler date has come, back to be decided."""
+    return render_template("inbox.html", tasks=db.inbox_list(conn(), today()), project_groups=db.project_groups(conn()))
 
 
 @app.post("/tasks/move")
@@ -934,7 +942,8 @@ def project_view(id):
             if tickle and fields.get("status", p["status"]) == "someday":  # someday projects only
                 db.set_project_tickle(c, id, tickle["tickle_on"])
                 if tickle["tickle_on"] and tickle["tickle_on"] <= today().isoformat():
-                    flash("Its tickler date has come: it's back in the Inbox.")
+                    db.activate_tickled(c, today())
+                    flash("Its tickler date has come: it's active now.")
         if fields.get("status") == "someday" != p["status"]:
             flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()

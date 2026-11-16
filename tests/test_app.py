@@ -1660,8 +1660,8 @@ def test_review_shows_one_step_at_a_time(client, conn):
     for t in db.inbox_tasks(conn):
         db.abandon_task(conn, t["id"])
     assert db.counts(conn, TODAY)["inbox"] == 1  # a tickled someday task is back in it too
-    for x in db.tickled(conn, TODAY):
-        db.update_task(conn, x["id"], due_date=None)
+    for t in db.inbox_list(conn, TODAY):
+        db.update_task(conn, t["id"], due_date=None)
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
     assert '<span class="count clear">✓</span>' in card  # nothing to do
     assert client.get("/review?step=bogus").status_code == 200  # falls back to the first unticked
@@ -3111,23 +3111,47 @@ def test_tasks_move_to_and_from_someday(client, conn):
     assert (db.get_task(conn, b)["step"], db.get_task(conn, b)["ground"]) == ("later", 0)
 
 
-def test_tickled_tasks_and_projects_come_back_to_the_inbox(client, conn):
+def test_tickled_tasks_come_back_to_the_inbox(client, conn):
     due = db.add_task(conn, "learn Italian", ground=1, step="someday", due_date="2026-10-22")
     later = db.add_task(conn, "read Dune", ground=1, step="someday", due_date="2026-11-01")
     plain = db.add_task(conn, "sail", ground=1, step="someday")
-    p = db.add_project(conn, "Boat", status="someday")
-    db.set_project_tickle(conn, p, "2026-10-20")
-    assert [(t["kind"], t["title"]) for t in db.tickled(conn, TODAY)] == [("project", "Boat"), ("task", "learn Italian")]
+    item = db.add_task(conn, "call plumber")
+    # One task list, the same rows as everywhere: tickled someday tasks first, then the inbox items.
+    assert [t["title"] for t in db.inbox_list(conn, TODAY)] == ["learn Italian", "call plumber"]
     assert db.counts(conn, TODAY)["inbox"] == 2
     html = client.get("/inbox").get_data(as_text=True)
-    assert f'href="/tasks/{due}"' in html and f'href="/projects/{p}"' in html and "H0 · someday" in html
+    assert len(re.findall(r'<ul class="tasks', html.split("<main")[1].split('class="drop-panel')[0])) == 1
+    row = re.search(rf'<li class="task[^"]*" data-id="{due}".*?</li>', html, re.S).group(0)
+    assert 'class="grip"' in row and 'class="done"' in row and 'class="start"' in row  # ticks, drags, times
+    assert "↩" not in html and "H0 · someday" not in html
     assert f'href="/tasks/{later}"' not in html and f'href="/tasks/{plain}"' not in html
-    assert "empty clear" not in html  # not empty: something is back
-    # Leaving someday clears a project's tickler date; a task leaves the list by its date or its step.
-    client.post(f"/projects/{p}", data={"status": "active"})
-    assert db.get_project(conn, p)["tickle_on"] is None and db.counts(conn, TODAY)["inbox"] == 1
-    client.post(f"/tasks/{due}", data={"step": "next"})
-    assert db.tickled(conn, TODAY) == []
+    # A mixed drag saves each list's own order: the inbox items' and the someday tasks'.
+    other = db.add_task(conn, "old idea", ground=1, step="someday", due_date="2026-10-01")
+    second = db.add_task(conn, "buy milk")
+    assert [t["title"] for t in db.inbox_list(conn, TODAY)] == ["old idea", "learn Italian", "buy milk", "call plumber"]
+    client.post("/tasks/order", data={"ids": f"{item},{due},{second},{other}"}, headers=FETCH)
+    assert [t["title"] for t in db.inbox_list(conn, TODAY)] == ["learn Italian", "old idea", "call plumber", "buy milk"]
+    client.post(f"/tasks/{due}", data={"step": "next"})  # a task leaves the list by its date or its step
+    assert due not in [t["id"] for t in db.inbox_list(conn, TODAY)]
+
+
+def test_a_tickled_project_becomes_active_on_its_date(client, conn):
+    """Not in the Inbox (a task list): on its date a someday project turns active, on top, its tickler cleared,
+    stalled until a next action is picked."""
+    boat = db.add_project(conn, "Boat", status="someday")
+    db.set_project_tickle(conn, boat, "2026-10-20")
+    kayak = db.add_project(conn, "Kayak", status="someday")
+    db.set_project_tickle(conn, kayak, "2026-10-23")
+    assert db.counts(conn, TODAY)["inbox"] == 0  # not counted in the Inbox
+    html = client.get("/projects").get_data(as_text=True)  # any page
+    p = db.get_project(conn, boat)
+    assert (p["status"], p["tickle_on"], p["stalled"]) == ("active", None, 1)
+    assert db.projects(conn)[0]["id"] == boat and f'href="/projects/{boat}"' in html
+    assert db.get_project(conn, kayak)["status"] == "someday"  # its date is still to come
+    assert f'href="/projects/{boat}"' not in client.get("/inbox").get_data(as_text=True)
+    # A date set to today or earlier makes it active at once.
+    r = client.post(f"/projects/{kayak}", data={"tickle_on": "today"}, follow_redirects=True)
+    assert db.get_project(conn, kayak)["status"] == "active" and "active" in r.get_data(as_text=True)
 
 
 def test_review_someday_step_lists_tasks_and_projects_and_hides_tickled_ones(client, conn):

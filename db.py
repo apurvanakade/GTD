@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS task_reviews (
   task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
   reviewed_at TEXT NOT NULL
 );
--- A someday project's tickler date (a local date): out of sight until then, then back in the Inbox. A table of its
+-- A someday project's tickler date (a local date): out of sight until then, then active. A table of its
 -- own, like project_reviews. An H0 someday task's tickler is its due date.
 CREATE TABLE IF NOT EXISTS project_tickles (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -318,12 +318,18 @@ def _arrive(c, id, was):
 @atomic
 def reorder_tasks(c, ids):
     """A task list's dragged rows (Inbox, a band of Next, Waiting, Someday, what the context filter leaves of them), in
-    their new order: they take the places those rows hold in the whole list, so its other rows don't move. Those in no
-    list (closed ones) are ignored."""
-    moved = [id for id in ids if list_of(c, id)]
-    if not moved:
-        return
-    which = list_of(c, moved[0])
+    their new order: they take the places those rows hold in the whole list, so its other rows don't move. Rows of
+    several lists (the Inbox's tickled someday tasks) each reorder their own list. Those in no list (closed ones) are
+    ignored."""
+    lists = {}
+    for id in ids:
+        if which := list_of(c, id):
+            lists.setdefault(which, []).append(id)
+    for which, moved in lists.items():
+        _reorder_list(c, which, moved)
+
+
+def _reorder_list(c, which, moved):
     whole = [r[0] for r in c.execute(f"""SELECT t.id FROM tasks t LEFT JOIN list_positions lp ON lp.task_id = t.id
         WHERE {LIST} = ? ORDER BY {LIST_ORDER[which]}""", (which,))]
     here = set(whole) & set(moved)
@@ -490,6 +496,13 @@ def inbox_tasks(c):
     return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY {PLAIN_ORDER}").fetchall()
 
 
+def inbox_list(c, today):
+    """The Inbox page's one task list: the someday tasks whose tickler date has come (in Someday's order), then the
+    inbox items. Each keeps its own list's order (reorder_tasks())."""
+    return c.execute(f"{TASK_SELECT} WHERE {TICKLED} ORDER BY {PLAIN_ORDER}",
+                     (today.isoformat(),)).fetchall() + inbox_tasks(c)
+
+
 def next_list(c):
     """The Next tab: every next action, H0's and active projects', repeats not yet due included, in its order (the
     page splits it into due bands)."""
@@ -517,7 +530,7 @@ def reorder_project(c, project_id, ids):
 def counts(c, today):
     one = lambda sql, *a: c.execute(sql, a).fetchone()[0]
     return {
-        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + one(f"SELECT count(*) FROM ({TICKLED})", today.isoformat()),
+        "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + one(f"SELECT count(*) FROM tasks t WHERE {TICKLED}", today.isoformat()),
         "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
         "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'"),
@@ -1068,16 +1081,17 @@ def delete_horizon(c, id):
 
 # --- tickler ---------------------------------------------------------------
 
-# H0 someday tasks and someday projects whose tickler date (?1, today) has come: back in the Inbox until dealt with.
-TICKLED = f"""SELECT 'task' AS kind, t.id, {LABEL} AS title, t.due_date AS tickle_on FROM tasks t {CATEGORY_JOIN}
-    WHERE {MAYBE} AND t.due_date <= ?1
-  UNION ALL SELECT 'project', p.id, p.title, k.tickle_on
-    FROM project_tickles k JOIN projects p ON p.id = k.project_id WHERE p.status = 'someday' AND k.tickle_on <= ?1"""
+# H0 someday tasks whose tickler date (?, today) has come: back in the Inbox until dealt with.
+TICKLED = f"{MAYBE} AND t.due_date <= ?"
 
 
-def tickled(c, today):
-    """TICKLED's rows, each with a `kind` ("task" or "project"); soonest date first."""
-    return c.execute(f"SELECT * FROM ({TICKLED}) ORDER BY tickle_on, title", (today.isoformat(),)).fetchall()
+@atomic
+def activate_tickled(c, today):
+    """Someday projects whose tickler date has come turn active (on top, their date cleared): the Inbox is a task
+    list, so a project comes back as a commitment, stalled until its next action is picked."""
+    for (id,) in c.execute("""SELECT p.id FROM project_tickles k JOIN projects p ON p.id = k.project_id
+            WHERE p.status = 'someday' AND k.tickle_on <= ?""", (today.isoformat(),)).fetchall():
+        update_project(c, id, status="active")
 
 
 # --- turning a task into a reference item -----------------------------------
