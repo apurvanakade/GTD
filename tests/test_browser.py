@@ -444,7 +444,10 @@ def test_add_line_shows_every_field_once_focused(page, live, conn, path):
     line = page.locator("main form.add")
     fields = (".md-editor", "[name=due_date]", "[name=recur]", "[name=remind_at]", "[name=new_context]", ".marks")
     assert all(line.locator(f).is_hidden() for f in fields)
-    line.locator("[name=title]").focus()
+    assert line.locator("[name=category]").is_hidden()  # no empty box on an idle line
+    line.locator("[name=title]").click()  # a click on the idle line starts in the category box
+    assert page.evaluate("document.activeElement.name") == "category"
+    assert line.locator("[name=category]").is_visible()
     for field in fields:
         assert line.locator(field).is_visible(), field
     line.locator("[name=due_date]").fill("fri")  # previewed as typed, as on the task page
@@ -1656,7 +1659,7 @@ def test_the_category_box_offers_categories(page, live, conn):
     one and moves on to the title. On the task page it saves in the background, as it's left."""
     page.goto(live + "/inbox")
     cat = page.locator("main form.capture input[name=category]")
-    cat.click()
+    page.locator("main form.capture input[name=title]").click()  # the idle line opens in the category box
     cat.type("m")  # a later word's start, then a name containing it
     offer = page.locator(".ctx-suggest:not([hidden]) a")
     sync_api.expect(offer).to_have_text(["Discrete Math", "Home"])

@@ -88,6 +88,15 @@ function capture() {
   dialog.querySelector('input[name=category]').select();  // the category box first: Tab goes on to the title
 }
 document.querySelector('.add-inbox')?.addEventListener('click', capture);
+// A click on an idle task add line (its category box folded away, style.css) starts in the category box, as capture
+// does; Tab goes on to the title. Once the line is in use, clicks land where they're aimed.
+document.addEventListener('mousedown', e => {
+  const form = e.target.closest?.('form.add');
+  const cat = form?.elements.category;
+  if (!cat || cat.offsetWidth) return;  // folded only while idle
+  e.preventDefault();
+  cat.focus();
+});
 document.querySelector('.capture-dialog form')?.addEventListener('submit', async e => {
   if (e.submitter?.formMethod === 'dialog') return;  // Cancel
   e.preventDefault();

@@ -261,6 +261,11 @@ main > .capture { margin-top: 24px; }  /* first on the page, in the header's pla
 input.category { flex: 0 0 9em; width: 9em; min-width: 0; background: var(--soft); border-color: transparent; }
 input.category:focus { background: var(--card); border-color: var(--accent); }
 .add input.category { padding: 4px 8px; }
+/* An idle add line shows no empty category box: it folds to nothing (still focusable; a click on the line lands in it,
+   static/app.js) and opens once the line is in use (the rules below). The negative margin takes back the flex gap. */
+.add:not(:focus-within, :has(:is(input[name="title"], input[name="category"]):not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked)) input.category {
+  flex-basis: 0; width: 0; padding: 0; border-width: 0; margin-right: -8px;
+}
 .title-pair { display: flex; gap: 8px; margin: 0; }
 .title-pair input[name="title"] { flex: 1 1 auto; width: auto; min-width: 0; }
 .title-line input.category { flex-basis: 8em; width: 8em; font-size: var(--fs-m); color: var(--muted); }
