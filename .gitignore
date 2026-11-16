@@ -4,3 +4,4 @@ __pycache__/
 server.log
 .server-started
 dev.db*
+.claude/worktrees/

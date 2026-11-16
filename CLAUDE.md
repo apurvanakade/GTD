@@ -48,7 +48,7 @@ Several Claude sessions often run on this repo at once, so every session works i
 - Run tests in the worktree as usual (`uv run pytest`); a `.venv` is per worktree, so `uv sync` first.
 - Running the app: `GTD` / `GTD dev` run the main checkout's code (the symlink points there). From a worktree use `GTD_PORT=<free port, e.g. 5006> ./gtd.sh dev`: its own code, its own `dev.db`, on a port no other session uses.
 - When done and the user agrees: commit on the worktree's branch, then merge into `main` from the main checkout (rebase first if `main` moved; never discard another session's uncommitted work there). Deploy (`git push home main`) only from `main`.
-- Remove the worktree when its branch is merged (`ExitWorktree`, or `git worktree remove`).
+- Once the work is merged, delete the worktree and its branch in the same session (`ExitWorktree` with remove, or `git worktree remove .claude/worktrees/<name>` then `git branch -d <branch>`); stop its dev server first (and close its tab). Don't leave finished worktrees behind.
 
 ## Hosting and development
 
