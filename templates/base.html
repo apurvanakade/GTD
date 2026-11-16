@@ -1,4 +1,4 @@
-{% from "_task.html" import add_form, task_fields with context %}<!doctype html>
+{% from "_task.html" import add_form, task_fields, category_input with context %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -11,7 +11,7 @@
 {#- A record's parent, where Ctrl+↑ goes (app.js): a step's project, a project's list, a horizon's card… #}
 {% if up is defined %}<link rel="up" href="{{ up }}">{% endif %}
 </head>
-<body{% if embed %} class="embed"{% endif %} data-contexts="{{ contexts|map(attribute='name')|join(' ') }}">
+<body{% if embed %} class="embed"{% endif %} data-contexts="{{ contexts|map(attribute='name')|join(' ') }}" data-categories="{{ categories|tojson|forceescape }}">
 {#- In a frame (an overlay) the page is the record alone: no nav, bar, pill or dialogs. #}
 {# One list drives both the key handler and the help overlay. #}
 {% set go_keys = [('t', url_for('timer_view'), 'Timer'), ('c', url_for('calendar_view'), 'Calendar'),
@@ -78,8 +78,9 @@
         <dt><kbd>Esc</kbd></dt><dd>Close</dd>
         <dt><kbd>?</kbd></dt><dd>This page</dd>
       </dl>
-      <h3>At the end of a task's title</h3>
+      <h3>In a new task's title</h3>
       <dl>
+        <dt><kbd>Math:</kbd></dt><dd>Category, first (box left blank)</dd>
         <dt><kbd>^fri</kbd></dt><dd>Due date</dd>
         <dt><kbd>*weekly</kbd></dt><dd>Repeat</dd>
         <dt><kbd>!3pm</kbd></dt><dd>Reminder</dd>
@@ -98,7 +99,7 @@
 <dialog class="capture-dialog">
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <h2>Add to inbox</h2>
-    <input name="title" placeholder="What's on your mind?" autocomplete="off" required>
+    <p class="title-pair">{{ category_input() }}<input name="title" placeholder="What's on your mind?" autocomplete="off" required></p>
     {{ task_fields() }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>

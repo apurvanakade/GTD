@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, add_form, task_fields, context_chip with context %}
+{% from "_task.html" import project_select, add_form, task_fields, context_chip, category_input with context %}
 {% block title %}Calendar{% endblock %}
 {% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
 {% block actions %}{% set p = 'w' if week else 'm' %}{% set q = {'n': 2} if span == 2 else {} %}
@@ -21,7 +21,7 @@
 <dialog class="day-dialog">
   <form method="post" action="{{ url_for('calendar_view') }}">
     <h2>Add</h2>
-    <input name="title" placeholder="Add a dated next action…" autocomplete="off" required>
+    <p class="title-pair">{{ category_input() }}<input name="title" placeholder="Add a dated next action…" autocomplete="off" required></p>
     {% set where %}<label>Project {{ project_select() }}</label>{% endset %}{{ task_fields(where, today, True) }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
@@ -41,7 +41,7 @@
       {% set kind = 'inbox' if t.inbox else 'someday' if t.project_status == 'someday' or t.step == 'someday'
                     else 'waiting' if 'waiting' in (t.step, t.project_status) else t.step %}
       <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}{% for n in (t.contexts or '').split() %} @{{ n }}{% endfor %}" draggable="true" data-due="{{ url_for('task_due', id=t.id) }}"
-         class="ev k-{{ kind }}{% if iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.title }}</a>
+         class="ev k-{{ kind }}{% if iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.label }}</a>
       {% endfor %}
     </td>
     {% endfor %}
@@ -63,7 +63,7 @@ cal.addEventListener('click', e => {
   f.due_date.dispatchEvent(new Event('input', {bubbles: true}));  // its preview follows
   d.querySelector('h2').textContent = `Add on ${b.dataset.label}`;
   d.showModal();
-  f.elements.title.focus();
+  f.elements.category.focus();
 });
 // A press beside a task would sweep a selection across the days. Not user-select: none, which stops the tasks dragging.
 cal.addEventListener('selectstart', e => e.preventDefault());

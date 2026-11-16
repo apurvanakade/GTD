@@ -1560,10 +1560,10 @@ def test_search_suggest(client, conn):
     r = client.get("/search/suggest?q=tils").get_json()
     titles = [s["title"] for s in r]
     assert titles[:2] == ["buy tiles", "lay tiles"]           # open tasks before the done one
-    assert "old tiles" in titles
+    assert "Discrete Math: old tiles" in titles
     by = {s["title"]: s for s in r}
     assert by["buy tiles"]["url"] == "/tasks/2" and by["buy tiles"]["kind"] == "next"
-    assert by["old tiles"]["kind"] == "done"
+    assert by["Discrete Math: old tiles"]["kind"] == "done"
     kitchen = next(s for s in client.get("/search/suggest?q=kitchn").get_json() if s["title"] == "Kitchen")
     assert kitchen["url"].startswith("/projects/") and kitchen["kind"] == "project"
     assert client.get("/search/suggest?q=").get_json() == []
@@ -3324,3 +3324,56 @@ def test_managing_contexts_on_site_info(client, conn):
     assert client.post(f"/contexts/{rows['a']['id']}/delete", headers=fetch).status_code == 204
     assert db.contexts(conn) == [] and db.get_task(conn, t)["contexts"] is None and db.get_task(conn, t)["state"] == "open"
     assert client.post("/contexts/999/rename", data={"name": "x"}, headers=fetch).status_code == 404
+
+
+# --- categories ------------------------------------------------------------
+
+def test_a_task_category(client, conn):
+    """A task's category is a box of its own before the title, shown before it in every list as "Category: title";
+    one spelling whatever the case; offered from every task, closed ones too; kept by a repeat's next instance;
+    found by search."""
+    seed(conn)
+    page = client.get("/next").get_data(as_text=True)
+    assert ">Home: bins</a>" in page
+    offered = json.loads(re.search(r'data-categories="([^"]*)"', page).group(1).replace("&#34;", '"'))
+    assert set(offered) == {"Home", "Discrete Math"}  # "Discrete Math" is on a done task only
+    assert 'name="category"' in page  # the capture line's box
+    client.post("/capture", data={"title": "grade hw", "category": " discrete   math: "})
+    t = db.inbox_tasks(conn)[0]
+    assert (t["title"], t["category"], t["label"]) == ("grade hw", "Discrete Math", "Discrete Math: grade hw")
+    assert db.categories(conn)[0] == "Discrete Math"  # most used first
+    # The task page: the two boxes; the category saves in the background and reads back as stored.
+    frame = client.get(f"/tasks/{t['id']}?embed=overlay").get_data(as_text=True)
+    assert 'name="category" value="Discrete Math"' in frame and 'name="title" value="grade hw"' in frame
+    r = client.post(f"/tasks/{t['id']}?embed=overlay", data={"category": "home"}, headers={"X-Requested-With": "fetch"})
+    assert r.get_json()["saved"]["category"] == "Home"
+    client.post(f"/tasks/{t['id']}?embed=overlay", data={"category": ""}, headers={"X-Requested-With": "fetch"})
+    assert db.get_task(conn, t["id"])["label"] == "grade hw"
+    assert not client.post(f"/tasks/{t['id']}?embed=overlay", data={"due_date": "fri"}, headers={"X-Requested-With": "fetch"}) \
+        .get_json()["saved"].get("category")  # not posted: left alone
+    # A repeat's next instance keeps it; search and suggestions find it by its category.
+    bins = next(x for x in db.next_list(conn) if x["title"] == "bins")
+    new = db.complete_task(conn, bins["id"], TODAY)
+    assert db.get_task(conn, new)["label"] == "Home: bins"
+    assert [x["label"] for x in db.search(conn, "home bins")["tasks"]] == ["Home: bins"]
+    assert client.get("/search/suggest?q=home bin").get_json()[0]["title"] == "Home: bins"
+    # Timed, it's named so too.
+    client.post(f"/tasks/{new}/start")
+    assert "Home: bins" in client.get("/timer").get_data(as_text=True)
+
+
+def test_a_new_tasks_title_can_start_with_its_category(client, conn):
+    """Plain text, as the Journal sends it: "Category: title" and the title marks. A category is a word or three
+    before ": "; a longer lead-in, or a filled category box, leaves the title as typed."""
+    client.post("/capture", data={"title": "Discrete Math: grade hw ^fri *weekly !tomorrow 9am @home @desk"})
+    t = db.inbox_tasks(conn)[0]
+    assert (t["category"], t["title"], t["due_date"], t["recur"], sorted(t["contexts"].split())) == \
+        ("Discrete Math", "grade hw", "2026-10-23", "weekly", ["desk", "home"])
+    assert t["remind_at"] == db.iso(datetime(2026, 10, 23, 9, 0).astimezone())
+    for title in ("I wonder about this: maybe", "see http://x.com", "Note:no space", ": nothing before"):
+        client.post("/capture", data={"title": title})
+        t = db.inbox_tasks(conn)[0]
+        assert (t["category"], t["title"]) == (None, title)
+    client.post("/capture", data={"title": "Re: lunch", "category": "Home"})  # the box wins
+    t = db.inbox_tasks(conn)[0]
+    assert (t["category"], t["title"]) == ("Home", "Re: lunch")

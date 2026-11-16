@@ -257,13 +257,21 @@ main > .capture { margin-top: 24px; }  /* first on the page, in the header's pla
 .add:focus-within { border-color: var(--accent); }
 .add .plus { color: var(--accent); font-size: 1.25rem; line-height: 1; width: 20px; text-align: center; }
 .add input[name="title"] { flex: 1 1 200px; width: auto; min-width: 0; border-color: transparent; background: transparent; padding: 6px 4px; }
+/* A task's category box, before its title (category_input()): short, unlabeled, a soft chip until it's in use. */
+input.category { flex: 0 0 9em; width: 9em; min-width: 0; background: var(--soft); border-color: transparent; }
+input.category:focus { background: var(--card); border-color: var(--accent); }
+.add input.category { padding: 4px 8px; }
+.title-pair { display: flex; gap: 8px; margin: 0; }
+.title-pair input[name="title"] { flex: 1 1 auto; width: auto; min-width: 0; }
+.title-line input.category { flex-basis: 8em; width: 8em; font-size: var(--fs-m); color: var(--muted); }
+.title-line input.category:focus { color: var(--fg); }
 .add > .primary { width: 30px; height: 30px; padding: 0; border-radius: 50%; visibility: hidden; }
 .add .add-more { flex: 1 0 100%; display: none; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 28px; }
 .add .add-more > * { flex: 0 1 160px; width: auto; min-width: 0; }
 .add .task-fields { display: none; }
-.add:is(:focus-within, :has(input[name="title"]:not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) > .primary { visibility: visible; }
-.add:is(:focus-within, :has(input[name="title"]:not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) .add-more { display: flex; }
-.add:is(:focus-within, :has(input[name="title"]:not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) .task-fields { display: block; }
+.add:is(:focus-within, :has(:is(input[name="title"], input[name="category"]):not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) > .primary { visibility: visible; }
+.add:is(:focus-within, :has(:is(input[name="title"], input[name="category"]):not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) .add-more { display: flex; }
+.add:is(:focus-within, :has(:is(input[name="title"], input[name="category"]):not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) .task-fields { display: block; }
 
 /* Picking "＋ New…" reveals the name box next to the select. */
 input[name="new_project"] { display: none; }

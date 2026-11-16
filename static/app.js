@@ -81,11 +81,11 @@ document.addEventListener('click', e => {
 // Capture goes to the Inbox page's own box, or elsewhere (or over an overlay) to the dialog. The dialog adds in the
 // background, so whatever is open under it stays as it was.
 function capture() {
-  const inline = !document.querySelector('dialog[open]') && document.querySelector('main .capture input');
+  const inline = !document.querySelector('dialog[open]') && document.querySelector('main .capture input[name=category]');
   if (inline) return inline.select();
   const dialog = document.querySelector('.capture-dialog');
   if (!dialog.open) dialog.showModal();
-  dialog.querySelector('input').select();
+  dialog.querySelector('input[name=category]').select();  // the category box first: Tab goes on to the title
 }
 document.querySelector('.add-inbox')?.addEventListener('click', capture);
 document.querySelector('.capture-dialog form')?.addEventListener('submit', async e => {
@@ -149,7 +149,7 @@ document.addEventListener('submit', e => {
   document.activeElement?.blur();
 });
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
-// it shows depends on them; its text boxes (due, repeats, remind; on Enter or on leaving) save in the background.
+// it shows depends on them; its text boxes (category, due, repeats, remind; on Enter or on leaving) save in the background.
 // Title and notes are autosave.js's; "＋ New project…" waits for its name; a box whose 📅 picker is open waits for it.
 let fieldsSaved = Promise.resolve();  // the latest such background save; autosaved() (autosave.js) waits for it
 document.addEventListener('change', e => {
@@ -161,7 +161,7 @@ document.addEventListener('change', e => {
   if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
   if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();
   const body = new URLSearchParams();
-  for (const name of ['due_date', 'recur', 'remind_at']) {
+  for (const name of ['category', 'due_date', 'recur', 'remind_at']) {
     const box = f.elements[name];
     if (box && !box.disabled) body.set(name, box.value);  // a disabled box (Repeats while someday or waiting) keeps its rule
   }
@@ -325,36 +325,61 @@ document.addEventListener('change', e => {
     stale = true;
   });
 })();
-// Typing @ at the end of a task's title (a line showing the marks' hint: split_title() in app.py; a task's own page)
-// offers the contexts so far, best first: ↑ ↓ move, Tab, Enter or a click takes one, Esc leaves it as typed. A name typed in full,
-// or one that's new, offers nothing, so Enter adds the task.
+// Two boxes offer what's been typed before, best first (names starting so, then a word in them starting so, then
+// containing it): ↑ ↓ move, Tab, Enter or a click takes one, Esc leaves it as typed. A name typed in full offers nothing,
+// so Enter adds the task.
+// - @ at the end of a task's title (a line showing the marks' hint: split_title() in app.py; a task's own page): the
+//   contexts so far. Taking one leaves the caret after it.
+// - A task's category box (category_input() in _task.html): every category used, on any task. Taking one moves on to
+//   the title. A category added here is offered from then on, without a reload.
 (() => {
-  const names = document.body.dataset.contexts.split(' ').filter(Boolean);
-  if (!names.length) return;
+  const contexts = document.body.dataset.contexts.split(' ').filter(Boolean);
+  const categories = JSON.parse(document.body.dataset.categories || '[]');
   const box = Object.assign(document.createElement('div'), {className: 'suggest ctx-suggest', hidden: true});
-  let input = null, items = [], active = 0;
+  let input = null, offer = null, items = [], active = 0;
   const hide = () => { box.hidden = true; items = []; };
-  const typed = el => el.value.match(/\s@([\p{L}\p{N}_-]*)$/u);
+  const lower = s => s.toLowerCase();
+  const best = (names, q) => {
+    const starts = n => lower(n).startsWith(q), word = n => lower(n).split(/\s+/).some(w => w.startsWith(q));
+    return [...names.filter(starts), ...names.filter(n => !starts(n) && word(n)),
+            ...names.filter(n => !starts(n) && !word(n) && lower(n).includes(q))].slice(0, 8);
+  };
+  // What an input offers: {q, names, show (a name as listed), take (puts a name in)}, or null.
+  const offers = el => {
+    if (el.matches?.('input[name=category]')) {
+      const q = lower(el.value.trim());
+      return q && {q, names: categories, show: n => n, take: n => {
+        el.value = n;
+        el.dispatchEvent(new Event('input', {bubbles: true}));
+        (el.form?.elements.title ?? el).focus();  // leaving the box: a task page saves it
+      }};
+    }
+    if (!el.matches?.('input[name=title]') || !(el.form?.querySelector('.marks') || el.form && 'saveOnChange' in el.form.dataset)) return null;
+    const m = el.value.match(/\s@([\p{L}\p{N}_-]*)$/u);
+    return m && {q: lower(m[1]), names: contexts, show: n => '@' + n, take: n => {
+      el.value = el.value.replace(/@[\p{L}\p{N}_-]*$/u, `@${n} `);
+      el.focus();
+    }};
+  };
   const show = () => {
-    box.replaceChildren(...items.map((n, i) => Object.assign(document.createElement('a'), {textContent: '@' + n, className: i === active ? 'on' : ''})));
+    box.replaceChildren(...items.map((n, i) => Object.assign(document.createElement('a'), {textContent: offer.show(n), className: i === active ? 'on' : ''})));
     (input.closest('dialog') ?? document.body).append(box);  // over a modal's top layer too
     const r = input.getBoundingClientRect();
-    Object.assign(box.style, {left: r.left + 'px', top: r.bottom + 4 + 'px', width: Math.min(r.width, 240) + 'px'});
+    Object.assign(box.style, {left: r.left + 'px', top: r.bottom + 4 + 'px', width: Math.max(Math.min(r.width, 240), 160) + 'px'});
     box.hidden = false;
   };
   const take = i => {
-    input.value = input.value.replace(/@[\p{L}\p{N}_-]*$/u, `@${items[i]} `);
+    const n = items[i];
     hide();
-    input.focus();
+    offer.take(n);
   };
   document.addEventListener('input', e => {
-    const el = e.target;
-    if (!el.matches?.('input[name=title]') || !(el.form?.querySelector('.marks') || el.form && 'saveOnChange' in el.form.dataset)) return;
-    const m = typed(el), q = m?.[1].toLowerCase();
-    if (!m || names.some(n => n.toLowerCase() === q)) return hide();
-    input = el;
+    const o = offers(e.target);
+    if (!o || o.names.some(n => lower(n) === o.q)) return hide();
+    input = e.target;
+    offer = o;
     active = 0;
-    items = names.filter(n => n.toLowerCase().startsWith(q)).concat(names.filter(n => !n.toLowerCase().startsWith(q) && n.toLowerCase().includes(q))).slice(0, 8);
+    items = best(o.names, o.q);
     items.length ? show() : hide();
   });
   document.addEventListener('keydown', e => {  // before anything else that wants these keys: Enter submits, Esc closes
@@ -375,6 +400,12 @@ document.addEventListener('change', e => {
     take([...box.children].indexOf(a));
   });
   document.addEventListener('focusout', e => { if (e.target === input) hide(); });
+  const learn = el => {  // a category just used is offered next time
+    const n = el?.value.trim().replace(/\s+/g, ' ').replace(/:+$/, '').trim();
+    if (n && !categories.some(c => lower(c) === lower(n))) categories.unshift(n);
+  };
+  document.addEventListener('submit', e => learn(e.target.elements?.category), true);
+  document.addEventListener('change', e => { if (e.target.matches?.('input[name=category]') && e.target.form && 'saveOnChange' in e.target.form.dataset) learn(e.target); });
 })();
 // A message goes as soon as it's pointed at, so it's never in the way.
 document.addEventListener('mouseover', e => e.target.closest('.flashes')?.remove());

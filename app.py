@@ -78,7 +78,7 @@ def template_globals():
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
             "capture_line": request.endpoint in CAPTURE_VIEWS, "overlays": [] if embed else opened(),
             "app_url": GTD_URL or request.host_url.rstrip("/"),
-            "contexts": db.contexts(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
+            "contexts": db.contexts(conn()), "categories": db.categories(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
             "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0)}
 
 
@@ -142,7 +142,7 @@ def task_fields_from_form(current=None):
     """Editable task fields present in the submitted form. On an add line (no `current` task) the title may end
     with ^due, *repeat, !remind and @context (split_title())."""
     fields = {}
-    for name in ("title", "notes", "due_date", "recur"):
+    for name in ("title", "notes", "due_date", "recur", "category"):
         if name in request.form:
             fields[name] = form_value(name)
     if "notes" in fields:
@@ -175,6 +175,8 @@ def task_fields_from_form(current=None):
                 fields["remind_at"] = remind_at
     if current is None and fields.get("title"):
         fields["title"], typed = split_title(fields["title"])
+        if not fields.get("category") and (m := CATEGORY_LEAD.match(fields["title"])):  # "Discrete Math: grade hw"
+            fields["category"], fields["title"] = m.groups()
         picked = [*contexts_from_form(), *typed.pop("contexts", ())]  # contexts add up, from the picks and the title
         fields.update(typed)  # typed into the title: wins over the line's own boxes
         if picked:
@@ -247,6 +249,11 @@ def contexts_from_form():
 TITLE_MARKS = {"^": ("due_date", parse_due), "*": ("recur", parse_recur), "!": ("remind_at", parse_reminder),
                "@": ("contexts", parse_context)}
 TITLE_MARK = re.compile(r"\s([\^*!@])(\S[^\^*!@]*?)\s*$")
+
+
+# A new task's title can start with its category, as the Journal sends it in plain text: "Discrete Math: grade hw".
+# One to three words before ": " (a longer lead-in is part of the title), when the category box is blank.
+CATEGORY_LEAD = re.compile(r"([^\W\d_][^\s:^*!@]*(?: [^\s:^*!@]+){0,2}):\s+(\S.*)")
 
 
 def split_title(title):
@@ -339,9 +346,9 @@ def capture():
     bookmark(fields)
     if fields.get("title"):
         title = fields.pop("title")
-        db.add_task(conn(), title, today=today(), **fields)
+        id = db.add_task(conn(), title, today=today(), **fields)
         if urlsplit(request.referrer or "").path != url_for("inbox"):  # the inbox list already shows it
-            parts = [f"Added to inbox: {title}"]
+            parts = [f"Added to inbox: {db.get_task(conn(), id)['label']}"]
             if "due_date" in fields:
                 parts.append(f"due {fields['due_date']}")
             if "recur" in fields:
@@ -759,7 +766,7 @@ def task_view(id):
         db.update_task(c, id, today=today(), **fields)
         if fetched():  # a field saved in the background: its messages, and how the boxes read (app.js shows them, so
             saved = db.get_task(c, id)  # words like "3pm" aren't read again, later, by the next post of this form)
-            shown = {"due_date": saved["due_date"], "remind_at": local_minute(saved["remind_at"])}
+            shown = {"due_date": saved["due_date"], "remind_at": local_minute(saved["remind_at"]), "category": saved["category"]}
             return {"flashes": get_flashed_messages(), "saved": {k: v or "" for k, v in shown.items() if k in fields}}
         return redirect(url_for("task_view", id=id, embed=request.args.get("embed")))
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
@@ -1114,7 +1121,7 @@ def timer_start():
     c, title = conn(), form_value("title")
     if not title:
         return back("timer_view")
-    t = next((t for t in db.open_tasks(c) if t["title"].lower() == title.lower()), None)
+    t = next((t for t in db.open_tasks(c) if title.lower() in (t["label"].lower(), t["title"].lower())), None)
     with db.transaction(c):
         tid = t["id"] if t else db.add_task(c, title, today=today())
         db.timer_start(c, tid, now())
@@ -1196,7 +1203,7 @@ def ntfy(t, at):
         due, local_at = due.astimezone(), at.astimezone()
         lines.append("Late: was due " + due.strftime("%H:%M" if due.date() == local_at.date() else "%Y-%m-%d %H:%M"))
     base, topic = NTFY_URL.rsplit("/", 1)
-    msg = {"topic": topic, "title": t["title"], "message": "\n".join(lines), "tags": ["bell"]}
+    msg = {"topic": topic, "title": t["label"], "message": "\n".join(lines), "tags": ["bell"]}
     if GTD_URL:
         task = f"{GTD_URL}/tasks/{t['id']}"
         msg["click"] = task

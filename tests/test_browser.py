@@ -126,6 +126,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.frame_locator("dialog.overlay iframe").locator(".md-editor").click()
     page.keyboard.press("Meta+/")
     page.wait_for_function("document.querySelector('.capture-dialog').open")
+    page.keyboard.press("Tab")  # from the category box to the title
     page.keyboard.type("while typing")
     page.keyboard.press("Enter")
     page.wait_for_function("!document.querySelector('.capture-dialog').open")
@@ -466,7 +467,7 @@ def test_clicking_a_calendar_day_opens_an_add_dialog(page, live, conn):
     page.locator('.cal .day[data-date="2026-10-29"]').click()
     dialog = page.locator(".day-dialog")
     assert dialog.evaluate("d => d.open") and "29 Oct" in dialog.locator("h2").text_content()
-    assert page.evaluate("document.activeElement.name") == "title"
+    assert page.evaluate("document.activeElement.name") == "category"
     assert dialog.locator("[name=due_date]").input_value() == "2026-10-29"
     dialog.locator("[name=title]").fill("left over")  # cancelled: not on the next day's
     page.keyboard.press("Escape")
@@ -1371,7 +1372,7 @@ def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
     page.locator("main li.task .name a.title").first.evaluate("a => a.click()")
     expect(prev).to_be_disabled()
     for t in titles:
-        expect(title).to_have_value(t)
+        expect(title).to_have_value(t.split(": ")[-1])  # a row shows its category before the title
         if t != titles[-1]:
             nxt.click()
     expect(nxt).to_be_disabled()
@@ -1561,6 +1562,7 @@ def test_at_offers_contexts_and_the_task_page_picks_them(page, live, conn):
     # In the capture dialog, over its top layer, right under the box; Esc leaves what's typed, in the open dialog.
     page.goto(live + "/projects")
     page.keyboard.press("/")
+    page.keyboard.press("Tab")  # from the category box to the title
     page.keyboard.type("buy @")
     sync_api.expect(offer).to_have_count(3)
     box = page.locator(".capture-dialog input[name=title]").bounding_box()
@@ -1630,3 +1632,48 @@ def test_dragging_a_project_onto_a_nav_tab_moves_it(page, live, conn):
     row(page, "Someday proj").locator(".grip").drag_to(tab("someday"))  # its own tab: nothing happens
     assert db.projects(conn, "someday")[0]["title"] == "Someday proj"
     assert row(page, "Someday proj").count() == 1
+
+
+def test_the_category_box_offers_categories(page, live, conn):
+    """Typing in a task's category box offers every category used (closed tasks' too), by a word's start; Enter takes
+    one and moves on to the title. On the task page it saves in the background, as it's left."""
+    page.goto(live + "/inbox")
+    cat = page.locator("main form.capture input[name=category]")
+    cat.click()
+    cat.type("m")  # a later word's start, then a name containing it
+    offer = page.locator(".ctx-suggest:not([hidden]) a")
+    sync_api.expect(offer).to_have_text(["Discrete Math", "Home"])
+    cat.press("Enter")  # takes the first, adds nothing
+    assert cat.input_value() == "Discrete Math" and offer.count() == 0
+    title = page.locator("main form.capture input[name=title]")
+    assert title.evaluate("el => el === document.activeElement")
+    title.type("grade hw")
+    with page.expect_navigation():
+        title.press("Enter")
+    t = db.inbox_tasks(conn)[0]
+    assert t["label"] == "Discrete Math: grade hw"
+    assert page.locator("main li.task .title", has_text="Discrete Math: grade hw").count() == 1
+    # Capture starts in the category box; Tab goes on to the title. A new one is offered from then on (the dialog
+    # adds in the background, no reload).
+    page.goto(live + "/projects")
+    page.keyboard.press("/")
+    page.keyboard.type("Prob Stats")
+    page.keyboard.press("Tab")
+    page.keyboard.type("lecture")
+    with page.expect_response(lambda r: r.url.endswith("/capture")):
+        page.keyboard.press("Enter")
+    page.wait_for_function("!document.querySelector('.capture-dialog').open")
+    assert db.inbox_tasks(conn)[0]["label"] == "Prob Stats: lecture"
+    page.click(".add-inbox")  # opened again, it starts in the category box too
+    page.keyboard.type("st")
+    sync_api.expect(offer).to_have_text(["Prob Stats"])
+    page.keyboard.press("Escape")
+    # The task page.
+    page.goto(live + f"/tasks/{t['id']}?embed=overlay")
+    cat = page.locator("input[name=category]")
+    assert cat.input_value() == "Discrete Math"
+    cat.fill("home")
+    with page.expect_response(lambda r: r.url.endswith(f"/tasks/{t['id']}?embed=overlay") and r.request.method == "POST"):
+        cat.press("Enter")
+    sync_api.expect(cat).to_have_value("Home")  # the spelling it's used with
+    assert db.get_task(conn, t["id"])["label"] == "Home: grade hw"

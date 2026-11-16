@@ -154,6 +154,12 @@ CREATE TABLE IF NOT EXISTS task_contexts (
   PRIMARY KEY (task_id, context_id)
 );
 CREATE INDEX IF NOT EXISTS task_contexts_context ON task_contexts(context_id);
+-- A task's category: a word or two its title is filed under ("Discrete Math"), shown before it as "Discrete Math: …".
+-- Any task, one at most; not a project. A table of its own (no ALTER). One spelling whatever the case (set_task_category()).
+CREATE TABLE IF NOT EXISTS task_categories (
+  task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
+  name TEXT NOT NULL COLLATE NOCASE
+);
 CREATE UNIQUE INDEX IF NOT EXISTS time_entries_one_running ON time_entries((end_time IS NULL)) WHERE end_time IS NULL;
 """
 # Stored in the file's user_version once SCHEMA has run on it, so a connection skips it until SCHEMA changes.
@@ -164,11 +170,16 @@ TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "gro
 PROJECT_FIELDS = {"title", "notes", "status"}
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
-# `contexts`: its context names, space-separated, in their dragged order; NULL with none.
-TASK_COLS = f"""t.*, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
+# A task as every list shows it: its category, if any, before its title. `tk` is task_categories.
+LABEL = "coalesce(tk.name || ': ', '') || t.title"
+CATEGORY_JOIN = "LEFT JOIN task_categories tk ON tk.task_id = t.id"
+# `contexts`: its context names, space-separated, in their dragged order; NULL with none. `category`: NULL with none;
+# `label`: LABEL, what lists show (the task page edits title and category apart).
+TASK_COLS = f"""t.*, tk.name AS category, {LABEL} AS label, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
   lp.position AS list_position, (SELECT group_concat(name, ' ') FROM (SELECT x.name FROM task_contexts tc
     JOIN contexts x ON x.id = tc.context_id WHERE tc.task_id = t.id ORDER BY x.position)) AS contexts"""
-TASK_FROM = "FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id"
+TASK_FROM = f"""FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id
+  {CATEGORY_JOIN}"""
 TASK_SELECT = f"SELECT {TASK_COLS} {TASK_FROM}"
 # The list an open task is in: inbox, next, waiting or someday (its step), or none (a later step, a closed task).
 LIST = "CASE WHEN t.state != 'open' OR t.step = 'later' THEN NULL ELSE coalesce(t.step, 'inbox') END"
@@ -262,8 +273,8 @@ def _top(c, table, where, arg):
 
 
 @atomic
-def add_task(c, title, today=None, contexts=(), **fields):
-    """`today` is for _fit_step(); `contexts`: names, made if new."""
+def add_task(c, title, today=None, contexts=(), category=None, **fields):
+    """`today` is for _fit_step(); `contexts`: names, made if new; `category`: set_task_category()."""
     if fields.get("project_id") and "position" not in fields:  # a new step goes to the top, under the next action
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])
     id = _insert(c, "tasks", TASK_FIELDS, _fit_step({"title": title, **fields}, today=today))
@@ -271,12 +282,15 @@ def add_task(c, title, today=None, contexts=(), **fields):
     _reopen_project(c, id)
     _next_to_top(c, id, was_next=False)
     set_task_contexts(c, id, contexts)
+    set_task_category(c, id, category)
     return id
 
 
 @atomic
 def update_task(c, id, today=None, **fields):
-    """`today` is for _fit_step()."""
+    """`today` is for _fit_step(). A `category` given is set_task_category()'s (None or blank clears it)."""
+    if "category" in fields:
+        set_task_category(c, id, fields.pop("category"))
     current = get_task(c, id)
     if current and fields.get("project_id") and fields["project_id"] != current["project_id"] and "position" not in fields:
         fields["position"] = _top(c, "tasks", "project_id = ?", fields["project_id"])  # filed: top of its project
@@ -433,7 +447,8 @@ def complete_task(c, id, today, now=None):
         next_due = recur.next_due(t["recur"], due, today)
         step = "later" if t["step"] == "next" and t["project_id"] else t["step"]
         new_id = add_task(c, t["title"], today=today, notes=t["notes"], step=step, project_id=t["project_id"],
-                          ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat())
+                          ground=t["ground"], recur=t["recur"], position=t["position"], due_date=next_due.isoformat(),
+                          category=t["category"])
         c.execute("INSERT INTO task_areas (task_id, area_id) SELECT ?, area_id FROM task_areas WHERE task_id = ?",
                   (new_id, id))  # and keeps its area
         c.execute("INSERT INTO task_contexts (task_id, context_id) SELECT ?, context_id FROM task_contexts WHERE task_id = ?",
@@ -572,6 +587,32 @@ def reorder_contexts(c, ids):
     c.executemany("UPDATE contexts SET position = ? WHERE id = ?", [(n, id) for n, id in enumerate(ids)])
 
 
+# --- categories ------------------------------------------------------------
+
+def category_name(raw):
+    """A category as typed, tidied: spaces collapsed, a trailing colon dropped (it's shown with one). '' if blank."""
+    return re.sub(r"\s+", " ", raw or "").strip().rstrip(":").strip()
+
+
+@atomic
+def set_task_category(c, id, name):
+    """A task's category is now this name (None or blank: none). A name used before, whatever its case, keeps the
+    spelling it's used with most, so one category never splits in two."""
+    name = category_name(name)
+    c.execute("DELETE FROM task_categories WHERE task_id = ?", (id,))
+    if name:
+        known = c.execute("""SELECT name FROM task_categories WHERE name = ? GROUP BY name COLLATE BINARY
+            ORDER BY count(*) DESC, max(task_id) DESC LIMIT 1""", (name,)).fetchone()
+        c.execute("INSERT INTO task_categories (task_id, name) VALUES (?, ?)", (id, known["name"] if known else name))
+
+
+def categories(c):
+    """Every category any task has had (done and abandoned ones too: they're lasting), most used first, then the
+    latest used: what the category box offers."""
+    return [r[0] for r in c.execute("""SELECT name FROM task_categories GROUP BY name
+        ORDER BY count(*) DESC, max(task_id) DESC""")]
+
+
 # --- search ----------------------------------------------------------------
 
 SEARCH_LIMIT = 50  # per kind
@@ -590,10 +631,10 @@ def _matching(q, cols):
 def search(c, q):
     """Tasks (open, then the latest done), projects, horizons and reference whose text contains every word of q, at
     most SEARCH_LIMIT of each."""
-    where, args = _matching(q, ["t.title", "t.notes"])
+    where, args = _matching(q, ["tk.name", "t.title", "t.notes"])
     tasks = c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND {where} ORDER BY
         {INBOX} DESC, {STEP_ORDER},
-        lower(t.title) LIMIT {SEARCH_LIMIT}""", args).fetchall()
+        lower(label) LIMIT {SEARCH_LIMIT}""", args).fetchall()
     done = _one_per_repeat(c.execute(f"""{TASK_SELECT} WHERE t.state != 'open' AND {where}
         ORDER BY t.completed_at DESC""", args))[:SEARCH_LIMIT]
     where, args = _matching(q, ["title", "notes"])
@@ -623,9 +664,9 @@ def suggest(c, q, limit=10):
     """The best fuzzy title matches among tasks (done ones too, a repeat's latest only), projects, horizons and
     reference. Titles containing every query word come first, so scattered-letter matches can't crowd them out;
     then open items before done ones."""
-    cols = "t.id, t.title, t.state, t.step, t.ground, t.recur, t.project_id, p.title AS project_title"
+    cols = f"t.id, {LABEL} AS title, t.state, t.step, t.ground, t.recur, t.project_id, p.title AS project_title"
     tasks = c.execute(f"""SELECT {cols}, ({INBOX}) AS inbox FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
-        ORDER BY t.state != 'open', t.completed_at DESC""").fetchall()  # no notes: only titles count
+        {CATEGORY_JOIN} ORDER BY t.state != 'open', t.completed_at DESC""").fetchall()  # no notes: only titles count
     rows = [("task", r) for r in tasks if r["state"] == "open"]
     rows += [("task", r) for r in _one_per_repeat(r for r in tasks if r["state"] != "open")]
     rows += [("project", r) for r in c.execute("SELECT id, title, status FROM projects")]
@@ -753,7 +794,7 @@ def someday_tasks(c):
 def someday_to_review(c, today):
     """Someday / maybe for the weekly review, H0 someday tasks and someday projects together, least recently reviewed
     first; one tickled to a later date is out of sight until then. Each row has a `kind`: "task" or "project"."""
-    rows = [{**dict(p), "kind": "project"} for p in projects(c, "someday")]
+    rows = [{**dict(p), "kind": "project", "label": p["title"]} for p in projects(c, "someday")]
     rows += [{**dict(t), "kind": "task"} for t in someday_tasks(c)]
     return _least_reviewed(r for r in rows if not (r["tickle_on"] and r["tickle_on"] > today.isoformat()))
 
@@ -964,9 +1005,9 @@ LINKED_PROJECTS = f"""SELECT p.id, p.title, p.status, p.warning, p.outcome, ph.h
   FROM ({PROJECT_SELECT}) p LEFT JOIN project_horizons ph ON ph.project_id = p.id
   LEFT JOIN horizons u ON u.id = ph.horizon_id
   WHERE p.status NOT IN {CLOSED} ORDER BY p.status != 'active', p.status != 'waiting', p.position, p.id"""
-LINKED_TASKS = """SELECT t.id, t.title, t.step, t.due_date, ta.area_id, u.title AS under FROM tasks t
+LINKED_TASKS = f"""SELECT t.id, {LABEL} AS title, t.step, t.due_date, ta.area_id, u.title AS under FROM tasks t
   LEFT JOIN task_areas ta ON ta.task_id = t.id LEFT JOIN horizons u ON u.id = ta.area_id
-  LEFT JOIN list_positions lp ON lp.task_id = t.id
+  LEFT JOIN list_positions lp ON lp.task_id = t.id {CATEGORY_JOIN}
   WHERE t.state = 'open' AND t.ground AND t.step IN ('next', 'waiting')
   ORDER BY t.step != 'next', lp.position IS NULL, lp.position, t.id"""
 
@@ -1028,7 +1069,7 @@ def delete_horizon(c, id):
 # --- tickler ---------------------------------------------------------------
 
 # H0 someday tasks and someday projects whose tickler date (?1, today) has come: back in the Inbox until dealt with.
-TICKLED = f"""SELECT 'task' AS kind, t.id, t.title, t.due_date AS tickle_on FROM tasks t
+TICKLED = f"""SELECT 'task' AS kind, t.id, {LABEL} AS title, t.due_date AS tickle_on FROM tasks t {CATEGORY_JOIN}
     WHERE {MAYBE} AND t.due_date <= ?1
   UNION ALL SELECT 'project', p.id, p.title, k.tickle_on
     FROM project_tickles k JOIN projects p ON p.id = k.project_id WHERE p.status = 'someday' AND k.tickle_on <= ?1"""
@@ -1048,7 +1089,7 @@ def task_to_reference(c, ids, now):
     items = []
     for id in ids:
         t = get_task(c, id)
-        items.append(add_reference(c, t["title"], notes=t["notes"]))
+        items.append(add_reference(c, t["label"], notes=t["notes"]))
         if task_seconds(c, id, now):
             abandon_task(c, id, now)
         else:
@@ -1120,8 +1161,10 @@ def reviews(c):
 # --- timer -----------------------------------------------------------------
 
 ENTRY_FIELDS = {"task_id", "start_time", "end_time"}
-ENTRY_SELECT = f"""SELECT e.*, t.title, t.state AS task_state, t.ground, t.project_id, p.title AS project_title, ({INBOX}) AS inbox
-  FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id"""
+# `title`: the task's label (LABEL), as lists show it.
+ENTRY_SELECT = f"""SELECT e.*, {LABEL} AS title, t.state AS task_state, t.ground, t.project_id, p.title AS project_title,
+  ({INBOX}) AS inbox FROM time_entries e JOIN tasks t ON t.id = e.task_id LEFT JOIN projects p ON p.id = t.project_id
+  {CATEGORY_JOIN}"""
 SECONDS = "(julianday(coalesce(e.end_time, ?)) - julianday(e.start_time)) * 86400"
 
 
@@ -1181,9 +1224,9 @@ def task_seconds(c, task_id, now):
 
 
 def step_totals(c, project_id, now):
-    """[(task title, seconds, task id)] for a project's timed tasks, done ones included, most time first."""
-    rows = c.execute(f"""SELECT t.id, t.title, sum({SECONDS}) AS secs FROM time_entries e JOIN tasks t ON t.id = e.task_id
-        WHERE t.project_id = ? GROUP BY t.id ORDER BY secs DESC, t.id""", (iso(now), project_id)).fetchall()
+    """[(task label, seconds, task id)] for a project's timed tasks, done ones included, most time first."""
+    rows = c.execute(f"""SELECT t.id, {LABEL} AS title, sum({SECONDS}) AS secs FROM time_entries e
+        JOIN tasks t ON t.id = e.task_id {CATEGORY_JOIN} WHERE t.project_id = ? GROUP BY t.id ORDER BY secs DESC, t.id""", (iso(now), project_id)).fetchall()
     return [(r["title"], round(r["secs"]), r["id"]) for r in rows]
 
 
@@ -1199,7 +1242,7 @@ def week_totals(c, since, now):
 
 def open_tasks(c):
     """Every open task, for the timer's picker: next actions first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' ORDER BY {STEP_ORDER}, lower(t.title)""").fetchall()
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' ORDER BY {STEP_ORDER}, lower(label)""").fetchall()
 
 
 # --- autosave --------------------------------------------------------------

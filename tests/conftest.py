@@ -91,5 +91,9 @@ def seed(c):
     parcel = c.execute("SELECT id FROM tasks WHERE title = 'parcel from Ann'").fetchone()[0]
     db.set_task_contexts(c, parcel, ["errands"])
     db.set_task_contexts(c, finished, ["gone"])
+    # Categories: on a repeat (its next instance keeps it), and on a closed task alone (still offered).
+    bins = c.execute("SELECT id FROM tasks WHERE title = 'bins'").fetchone()[0]
+    db.set_task_category(c, bins, "Home")
+    db.set_task_category(c, finished, "Discrete Math")
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
             "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum}

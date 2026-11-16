@@ -10,7 +10,7 @@
   {% elif t.state == 'abandoned' %}<span class="check" title="Abandoned" aria-hidden="true">✕</span>
   {% else %}<form method="post" action="{{ url_for('complete', id=t.id) }}" class="done"><button title="Done" aria-label="Mark done"></button></form>{% endif %}
   {# The project follows the title, in the same text flow; the meta column keeps only step, date and repeat. #}
-  <span class="name"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+  <span class="name"><a class="title" href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
     {%- if project and t.project_title %} <a class="proj" href="{{ url_for('project_view', id=t.project_id) }}">{{ t.project_title }}</a>
     {%- elif project and t.ground %} <a class="proj" href="{{ url_for('horizons_view') }}" title="Ground level: no project, on purpose">H0</a>{% endif %}
     {%- if t.contexts %} <span class="ctx">{% for n in t.contexts.split() %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</span>{% endif %}</span>
@@ -68,7 +68,7 @@
 {% macro peek_steps(steps) %}
 <ul class="steps">
   {% for t in steps %}
-  <li{% if t.step == 'next' %} class="next"{% endif %}><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>
+  <li{% if t.step == 'next' %} class="next"{% endif %}><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
     <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
   {% else %}
   <li class="empty">No open steps.</li>
@@ -205,8 +205,12 @@
 {% else %}<ul class="tasks"><li class="empty">{{ empty }}</li></ul>{% endif %}
 {% endmacro %}
 
+{# A task's category, the box before its title (a word or two the title is filed under, shown before it as
+   "Discrete Math: …"): no label; typing offers the ones used before (static/app.js, body[data-categories]). #}
+{% macro category_input(value='', autofocus=False) %}<input name="category" value="{{ value or '' }}" class="category" placeholder=" " autocomplete="off" aria-label="Category" title="Category"{% if autofocus %} autofocus{% endif %}>{% endmacro %}
+
 {# The marks an add line's title can end with (split_title() in app.py); shown under task add lines and in capture. #}
-{% macro title_marks() %}<p class="hint marks">^fri due · *weekly repeat · !3pm remind · @home context</p>{% endmacro %}
+{% macro title_marks() %}<p class="hint marks">^fri due · *weekly repeat · !3pm remind · @home context · Math: first, category</p>{% endmacro %}
 
 {# Every page's add line: a title box, then the call block's fields. task=True: a task's, every field shown
    (task_fields(), the call block's first, then `due`, `due_required`). #}
@@ -214,6 +218,7 @@
 {% set more = caller() if caller is defined else '' %}
 <form method="post" action="{{ action }}" class="add{{ ' ' ~ cls if cls }}"{% if id %} id="{{ id }}"{% endif %}>
   <span class="plus" aria-hidden="true">+</span>
+  {% if task %}{{ category_input() }}{% endif %}
   <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
   <button class="primary" title="{{ label }} (Enter)" aria-label="{{ label }}">{{ button }}</button>
   {% if task %}{{ task_fields(more, due, due_required) }}{% elif more|trim %}<div class="add-more">{{ more }}</div>{% else %}{{ more }}{% endif %}

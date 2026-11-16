@@ -3,7 +3,7 @@
 {% block title %}Timer{% endblock %}
 {% block body %}
 {{ add_form(url_for('timer_start'), 'What are you working on? Pick a task, or type something new for the inbox', list='open-tasks', button='▶', label='Start') }}
-<datalist id="open-tasks">{% for t in open_tasks %}<option value="{{ t.title }}">{% endfor %}</datalist>
+<datalist id="open-tasks">{% for t in open_tasks %}<option value="{{ t.label }}">{% endfor %}</datalist>
 
 <div class="tallies">
 {{ tally('Today', day, 'Nothing timed today.') }}

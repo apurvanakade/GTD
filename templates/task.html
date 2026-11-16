@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, date_input, context_picker with context %}
-{% block title %}{{ t.title }}{% endblock %}
+{% from "_task.html" import project_select, date_input, context_picker, category_input with context %}
+{% block title %}{{ t.label }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
 {# Title and notes save themselves (autosave.js); every other field saves when it's changed (static/app.js). #}
@@ -10,7 +10,7 @@
   <button hidden>Save</button>{# the default, so Enter in a field saves #}
   {% set running = timer and timer.task_id == t.id %}
   <div class="title-line">
-    <input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
+    {{ category_input(t.category) }}<input name="title" value="{{ t.title }}" class="big" aria-label="Title" required>
     {# The timer, with the time spent; while running, the total ticks. #}
     {% if running or t.state == 'open' or seconds %}<span class="task-timer{{ ' on' if running }}">
       {% if running %}<button formaction="{{ url_for('timer_stop') }}" class="icon" title="Stop the timer" aria-label="Stop the timer">■</button>
