@@ -181,6 +181,15 @@ document.addEventListener('change', e => {
     location.reload();
   })();
 });
+// ⌘Enter (Ctrl+Enter) submits the form it's typed in, as its first submit button would (a task page's hidden Save, an
+// add line's ⏎, a dialog's Add), from a field where Enter doesn't (the notes) too. A task page's box saves first.
+document.addEventListener('keydown', e => {
+  const f = e.target.closest?.('form');
+  if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || !f) return;
+  e.preventDefault();
+  if ('saveOnChange' in f.dataset) e.target.blur?.();  // its change saves the box in the background
+  f.requestSubmit(f.querySelector('button:not([type=button]):not([type=reset]), input[type=submit]'));
+});
 document.addEventListener('keydown', e => {  // Enter in such a box saves it the same way, without a reload
   const el = e.target;
   if (e.key === 'Enter' && el.form && 'saveOnChange' in el.form.dataset && el.matches('input:not(.big)')) { e.preventDefault(); el.blur(); }

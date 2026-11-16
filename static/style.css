@@ -265,6 +265,7 @@ input.category:focus { background: var(--card); border-color: var(--accent); }
 .title-pair input[name="title"] { flex: 1 1 auto; width: auto; min-width: 0; }
 .title-line input.category { flex-basis: 8em; width: 8em; font-size: var(--fs-m); color: var(--muted); }
 .title-line input.category:focus { color: var(--fg); }
+.add > :is(.task-fields, .add-more) { order: 1; }  /* below the title and its ⏎, which comes last in tab order */
 .add > .primary { width: 30px; height: 30px; padding: 0; border-radius: 50%; visibility: hidden; }
 .add .add-more { flex: 1 0 100%; display: none; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 28px; }
 .add .add-more > * { flex: 0 1 160px; width: auto; min-width: 0; }

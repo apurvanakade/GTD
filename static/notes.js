@@ -377,7 +377,7 @@ function editor(ta) {
       // Rich text comes in as Markdown (the editor holds only text); plain text as it is.
       e.preventDefault();
       const dt = e.dataTransfer, html = dt?.getData("text/html");
-      insert((html && htmlToMarkdown(html)) ?? (dt?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n"));
+      insert((html ? htmlToMarkdown(html) : null) ?? (dt?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n"));
     }
   });
   // Copying or cutting gives the Markdown itself, not the rendered HTML (which pasted back would double its marks).

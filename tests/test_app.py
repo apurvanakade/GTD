@@ -1622,6 +1622,12 @@ def test_review_is_a_checklist_you_finish(client, conn):
     assert db.review_checked(conn) == {steps[0]}
     r = client.post(f"/review/{steps[0]}")  # ticking again unticks, and stays on that step
     assert db.review_checked(conn) == set() and r.headers["Location"] == f"/review?step={steps[0]}"
+    assert 'action="/review/reset"' not in html  # nothing ticked: nothing to start over
+    for s in steps[:2]:
+        client.post(f"/review/{s}")
+    assert 'action="/review/reset"' in client.get("/review").get_data(as_text=True)
+    r = client.post("/review/reset")  # a stale half-done review: start over, nothing recorded
+    assert db.review_checked(conn) == set() and db.reviews(conn) == [] and r.headers["Location"] == "/review"
     for s in steps[:-1]:
         client.post(f"/review/{s}")
     assert client.get("/review").get_data(as_text=True).count('class="dot done') == len(steps) - 1

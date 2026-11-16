@@ -1162,6 +1162,11 @@ def toggle_review_step(c, step):
 
 
 @atomic
+def reset_review(c):
+    c.execute("DELETE FROM review_checks")
+
+
+@atomic
 def complete_review(c, today):
     """Record a finished review and clear the ticks for next week."""
     c.execute("INSERT INTO reviews (completed_on) VALUES (?)", (today.isoformat(),))

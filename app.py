@@ -707,6 +707,13 @@ def ago(utc):
     return "today" if days <= 0 else f"{days}d ago" if days < 14 else f"{days // 7}w ago" if days < 60 else f"{days // 30}mo ago"
 
 
+@app.post("/review/reset")
+def review_reset():
+    """Start the review over: untick every step (a half-done one gone stale); no review is recorded."""
+    db.reset_review(conn())
+    return redirect(url_for("review"))
+
+
 @app.route("/review/<step>", methods=["POST"])
 def review_tick(step):
     """Tick or untick a review step. Ticking the last one finishes the review."""

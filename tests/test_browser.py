@@ -117,6 +117,11 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     assert not page.locator(".capture-dialog").evaluate("d => d.open") and page.evaluate("window.mark") == 1
     assert any(t["title"] == "from the dialog" for t in db.inbox_tasks(conn))
     page.click(".add-inbox")
+    page.fill(".capture-dialog input[name=title]", "meta enter in the dialog")
+    page.locator(".capture-dialog .md-editor").click()
+    page.keyboard.press("ControlOrMeta+Enter")  # from its notes too
+    page.wait_for_selector(".flashes >> text=Added to inbox: meta enter in the dialog")
+    page.click(".add-inbox")
     page.mouse.click(5, 5)  # beside it, on the backdrop: closed
     assert not page.locator(".capture-dialog").evaluate("d => d.open")
     # ⌘/ captures while typing, in an overlay's notes too; the overlay stays open under it.
@@ -434,7 +439,7 @@ def test_search_suggestions_keyboard(page, live):
 
 
 @pytest.mark.parametrize("path", ["/projects/1?embed=overlay", "/inbox", "/calendar"])
-def test_add_line_shows_every_field_once_focused(page, live, path):
+def test_add_line_shows_every_field_once_focused(page, live, conn, path):
     page.goto(live + path)
     line = page.locator("main form.add")
     fields = (".md-editor", "[name=due_date]", "[name=recur]", "[name=remind_at]", "[name=new_context]", ".marks")
@@ -449,6 +454,15 @@ def test_add_line_shows_every_field_once_focused(page, live, path):
     page.keyboard.type("a note")
     page.locator("main h1, main .title-line").first.click()  # focus leaves the line: what's typed keeps it open
     assert line.locator("[name=recur]").is_visible()
+    assert line.evaluate("""f => { const els = [...f.querySelectorAll('input, select, button, [contenteditable]')]
+      .filter(el => el.checkVisibility() && el.tabIndex >= 0 && el.type !== 'hidden');
+      return els[els.length - 1].matches('.primary'); }""")  # ⏎ is last in tab order, after every field
+    line.locator("[name=title]").fill("by meta enter")
+    line.locator("[name=due_date]").fill("today")  # required on the calendar
+    line.locator(".md-editor").click()
+    with page.expect_navigation():
+        page.keyboard.press("ControlOrMeta+Enter")  # from the notes, where Enter is a new line
+    assert conn.execute("SELECT 1 FROM tasks WHERE title = 'by meta enter'").fetchone()
 
 
 def test_new_option_reveals_the_name_box(page, live):
@@ -1292,6 +1306,8 @@ def test_notes_paste_rich_text_as_markdown(page, live, conn):
         "**Docs** _style_\nbad https://x.org")
     page.evaluate(PASTE, ['<div style="color:red">  keep  spacing</div>', "\n  keep  spacing"])
     assert notes_text(page).endswith("https://x.org\n  keep  spacing")  # no rich markup: the plain text
+    page.evaluate(PASTE, [None, " https://example.com/?q=1"])  # no HTML at all (a URL from the address bar)
+    assert notes_text(page).endswith("  keep  spacing https://example.com/?q=1")
     copied = page.evaluate("""() => {
       const ed = document.querySelector(".md-editor"), r = document.createRange();
       r.selectNodeContents(ed.querySelector(".h"));

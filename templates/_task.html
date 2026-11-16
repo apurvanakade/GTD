@@ -220,8 +220,9 @@
   <span class="plus" aria-hidden="true">+</span>
   {% if task %}{{ category_input() }}{% endif %}
   <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
-  <button class="primary" title="{{ label }} (Enter)" aria-label="{{ label }}">{{ button }}</button>
   {% if task %}{{ task_fields(more, due, due_required) }}{% elif more|trim %}<div class="add-more">{{ more }}</div>{% else %}{{ more }}{% endif %}
+  {#- Last in tab order, after every field; CSS shows it beside the title. -#}
+  <button class="primary" title="{{ label }} (Enter, ⌘Enter)" aria-label="{{ label }}">{{ button }}</button>
 </form>
 {% endmacro %}
 
