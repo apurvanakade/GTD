@@ -236,13 +236,14 @@ function editor(ta) {
     // Plain typing usually leaves the DOM already correct (ignoring reveal()'s class).
     if (ed.innerHTML.replace(/ md-on"/g, '"') === html) return;
     ed.innerHTML = html;
+    // Markers first, then the caret: a caret placed in a still-hidden marker (just after a typed closing _)
+    // would be moved by the browser to the nearest visible spot, before the marker.
+    reveal(sel ?? undefined);
     if (sel) setSel(sel);
-    reveal();
   }
 
   // Show hidden markers of formatting the caret touches, like Obsidian's live preview.
-  function reveal() {
-    const sel = getSel();
+  function reveal(sel = getSel()) {
     const w = document.createTreeWalker(ed, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     let pos = 0;
     for (let n; (n = w.nextNode()); ) {
@@ -251,7 +252,7 @@ function editor(ta) {
         n.classList.toggle("md-on", !!sel && pos <= sel[1] && pos + n.textContent.length >= sel[0]);
     }
   }
-  document.addEventListener("selectionchange", reveal);
+  document.addEventListener("selectionchange", () => reveal());
 
   // Undo history (re-rendering clears the browser's own).
   const start = ta.value.replace(/\r\n?/g, "\n");
