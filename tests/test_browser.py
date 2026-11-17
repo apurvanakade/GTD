@@ -20,11 +20,24 @@ sync_api = pytest.importorskip("playwright.sync_api")
 
 
 @pytest.fixture(scope="session")
-def browser():
+def playwright():
     with sync_api.sync_playwright() as p:
-        b = p.chromium.launch()
-        yield b
-        b.close()
+        yield p
+
+
+@pytest.fixture(scope="session")
+def browser(playwright):
+    b = playwright.chromium.launch()
+    yield b
+    b.close()
+
+
+@pytest.fixture(scope="session")
+def webkit(playwright):
+    """Safari's engine, for the few behaviors where it differs from Chromium (the iPad uses it)."""
+    b = playwright.webkit.launch()
+    yield b
+    b.close()
 
 
 @pytest.fixture(scope="session")
@@ -583,6 +596,19 @@ def test_notes_render_markdown_and_save_what_you_typed(page, live, conn):
         page.locator("input.big").focus()  # leaving the notes saves them
     assert db.get_reference(conn, pid)["notes"].replace("\r\n", "\n") == \
         "# Head\nsee **bold** and https://example.com\n- *new* linen"
+
+
+def test_notes_caret_stays_after_a_typed_closing_marker_in_safari(webkit, live, conn):
+    # Safari moves a caret placed in hidden text to the nearest visible spot, so a re-render must show the
+    # markers before it puts the caret back, or "_a_" then "Z" gives "_aZ_". Chromium doesn't move it.
+    pid = db.add_reference(conn, "Caret", notes="")
+    pg = webkit.new_page()
+    pg.goto(live + f"/reference/{pid}?embed=overlay")
+    ed = pg.locator(".md-editor")
+    ed.click()
+    pg.keyboard.type("_a_Z **b**Y")
+    assert ed.text_content() == "_a_Z **b**Y"
+    pg.close()
 
 
 def test_notes_editor_undo(page, live, conn):
