@@ -1733,3 +1733,27 @@ def test_the_category_box_offers_categories(page, live, conn):
         cat.press("Enter")
     sync_api.expect(cat).to_have_value("Home")  # the spelling it's used with
     assert db.get_task(conn, t["id"])["label"] == "Home: grade hw"
+
+
+def test_titles_read_on_a_phone(browser, live, conn):
+    """At phone width every list row's title gets most of a line to read across, and no page scrolls sideways.
+    Only reading matters there (the phone is for capture), so a row's controls may wrap below its title."""
+    kitchen = next(p["id"] for p in db.projects(conn) if p["title"] == "Kitchen")
+    pg = browser.new_page(viewport={"width": 375, "height": 800}, is_mobile=True, has_touch=True)
+    pg.goto(live + "/")
+    paths = pg.eval_on_selector_all("nav a", "els => els.map(e => e.getAttribute('href'))")
+    for path in paths + [f"/projects/{kitchen}", f"/projects/{kitchen}?done=1", "/next?done=1", "/search?q=tiles"]:
+        pg.goto(live + path)
+        pg.eval_on_selector_all("li.task .peek", "bs => bs.forEach(b => b.click())")  # a project row's steps too
+        assert pg.evaluate("document.documentElement.scrollWidth <= innerWidth"), path
+        narrow = pg.eval_on_selector_all(
+            "li.task > :is(.title, .name), li.task .steps a",
+            """els => els.filter(e => e.offsetParent && e.getBoundingClientRect().width < 200)
+                         .map(e => e.textContent.trim() + ' ' + Math.round(e.getBoundingClientRect().width))""")
+        assert narrow == [], path
+    for path in [f"/projects/{kitchen}", "/tasks/1"]:  # a record opens in its overlay: its title box across it
+        pg.goto(live + path)
+        pg.wait_for_selector("dialog.overlay[open]")
+        big = pg.locator("dialog.overlay").last.frame_locator("iframe").locator("input.big")
+        assert big.evaluate("e => e.getBoundingClientRect().width") >= 250, path
+    pg.close()

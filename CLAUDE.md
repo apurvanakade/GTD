@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A small, single-user GTD web app (Flask + Jinja + stdlib `sqlite3`). It replaced Mindwtr, which had
 grown too complicated. Keep it simple: prefer the plain GTD workflow over options and settings.
 The phone is only for capture; everything else is done on a desktop, so features need no touch or phone adaptation.
+The one exception: on a phone every page must stay readable. A `max-width: 600px` block at the end of `static/style.css`
+gives every list row's title its own line (controls wrap below it) and turns the calendar into a list of days;
+`test_titles_read_on_a_phone` checks it.
 
 **Keep this file current.** Update it in the same change whenever any of these change:
 - a command or environment variable
