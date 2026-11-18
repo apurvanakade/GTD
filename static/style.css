@@ -632,3 +632,31 @@ a.who:hover { color: var(--fg); }
 /* An area's part of the vision: a paragraph, as tall as its text. */
 textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line-height: 1.45; }
 
+/* A phone: only for reading and capture. Every title gets its line, read across; everything else comes after it. */
+@media (max-width: 600px) {
+  /* A row: grip and ✓ (or ▸), then the title across the line, leaving room for ▶ alone; a date, a button or a slider
+     wraps below, right-aligned. Empty cells and hover-only controls (no hover here) take no room. */
+  .tasks > li.task > :is(.title, .name) { flex: 1 1 calc(100% - 6rem); }
+  .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step) { display: none; }
+  .tasks > li.task { justify-content: flex-end; }
+  .task > .balance { flex-basis: 100%; max-width: none; margin: 0; }
+  .visions .task form { flex-basis: 100%; }
+  .task .steps li { flex-wrap: wrap; gap: 0 10px; }
+  .task .steps a { flex: 1 1 12rem; }
+  .task .steps .meta { margin-left: auto; }
+  /* A record's overlay: the whole width, and its title only shares the line with ×; ‹ › (walking a list) goes. */
+  .overlay { width: calc(100vw - 16px); max-width: none; padding: 12px; }
+  .overlay .close { top: 12px; right: 12px; }
+  .overlay .walk { display: none; }
+  body.embed .title-line { padding-right: 2.75rem; }
+  .big { font-size: 1.15rem; }
+  /* The calendar: a list of days, each with its tasks on lines of their own; days with nothing on them left out. */
+  .cal, .cal tbody, .cal tr, .cal td { display: block; }
+  .cal thead, .cal td.out, .cal td:not(.today, :has(.ev)) { display: none; }
+  .cal td, .cal.week td, .cal.week.two td { height: auto; border-width: 0 0 1px; padding: 8px 0; opacity: 1; }
+  .cal .day { font-size: 0; padding: 0; }
+  .cal .day::before { content: attr(data-label); font-size: var(--fs-s); font-weight: 600; }
+  .cal td.today .day { padding: 0 6px; }
+  .cal .ev { font-size: var(--fs-m); white-space: normal; padding: 3px 6px; margin-top: 4px; }
+}
+
