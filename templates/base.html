@@ -106,7 +106,7 @@
 </dialog>
 {#- Every task, project, horizon and reference item opens in an overlay over the page it was clicked on (static/app.js
     makes them); ?project=, ?task=… open the page with theirs. #}
-{% for src in overlays %}<dialog class="overlay"><button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button><iframe title="Overlay" src="{{ src }}"></iframe></dialog>
+{% for src in overlays %}<dialog class="overlay" tabindex="-1"><button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button><iframe title="Overlay" src="{{ src }}"></iframe></dialog>
 {% endfor %}
 {% endif %}
 {# Messages float over the page and fade, so a record page opened on its title (below) still shows them. #}

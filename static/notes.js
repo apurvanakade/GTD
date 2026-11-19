@@ -423,7 +423,12 @@ function editor(ta) {
   };
 
   // An add form reset after adding (the capture dialog, the popup): the editor empties with its textarea.
-  ta.form?.addEventListener("reset", () => setTimeout(() => paint(ta.value)));
+  ta.form?.addEventListener("reset", () => setTimeout(() => {
+    paint(ta.value);
+    hist.length = 0;  // a new task: ⌘Z mustn't bring back the last one's notes
+    hist.push({ text: ta.value, sel: [ta.value.length, ta.value.length] });
+    hi = 0;
+  }));
 
   paint(start);
 }

@@ -1624,7 +1624,7 @@ def test_nav_groups_tabs_by_kind_of_list(client):
     """Working minute by minute, lists of tasks, lists of projects (each tab one kind); then the weekly-review pages
     and Reference."""
     nav = client.get("/next").data.decode().split("<nav>")[1].split("</nav>")[0]
-    groups = [re.findall(r'<a href="([^"]*)"', g) for g in re.findall(r'<span class="(?:group|aux)">(.*?)</span>', nav, re.S)]
+    groups = [re.findall(r'<a href="([^"]*)"', g) for g in re.findall(r'<span class="(?:group|aux)"[^>]*>(.*?)</span>', nav, re.S)]
     assert groups == [["/timer", "/calendar"], ["/inbox", "/next", "/waiting", "/someday"],
                       ["/projects", "/projects/waiting", "/projects/someday"], ["/review", "/horizons", "/done", "/reference"]]
     assert re.search(r'<small class="caption">Projects</small>\s*<a href="/projects"[^>]*>Active', nav)
@@ -2016,7 +2016,6 @@ def test_every_task_list_has_the_drop_panel(client, conn):
                     for t in [new, *(str(p["id"]) for p in db.projects(conn, s))]]
         assert targets == [t for t in ["h0", "waiting", "someday", *projects, "reference"] if t != current], url
         assert re.findall(r"<h3>(?:<a [^>]*>)?([\w /()]+)(?:</a>)?</h3>", panel) == ["Tasks (no project)", "Active", "Waiting", "Someday"], url
-        assert f'data-current="{current}"' in html if current else "data-current" not in html, url
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):

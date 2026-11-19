@@ -91,8 +91,9 @@
   };
   draw();
 
-  // Pan and zoom: one transform on the view, fitted to the map on load and on resize.
-  let k = 1, tx = 0, ty = 0;
+  // Pan and zoom: one transform on the view, fitted to the map on load, and on resize until panned or zoomed; after
+  // that a resize keeps the view's centre where it was.
+  let k = 1, tx = 0, ty = 0, moved = false, w0 = 0, h0 = 0;
   const apply = () => { view.setAttribute('transform', `translate(${tx},${ty}) scale(${k})`); svg.classList.toggle('zoomed', k > 1.4); };
   const fit = () => {
     const shown = nodes.filter(n => !n.hidden);
@@ -108,6 +109,7 @@
     const r = svg.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     const f = Math.exp(-e.deltaY * .0015), nk = Math.min(Math.max(k * f, .2), 5);
     tx = mx - (mx - tx) * nk / k; ty = my - (my - ty) * nk / k; k = nk;
+    moved = true;
     apply();
   }, {passive: false});
 
@@ -143,7 +145,7 @@
       const r = svg.getBoundingClientRect();
       drag.n.x = (e.clientX - r.left - tx) / k; drag.n.y = (e.clientY - r.top - ty) / k;
       settle(drag.n);
-    } else { tx = drag.tx + dx; ty = drag.ty + dy; apply(); }
+    } else { tx = drag.tx + dx; ty = drag.ty + dy; moved = true; apply(); }
   });
   const end = () => { if (drag?.moved) setTimeout(() => drag = null); else drag = null; svg.classList.remove('dragging'); };
   svg.addEventListener('pointerup', end);
@@ -174,5 +176,11 @@
   }));
   show();
   fit();
-  new ResizeObserver(fit).observe(box);
+  [w0, h0] = [box.clientWidth, box.clientHeight];
+  new ResizeObserver(() => {
+    const w = box.clientWidth, h = box.clientHeight;
+    if (w === w0 && h === h0) return;
+    if (moved) { tx += (w - w0) / 2; ty += (h - h0) / 2; apply(); } else fit();
+    [w0, h0] = [w, h];
+  }).observe(box);
 })();

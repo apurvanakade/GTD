@@ -19,8 +19,8 @@
 .band { margin-top: 14px; }
 .band > summary { font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
 .band > summary::-webkit-details-marker { display: none; }
-.band > summary::before { content: "▸"; display: inline-block; width: 1.2em; transition: transform .15s; }
-.band[open] > summary::before { transform: rotate(90deg); }
+.band > summary::before { content: "▸"; display: inline-block; width: 1.2em; }
+.band[open] > summary::before { content: "▾"; }  /* the glyph, not a rotation: a rotated ▸ sits off the text line */
 .band > summary b { font-weight: 600; font-size: var(--fs-xs); background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 .tasks.soon .task:not(.overdue) :is(.date, .recur) { opacity: 0; }
 .tasks.soon .task:hover :is(.date, .recur), .tasks.soon .task:focus-within :is(.date, .recur) { opacity: 1; }
@@ -51,6 +51,20 @@ nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
 nav a.over { color: var(--fg); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px 4px 0 0; }  /* a project dragged over its tab */
 nav .aux { display: flex; margin-left: auto; padding-left: 8px; }
 nav .aux a { font-size: var(--fs-s); }
+/* The nav is its own container: too narrow for every tab (a small window, or the pinned drop panel beside it), the
+   muted tabs fold behind ⋯, a popover under it (anchored to its button), and the nav never scrolls sideways. */
+nav { container-type: inline-size; }
+nav .more { display: none; margin-left: auto; color: var(--muted); }
+nav .aux:not(:popover-open) { position: static; inset: auto; margin: 0 0 0 auto; padding: 0 0 0 8px; border: 0; background: none; color: inherit; overflow: visible; }
+@container (max-width: 940px) {
+  nav .more { display: inline-block; }
+  nav:has(.aux a.on) .more { color: var(--fg); border-bottom: 2px solid var(--accent); border-radius: 0; }
+  nav .aux:not(:popover-open) { display: none; }
+}
+@container (max-width: 720px) { nav .caption { display: none; } nav .group + .group { margin-left: 4px; padding-left: 4px; } }
+nav .aux:popover-open { flex-direction: column; margin: 4px 0 0; padding: 6px; inset: auto; position-area: bottom span-left;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
+nav .aux:popover-open a { padding: 6px 10px; font-size: var(--fs-m); }
 nav .theme-toggle { flex: none; margin-left: 2px; color: var(--muted); }
 nav .badge { display: inline-block; border-radius: 50%; background: var(--muted); vertical-align: 2px; margin-left: 2px; }
 nav .badge.s1 { width: 6px; height: 6px; } nav .badge.s2 { width: 8px; height: 8px; } nav .badge.s3 { width: 10px; height: 10px; vertical-align: 1px; }
@@ -113,10 +127,10 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .primary:hover { filter: brightness(1.08); }
 .danger, .danger:hover { color: var(--danger); }
 .icon { min-width: 34px; text-align: center; padding-left: 6px; padding-right: 6px; }
-.big, .outcome :is(input, textarea) { border-color: transparent; background: transparent; padding-left: 0; }
+.big, .outcome :is(input, textarea) { border-color: transparent; background: transparent; }  /* padding kept: the text sits where a box's does, and doesn't move on focus */
 .big { font-size: 1.4rem; font-weight: 650; }
 .big:hover, .outcome :is(input, textarea):hover { border-color: var(--line); }
-.big:focus, .outcome :is(input, textarea):focus { border-color: var(--accent); padding-left: 10px; }
+.big:focus, .outcome :is(input, textarea):focus { border-color: var(--accent); }
 /* A project's desired outcome: the title's subtitle, muted until edited. */
 .outcome :is(input, textarea):not(:focus) { color: var(--muted); }
 .end { margin-left: auto; }
@@ -136,7 +150,6 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .task-fields { flex: 1 0 100%; margin-top: 8px; }
 .add .task-fields { margin-top: 0; padding-left: 28px; }
 .task-fields .md-wrap { margin-bottom: 1.4em; }  /* room for its toolbar, as the task page's autosave line gives */
-.task-fields .md-editor { min-height: 3.2em; }
 .task-fields .fields { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0 20px; }  /* [step or project,] due, repeats, remind */
 @media (max-width: 600px) { .task-fields .fields { grid-auto-flow: row; } }
 body.embed main .task-fields :is(input:not([type=checkbox]):not([name=new_context]), .md-editor) { border-color: var(--line); }  /* boxes to fill, unlike a record's quiet fields */
@@ -189,6 +202,7 @@ header.page [data-filtered]:empty { display: none; }
 /* Every record's overlay (app.js): its page in a frame, sized to fit up to the window (then it scrolls inside, so a
    project's drop panel stays in view), × in the title line's room (body.embed below). */
 .overlay .close { position: absolute; top: 16px; right: 20px; z-index: 1; }
+.overlay:focus { outline: none; }  /* focus starts on the overlay itself (app.js), not ×, which would show a ring on a page just loaded */
 .overlay .walk { position: absolute; top: 16px; right: 56px; z-index: 1; }  /* ‹ ›: the list it was opened from */
 .overlay iframe { display: block; width: 100%; height: 12rem; max-height: calc(100vh - 6rem); border: 0; }
 /* Its fields quiet, as on a project page: no box until pointed at or typed in. */
@@ -196,6 +210,11 @@ body.embed { padding: 0; max-width: none; }
 body.embed header.page { display: none; }  /* base.html leaves out the nav, bar and pill */
 body.embed main :is(input, textarea, .md-editor) { background: transparent; border-color: transparent; }
 body.embed main :is(input, textarea, .md-editor):is(:hover, :focus) { border-color: var(--line); }
+/* Its boxes have no border until pointed at, so their text sets the left edge: labels, hints and the autosave line
+   start there too (border 1px + padding 10px), the boxes themselves at the frame's edge. */
+body.embed .edit label { padding-left: 11px; }
+body.embed .edit label > :is(input, select, .date-field, .with-link) { margin-left: -11px; width: calc(100% + 11px); }
+body.embed :is(.edit, .project) .autosave, body.embed form.contexts { padding-left: 11px; }
 .popup { padding: 16px; }  /* the bookmarklet's window (capture.html) */
 .popup h2 { margin-top: 0; }
 body.embed .popup :is(input:not([type=checkbox]), .md-editor) { border-color: var(--line); }
@@ -206,7 +225,6 @@ body.embed .popup input[name=title] { width: 100%; }
 .popup .bookmark input { width: auto; margin: 0; }
 body.embed .title-line { padding-right: 8rem; }  /* room for the overlay's ‹ › × */
 body.embed .edit .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
-body.embed .edit .fields .hint.when { display: inline; min-height: 0; }  /* no centering here to keep still */
 :is(.capture-dialog, .day-dialog, .help-dialog, .overlay, .reached)::backdrop { background: rgb(0 0 0 / .35); }
 :is(.capture-dialog, .day-dialog, .help-dialog, .reached) h2 { margin-top: 0; }
 .suggest {
@@ -259,16 +277,19 @@ main > .capture { margin-top: 24px; }  /* first on the page, in the header's pla
 .add input[name="title"] { flex: 1 1 200px; width: auto; min-width: 0; padding: 6px 10px; }
 /* A task's category box, before its title (category_input()): short and unlabeled. */
 input.category { flex: 0 0 9em; width: 9em; min-width: 0; }
-.add input.category { padding: 4px 8px; }
+.add input.category { padding: 6px 10px; }  /* as tall as the title box beside it */
 /* An idle add line shows no empty category box: it folds to nothing (still focusable; a click on the line lands in it,
    static/app.js) and opens once the line is in use (the rules below). The negative margin takes back the flex gap. */
-.add:not(:focus-within, :has(:is(input[name="title"], input[name="category"]):not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked)) input.category {
+.add:not(:focus-within, :has(:is(input[name="title"], input[name="category"]):not(:placeholder-shown), textarea:not(:placeholder-shown), .contexts :checked, .add-more:active, .task-fields:active)) input.category {
   flex-basis: 0; width: 0; padding: 0; border-width: 0; margin-right: -8px;
 }
 .title-pair { display: flex; gap: 8px; margin: 0; }
 .title-pair input[name="title"] { flex: 1 1 auto; width: auto; min-width: 0; }
 .title-line input.category { flex-basis: 8em; width: 8em; font-size: var(--fs-m); color: var(--muted); }
 .title-line input.category:focus { color: var(--fg); }
+/* Empty, it folds away (the title starts at the left, as every record's does) until focused: Shift+Tab from the title.
+   The negative margin takes back the line's gap. */
+.title-line input.category:placeholder-shown:not(:focus) { flex-basis: 0; width: 0; padding: 0; border-width: 0; margin-right: -6px; }
 .add > :is(.task-fields, .add-more) { order: 1; }  /* below the title and its ⏎, which comes last in tab order */
 .add > .primary { width: 30px; height: 30px; padding: 0; border-radius: 50%; visibility: hidden; }
 .add .add-more { flex: 1 0 100%; display: none; flex-wrap: wrap; gap: 8px; align-items: center; padding-left: 28px; }
@@ -291,6 +312,9 @@ select:has(option[value^="__new__"]:checked) + input { display: block; }
   transform: translateX(100%); visibility: hidden; transition: transform .15s, visibility .15s;
 }
 body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; visibility: visible; }
+/* Pinned on a window too narrow for both, the page moves left of it, so it covers no row's ▶ or the nav's end;
+   only a page with the panel, so the others keep their width and their whole nav. */
+@media (min-width: 700px) and (max-width: 1559px) { .pinned-panel body:not(.embed):has(.drop-panel) { margin-right: 280px; margin-left: auto; } }
 .drop-panel .unpin { display: none; float: right; }
 .pinned-panel .drop-panel .unpin { display: block; }
 .pin-panel[aria-pressed="true"] { color: var(--fg); background: var(--soft); }
@@ -311,6 +335,8 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 }
 .flash { pointer-events: auto; margin: 0; background: var(--card); border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
 @keyframes fade-out { to { opacity: 0; visibility: hidden; } }
+/* toast()'s: a popover in the top layer, above any open dialog; undo the popover's own box. */
+.flashes[popover] { right: auto; bottom: auto; margin: 0; padding: 0; border: 0; background: none; overflow: visible; color: var(--fg); }
 
 .empty, .hint { color: var(--muted); }
 /* An action list with nothing left in it: one big faint ✓ instead of a sentence (kept for screen readers). */
@@ -329,9 +355,9 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 /* A someday tickler date, quiet like the selects beside it: ⏳, the box, 📅; how it reads shows only while editing. */
 .title-line .tickler { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: var(--fs-m); }
 .tickler .date-field { flex: none; }
-.tickler .date-field input[name] { width: 6.5em; padding: 4px 6px; font-size: inherit; color: inherit; background: transparent; border-color: transparent; }
+.tickler .date-field input[name] { width: 8em; padding: 4px 1.8em 4px 6px; font-size: inherit; color: inherit; background: transparent; border-color: transparent; }
 .tickler .date-field input[name]:hover, .tickler .date-field input[name]:focus { border-color: var(--line); color: var(--fg); }
-.tickler .date-field .pick { padding: 2px; opacity: .6; }
+.tickler .date-field .pick { padding: 2px; right: 1px; opacity: .6; }
 .tickler .hint { font-size: var(--fs-s); white-space: nowrap; }
 .tickler:not(:focus-within) .hint { display: none; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
@@ -558,20 +584,22 @@ a.who:hover { color: var(--fg); }
 .entry .actions button { padding: 2px 8px; font-size: var(--fs-s); }
 /* Too narrow for one line per entry: task + buttons, then project, then times. */
 @media (max-width: 720px) {
-  .history { grid-template-columns: 1fr auto auto; }
-  .entry .entry-task { grid-column: 1 / 3; grid-row: 1; }
-  .entry .actions { grid-column: 3; grid-row: 1; }
+  .history { grid-template-columns: minmax(0, 1fr) auto; }
+  .entry .entry-task { grid-column: 1; grid-row: 1; }
+  .entry .actions { grid-column: 2; grid-row: 1; }
   .entry .entry-project { grid-column: 1 / -1; grid-row: 2; }
   .entry input[name="start"] { grid-column: 1; grid-row: 3; }
-  .entry input[name="end"] { grid-column: 2; grid-row: 3; }
-  .entry .dur { grid-column: 3; grid-row: 3; }
+  .entry input[name="end"] { grid-column: 1; grid-row: 4; }
+  .entry .dur { grid-column: 2; grid-row: 3; }
+  .entry input { min-width: 0; max-width: 100%; }
 }
 
 /* Date box: type words, or 📅 for the native picker. */
 .date-field { position: relative; display: flex; gap: 4px; flex: 1 1 200px; min-width: 0; align-items: center; }
 .edit label .date-field { margin-top: 4px; }
-.date-field input[name] { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; }
-.date-field .pick { padding: 6px; line-height: 1; width: auto; flex: none; }
+.date-field input[name] { flex: 1 1 auto; width: auto; min-width: 0; margin: 0; padding-right: 2.2em; }
+/* 📅 sits inside the box's right end, so a date box is as wide as a plain one beside it. */
+.date-field .pick { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); padding: 4px; line-height: 1; width: auto; }
 .date-field .picker { position: absolute; right: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; padding: 0; margin: 0; border: 0; pointer-events: none; }
 /* On a touch screen (iPad) showPicker() doesn't always open: the native input lies over 📅, so a tap opens it itself. */
 @media (pointer: coarse) {
@@ -644,6 +672,8 @@ textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line
      wraps below, right-aligned. Empty cells and hover-only controls (no hover here) take no room. */
   .tasks > li.task > :is(.title, .name) { flex: 1 1 calc(100% - 6rem); }
   .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step), .task .to-inbox { display: none; }
+  .tasks.soon .task:not(.overdue) :is(.date, .recur) { display: none; }  /* hover-only, and there's no hover here */
+  .task :is(.proj, .ctx) { white-space: normal; }  /* a long project name wraps rather than widening the page */
   .tasks > li.task { justify-content: flex-end; }
   .task > .balance { flex-basis: 100%; max-width: none; margin: 0; }
   .visions .task form { flex-basis: 100%; }
@@ -655,6 +685,8 @@ textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line
   .overlay .close { top: 12px; right: 12px; }
   .overlay .walk { display: none; }
   body.embed .title-line { padding-right: 2.75rem; }
+  .edit .fields { grid-template-columns: minmax(0, 1fr); }  /* the task page's fields, one per line */
+  .edit .fields > label:has(.with-link) { grid-column: auto; }
   .big { font-size: 1.15rem; }
   /* The calendar: a list of days, each with its tasks on lines of their own; days with nothing on them left out. */
   .cal, .cal tbody, .cal tr, .cal td { display: block; }
