@@ -248,7 +248,7 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
 .seg a:hover { color: var(--fg); background: var(--soft); }
 .seg a[aria-current] { color: var(--fg); background: var(--soft); font-weight: 600; }
 
-/* The add line: a quiet title box; its fields (and ⏎) show while it's in use: focused, or anything typed or picked. */
+/* The add line: a framed title box; its fields (and ⏎) show while it's in use: focused, or anything typed or picked. */
 .add {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 24px; padding: 6px 10px;
   background: var(--card); border: 1px solid var(--muted); border-radius: 10px;
