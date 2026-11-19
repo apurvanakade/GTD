@@ -1756,4 +1756,12 @@ def test_titles_read_on_a_phone(browser, live, conn):
         pg.wait_for_selector("dialog.overlay[open]")
         big = pg.locator("dialog.overlay").last.frame_locator("iframe").locator("input.big")
         assert big.evaluate("e => e.getBoundingClientRect().width") >= 250, path
+    # The add line in use: its title and category are framed boxes of their own, wherever they wrap to.
+    pg.goto(live + "/inbox")
+    pg.focus("main > form.capture input[name=title]")
+    pg.keyboard.type("Buy milk")
+    pg.locator("main > form.capture input[name=title]").blur()
+    borders = pg.eval_on_selector_all("main > form.capture :is(input.category, input[name=title])",
+                                      "els => els.map(e => getComputedStyle(e).borderTopColor)")
+    assert len(borders) == 2 and "rgba(0, 0, 0, 0)" not in borders, borders
     pg.close()
