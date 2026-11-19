@@ -252,7 +252,7 @@ Keep the suite from piling up:
 Enforcement:
 - Tests run in parallel with pytest-xdist (`-n auto` in `pyproject.toml`'s `addopts`): one process per core, each with its own Chromium and live server for the browser tests. `test_every_form_submits`, the slowest, is split into `SHARDS` parts so they run side by side. Tests mustn't share state across files or depend on order.
 - A Claude Code Stop hook (`.claude/settings.json` → `.claude/hooks/run-tests.sh`) won't let a turn end while tests fail. It also runs the browser tests (in the same run) when `templates/` or `static/` have uncommitted changes. After a green run it stores a fingerprint of the working tree (`.git/tests-green`) and skips the tests on a turn that changed nothing since.
-- `.githooks/pre-commit` refuses commits while tests fail. It also runs the browser tests (in the same run) when the commit touches `templates/` or `static/`. It is enabled per clone with `git config core.hooksPath .githooks`.
+- `.githooks/pre-commit` refuses commits while tests fail. It also runs the browser tests (in the same run) when the commit touches `templates/` or `static/`. It is enabled per clone with `git config core.hooksPath .githooks`, unless the clone already sets `core.hooksPath` (another hook manager): then that setup must run `.githooks/pre-commit` too, never be replaced.
 
 Layout (Flask test client, temporary DB):
 - `tests/conftest.py` holds the fixtures:
