@@ -406,9 +406,14 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
-.task .start button, .task .timing button, .task .set-step button, .task .row-btn button {
+.task .start button, .task .timing button, .task .set-step button, .task .row-btn button, .task .to-inbox button {
   padding: 0 6px; font-size: var(--fs-xs); line-height: 20px; color: var(--muted);
 }
+/* ↩ (.to-inbox) shows on hover, in a slot every open row keeps, so ▶ lines up down the list. */
+.task .to-inbox { width: 1.6em; }
+.task .to-inbox button { opacity: 0; }
+.task:is(:hover, :focus-within) .to-inbox button { opacity: 1; }
+.task .to-inbox button:hover { color: var(--accent); }
 /* ▶ (.start) always shows, so the timer starts from anywhere. */
 .task .start button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }

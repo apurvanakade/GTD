@@ -3148,7 +3148,7 @@ def test_tickled_tasks_come_back_to_the_inbox(client, conn):
     assert len(re.findall(r'<ul class="tasks', html.split("<main")[1].split('class="drop-panel')[0])) == 1
     row = re.search(rf'<li class="task[^"]*" data-id="{due}".*?</li>', html, re.S).group(0)
     assert 'class="grip"' in row and 'class="done"' in row and 'class="start"' in row  # ticks, drags, times
-    assert "↩" not in html and "H0 · someday" not in html
+    assert f'action="/tasks/{due}/to-inbox"' in row and "H0 · someday" not in html  # ↩ clears it into a plain item
     assert f'href="/tasks/{later}"' not in html and f'href="/tasks/{plain}"' not in html
     # A mixed drag saves each list's own order: the inbox items' and the someday tasks'.
     other = db.add_task(conn, "old idea", ground=1, step="someday", due_date="2026-10-01")
@@ -3439,3 +3439,38 @@ def test_a_new_tasks_title_can_start_with_its_category(client, conn):
     client.post("/capture", data={"title": "Re: lunch", "category": "Home"})  # the box wins
     t = db.inbox_tasks(conn)[0]
     assert (t["category"], t["title"]) == ("Home", "Re: lunch")
+
+
+def test_send_to_inbox_keeps_only_title_category_and_notes(client, conn):
+    """↩ puts a buried task back in the inbox, on top, to clarify from scratch: project, step, dates, repeat,
+    reminder, contexts, area and review go; title, category, notes and time stay. Not offered on an inbox item."""
+    area = db.add_horizon(conn, "area", "Home")
+    pid = db.add_project(conn, "Kitchen")
+    db.add_task(conn, "old inbox item")
+    t = db.add_task(conn, "grout", step="next", project_id=pid, due_date="2026-10-30", recur="weekly",
+                    remind_at="2026-10-30T13:00:00+00:00", notes="white", contexts=["home"], category="diy")
+    db.timer_start(conn, t, NOW - timedelta(hours=1))
+    db.timer_stop(conn, NOW)
+    h0 = db.add_task(conn, "someday idea", step="someday", ground=1, due_date="2026-12-01")
+    db.link_task(conn, h0, area)
+    db.mark_reviewed(conn, h0, NOW, table="task")
+    page = client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True)
+    assert f'action="/tasks/{t}/to-inbox"' in page
+    assert f'action="/tasks/{t}/to-inbox"' in client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
+    r = client.post(f"/tasks/{t}/to-inbox", headers={"Referer": f"/projects/{pid}"})
+    assert r.status_code == 302 and r.location.endswith(f"/projects/{pid}")
+    x = db.get_task(conn, t)
+    assert x["inbox"] and (x["project_id"], x["step"], x["ground"], x["due_date"], x["recur"], x["remind_at"],
+                           x["contexts"]) == (None, None, 0, None, None, None, None)
+    assert (x["title"], x["category"], x["notes"], x["state"]) == ("grout", "Diy", "white", "open")
+    assert round(db.task_seconds(conn, t, NOW)) == 3600
+    assert db.inbox_list(conn, TODAY)[0]["id"] == t  # on top
+    client.post(f"/tasks/{h0}/to-inbox")
+    assert conn.execute("SELECT count(*) FROM task_areas WHERE task_id = ?", (h0,)).fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM task_reviews WHERE task_id = ?", (h0,)).fetchone()[0] == 0
+    inbox = client.get("/inbox").get_data(as_text=True)
+    assert f'action="/tasks/{t}/to-inbox"' not in inbox and 'class="to-inbox"' in inbox  # the slot, no button
+    assert f'action="/tasks/{t}/to-inbox"' not in client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
+    db.complete_task(conn, t, TODAY)
+    client.post(f"/tasks/{t}/to-inbox")
+    assert db.get_task(conn, t)["state"] == "done"  # a closed task stays closed
