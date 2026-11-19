@@ -500,6 +500,21 @@ document.addEventListener('click', e => {
   document.querySelectorAll('button.peek').forEach(b => peek(b, open));
   all.textContent = open ? 'Collapse all' : 'Expand all';
 });
+// What's folded out survives the reload a closing overlay makes when its record changed (overlays' close()), so
+// closing still goes back to the view it was opened over. Kept for that one reload only.
+const PEEKS = 'peeks:' + location.pathname;
+function keepPeeks() {
+  const open = [...document.querySelectorAll('li.open > button.peek')].map(b => b.closest('li').dataset.id);
+  try { sessionStorage.setItem(PEEKS, JSON.stringify(open)); } catch {}
+}
+(() => {
+  let open = null;
+  try { open = JSON.parse(sessionStorage.getItem(PEEKS)); sessionStorage.removeItem(PEEKS); } catch {}
+  if (!open?.length) return;
+  open.forEach(id => { const b = document.querySelector(`li[data-id="${id}"] > button.peek`); if (b) peek(b, true); });
+  const all = document.querySelector('button.peek-all');
+  if (all && !document.querySelector('button.peek[aria-expanded="false"]')) all.textContent = 'Collapse all';
+})();
 // Light / dark toggle (in the nav, which refreshNav() replaces, so delegated); the pick overrides the system setting and is remembered.
 document.addEventListener('click', e => {
   if (!e.target.closest('.theme-toggle')) return;
@@ -824,7 +839,7 @@ window.overlays = document.body.matches('.embed') ? null : (() => {
     if (o.frame.dataset.changed) {
       const below = stack.at(-1);
       if (below) { below.frame.dataset.changed = '1'; below.frame.contentWindow.location.reload(); }
-      else location.reload();
+      else { keepPeeks(); location.reload(); }
     }
     return true;
   };

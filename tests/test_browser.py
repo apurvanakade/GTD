@@ -422,6 +422,32 @@ def test_project_row_arrow_folds_out_its_steps(page, live):
         page.keyboard.press("Escape")
 
 
+def test_closing_a_changed_step_keeps_the_folded_out_steps(page, live, conn):
+    """The reload that shows the change goes back to the same view: what was folded out stays, for that reload only."""
+    page.goto(live + "/projects")
+    peeks = page.locator("button.peek")
+    row(page, "Kitchen").locator("button.peek").click()
+    row(page, "Kitchen").get_by_role("link", name="lay tiles", exact=True).click()
+    assert task_overlay(page) == "lay tiles"
+    page.frame_locator("dialog.overlay iframe").locator("input.big").fill("lay the tiles")
+    with page.expect_navigation():
+        page.locator("dialog.overlay .close").click()
+    assert db.get_task(conn, 3)["title"] == "lay the tiles"
+    assert row(page, "Kitchen").locator("button.peek").get_attribute("aria-expanded") == "true"
+    assert row(page, "Kitchen").get_by_role("link", name="lay the tiles", exact=True).is_visible()
+    assert [b.get_attribute("aria-expanded") for b in peeks.all()].count("true") == 1
+    # Expand all, then a change: every row stays open, and the header still offers Collapse all.
+    page.locator("button.peek-all").click()
+    page.locator("ul.steps a", has_text="lay the tiles").click()
+    task_overlay(page)
+    page.frame_locator("dialog.overlay iframe").locator("input.big").fill("lay tiles")
+    with page.expect_navigation():
+        page.keyboard.press("Escape")
+    assert set(peeks.all_inner_texts()) == {"▾"} and page.locator("button.peek-all").inner_text() == "Collapse all"
+    page.reload()  # any other reload starts folded, as before
+    assert set(peeks.all_inner_texts()) == {"▸"}
+
+
 def test_expand_all_folds_out_every_project(page, live):
     for url in ("/projects", "/projects/someday?tickled=1"):
         page.goto(live + url)
