@@ -603,20 +603,27 @@ def reorder_contexts(c, ids):
 # --- categories ------------------------------------------------------------
 
 def category_name(raw):
-    """A category as typed, tidied: spaces collapsed, a trailing colon dropped (it's shown with one). '' if blank."""
-    return re.sub(r"\s+", " ", raw or "").strip().rstrip(":").strip()
+    """A category as typed, tidied: spaces collapsed, a trailing colon dropped (it's shown with one), each word's first
+    letter capitalized (the rest left as typed: "AMS 210", "iPad" → "IPad"). '' if blank."""
+    name = re.sub(r"\s+", " ", raw or "").strip().rstrip(":").strip()
+    return " ".join(w[:1].upper() + w[1:] for w in name.split(" ")) if name else ""
 
 
 @atomic
 def set_task_category(c, id, name):
-    """A task's category is now this name (None or blank: none). A name used before, whatever its case, keeps the
-    spelling it's used with most, so one category never splits in two."""
+    """A task's category is now this name (None or blank: none), in title case (category_name()). A name used before,
+    whatever its case, keeps the spelling it's used with most, title-cased, and every task under it takes that
+    spelling, so one category never splits in two (and one stored before title case heals once it's used)."""
     name = category_name(name)
     c.execute("DELETE FROM task_categories WHERE task_id = ?", (id,))
     if name:
-        known = c.execute("""SELECT name FROM task_categories WHERE name = ? GROUP BY name COLLATE BINARY
-            ORDER BY count(*) DESC, max(task_id) DESC LIMIT 1""", (name,)).fetchone()
-        c.execute("INSERT INTO task_categories (task_id, name) VALUES (?, ?)", (id, known["name"] if known else name))
+        # Matched by Python's casefold(), not the column's NOCASE, which folds only ASCII ("école" vs "École").
+        spellings = [r["name"] for r in c.execute("""SELECT name FROM task_categories GROUP BY name COLLATE BINARY
+            ORDER BY count(*) DESC, max(task_id) DESC""") if r["name"].casefold() == name.casefold()]
+        name = category_name(spellings[0]) if spellings else name
+        c.executemany("UPDATE task_categories SET name = ? WHERE name = ? COLLATE BINARY",
+                      [(name, s) for s in spellings])
+        c.execute("INSERT INTO task_categories (task_id, name) VALUES (?, ?)", (id, name))
 
 
 def categories(c):

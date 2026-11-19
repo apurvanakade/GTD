@@ -1713,7 +1713,7 @@ def test_the_category_box_offers_categories(page, live, conn):
     # adds in the background, no reload).
     page.goto(live + "/projects")
     page.keyboard.press("/")
-    page.keyboard.type("Prob Stats")
+    page.keyboard.type("prob stats")  # stored, and offered from then on, title-cased
     page.keyboard.press("Tab")
     page.keyboard.type("lecture")
     with page.expect_response(lambda r: r.url.endswith("/capture")):

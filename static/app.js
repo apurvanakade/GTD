@@ -418,8 +418,8 @@ document.addEventListener('change', e => {
     take([...box.children].indexOf(a));
   });
   document.addEventListener('focusout', e => { if (e.target === input) hide(); });
-  const learn = el => {  // a category just used is offered next time
-    const n = el?.value.trim().replace(/\s+/g, ' ').replace(/:+$/, '').trim();
+  const learn = el => {  // a category just used is offered next time, tidied as db.category_name() stores it
+    const n = el?.value.trim().replace(/\s+/g, ' ').replace(/:+$/, '').trim().replace(/(^| )(.)/g, (_, s, c) => s + c.toUpperCase());
     if (n && !categories.some(c => lower(c) === lower(n))) categories.unshift(n);
   };
   document.addEventListener('submit', e => learn(e.target.elements?.category), true);
