@@ -1624,7 +1624,7 @@ def test_nav_groups_tabs_by_kind_of_list(client):
     """Working minute by minute, lists of tasks, lists of projects (each tab one kind); then the weekly-review pages
     and Reference."""
     nav = client.get("/next").data.decode().split("<nav>")[1].split("</nav>")[0]
-    groups = [re.findall(r'<a href="([^"]*)"', g) for g in re.findall(r'<span class="(?:group|aux)">(.*?)</span>', nav, re.S)]
+    groups = [re.findall(r'<a href="([^"]*)"', g) for g in re.findall(r'<span class="(?:group|aux)"[^>]*>(.*?)</span>', nav, re.S)]
     assert groups == [["/timer", "/calendar"], ["/inbox", "/next", "/waiting", "/someday"],
                       ["/projects", "/projects/waiting", "/projects/someday"], ["/review", "/horizons", "/done", "/reference"]]
     assert re.search(r'<small class="caption">Projects</small>\s*<a href="/projects"[^>]*>Active', nav)

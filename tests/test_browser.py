@@ -1070,6 +1070,30 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_task(conn, 5) is None
 
 
+def test_an_overlay_opened_from_the_url_starts_focused_on_itself(page, live):
+    """Not on ×, which would show its keyboard focus ring on a page just loaded; Esc still closes it."""
+    page.goto(live + "/next?task=5")
+    assert task_overlay(page) == "vacuum"
+    assert page.evaluate("document.activeElement.matches('dialog.overlay')")
+    page.keyboard.press("Escape")
+    page.wait_for_selector("dialog.overlay", state="detached")
+
+
+def test_a_narrow_nav_folds_the_review_tabs_behind_more(page, live):
+    """Too narrow for every tab (a small window, or the pinned panel beside it): Review…Reference fold behind ⋯, and
+    the nav doesn't scroll sideways."""
+    page.goto(live + "/next")
+    more = page.locator("nav .more")
+    assert more.is_hidden() and page.locator("nav .aux a", has_text="Done").is_visible()
+    page.set_viewport_size({"width": 800, "height": 600})
+    assert more.is_visible() and page.locator("nav .aux").is_hidden()
+    assert page.evaluate("(n => n.scrollWidth <= n.clientWidth)(document.querySelector('nav'))")
+    more.click()
+    page.locator("nav .aux a", has_text="Done").click()
+    page.wait_for_url(live + "/done")
+    assert page.evaluate("getComputedStyle(document.querySelector('nav .more')).borderBottomStyle") == "solid"  # its page
+
+
 def test_clicking_anywhere_on_a_row_opens_it(page, live):
     page.goto(live + "/next")
     r = row(page, "buy tiles")

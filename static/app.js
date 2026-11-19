@@ -819,6 +819,7 @@ window.overlays = document.body.matches('.embed') ? null : (() => {
     dialog.querySelector('.close').addEventListener('click', () => close());
     stack.push(o);
     dialog.showModal();
+    dialog.focus();  // itself, not ×: a page just loaded would show ×'s focus ring (style.css .overlay:focus)
     if (list) return setList(o, list);
     // Opened with the page (?task=<id>): the list of the row naming it, on the page, or in the overlay below once in.
     const below = stack.at(-2)?.frame;
@@ -853,7 +854,7 @@ window.overlays = document.body.matches('.embed') ? null : (() => {
   const open = (path, list) => {
     const at = stack.findIndex(o => o.path === path);
     if (at >= 0) return closeTo(at + 1);  // already open below: back to it
-    const dialog = Object.assign(document.createElement('dialog'), {className: 'overlay'});
+    const dialog = Object.assign(document.createElement('dialog'), {className: 'overlay', tabIndex: -1});
     dialog.innerHTML = '<button type="button" class="close icon" title="Close (Esc)" aria-label="Close">×</button><iframe title="Overlay"></iframe>';
     dialog.querySelector('iframe').src = path + '?embed=overlay';
     document.body.append(dialog);

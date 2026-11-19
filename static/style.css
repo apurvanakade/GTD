@@ -51,6 +51,20 @@ nav a.on { color: var(--fg); border-bottom-color: var(--accent); }
 nav a.over { color: var(--fg); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 4px 4px 0 0; }  /* a project dragged over its tab */
 nav .aux { display: flex; margin-left: auto; padding-left: 8px; }
 nav .aux a { font-size: var(--fs-s); }
+/* The nav is its own container: too narrow for every tab (a small window, or the pinned drop panel beside it), the
+   muted tabs fold behind ⋯, a popover under it (anchored to its button), and the nav never scrolls sideways. */
+nav { container-type: inline-size; }
+nav .more { display: none; margin-left: auto; color: var(--muted); }
+nav .aux:not(:popover-open) { position: static; inset: auto; margin: 0 0 0 auto; padding: 0 0 0 8px; border: 0; background: none; color: inherit; overflow: visible; }
+@container (max-width: 940px) {
+  nav .more { display: inline-block; }
+  nav:has(.aux a.on) .more { color: var(--fg); border-bottom: 2px solid var(--accent); border-radius: 0; }
+  nav .aux:not(:popover-open) { display: none; }
+}
+@container (max-width: 720px) { nav .caption { display: none; } nav .group + .group { margin-left: 4px; padding-left: 4px; } }
+nav .aux:popover-open { flex-direction: column; margin: 4px 0 0; padding: 6px; inset: auto; position-area: bottom span-left;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
+nav .aux:popover-open a { padding: 6px 10px; font-size: var(--fs-m); }
 nav .theme-toggle { flex: none; margin-left: 2px; color: var(--muted); }
 nav .badge { display: inline-block; border-radius: 50%; background: var(--muted); vertical-align: 2px; margin-left: 2px; }
 nav .badge.s1 { width: 6px; height: 6px; } nav .badge.s2 { width: 8px; height: 8px; } nav .badge.s3 { width: 10px; height: 10px; vertical-align: 1px; }
@@ -188,6 +202,7 @@ header.page [data-filtered]:empty { display: none; }
 /* Every record's overlay (app.js): its page in a frame, sized to fit up to the window (then it scrolls inside, so a
    project's drop panel stays in view), × in the title line's room (body.embed below). */
 .overlay .close { position: absolute; top: 16px; right: 20px; z-index: 1; }
+.overlay:focus { outline: none; }  /* focus starts on the overlay itself (app.js), not ×, which would show a ring on a page just loaded */
 .overlay .walk { position: absolute; top: 16px; right: 56px; z-index: 1; }  /* ‹ ›: the list it was opened from */
 .overlay iframe { display: block; width: 100%; height: 12rem; max-height: calc(100vh - 6rem); border: 0; }
 /* Its fields quiet, as on a project page: no box until pointed at or typed in. */
