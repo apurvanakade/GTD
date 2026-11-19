@@ -312,8 +312,9 @@ select:has(option[value^="__new__"]:checked) + input { display: block; }
   transform: translateX(100%); visibility: hidden; transition: transform .15s, visibility .15s;
 }
 body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; visibility: visible; }
-/* Pinned on a window too narrow for both, the page moves left of it, so it covers no row's ▶ or the nav's end. */
-@media (min-width: 700px) and (max-width: 1559px) { .pinned-panel body:not(.embed) { margin-right: 280px; margin-left: auto; } }
+/* Pinned on a window too narrow for both, the page moves left of it, so it covers no row's ▶ or the nav's end;
+   only a page with the panel, so the others keep their width and their whole nav. */
+@media (min-width: 700px) and (max-width: 1559px) { .pinned-panel body:not(.embed):has(.drop-panel) { margin-right: 280px; margin-left: auto; } }
 .drop-panel .unpin { display: none; float: right; }
 .pinned-panel .drop-panel .unpin { display: block; }
 .pin-panel[aria-pressed="true"] { color: var(--fg); background: var(--soft); }

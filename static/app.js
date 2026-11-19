@@ -304,7 +304,11 @@ document.addEventListener('change', e => {
     setFilter(ids);
     showAll.hidden = !ids.length;
   };
-  let renaming = Promise.resolve();  // closing may fire the name box's change: wait for that save, then redraw
+  // Closing with a name box still being typed in saves it first: Esc or a click beside it leaves the box (its change
+  // starts the rename) before the dialog closes, since Chromium fires the box's own change only after 'close'.
+  // Then the redraw waits for that save.
+  let renaming = Promise.resolve();
+  dialog.addEventListener('cancel', () => { if (dialog.contains(document.activeElement)) document.activeElement.blur(); });
   dialog.addEventListener('close', async () => { await renaming; if (stale) location.reload(); });
   const clearFilter = () => {
     list?.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = false; });
@@ -447,7 +451,9 @@ function toast(messages) {
   box.setAttribute('role', 'status');
   for (const m of messages) box.append(Object.assign(document.createElement('p'), {className: 'flash', textContent: m}));
   // A manual popover joins the top layer above any open dialog (Site info, an overlay), so the message is never under one.
+  // It's removed once faded, so it leaves the top layer (and `:popover-open`) with its fade.
   box.popover = 'manual';
+  box.addEventListener('animationend', () => box.remove());
   document.body.append(box);
   box.showPopover();
 }
@@ -783,8 +789,9 @@ if (frameElement) {
     e.preventDefault();
     if (await post(by.formAction, new FormData(e.target, by))) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });
-  document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
-    if (e.key === 'Escape' && !document.querySelector('dialog[open], :popover-open')) frameElement.closest('dialog')?.querySelector('.close')?.click();
+  // Esc in the frame closes its overlay, unless a dialog or popover in it (Outcome reached) takes it; a toast doesn't.
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.querySelector('dialog[open], :popover-open:not(.flashes)')) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });
 }
 // A record's link opens its overlay, in a frame too (on the page around it).

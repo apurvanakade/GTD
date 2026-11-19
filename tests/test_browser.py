@@ -153,6 +153,31 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.locator(".capture-dialog .md-editor").click()
     page.keyboard.press("ControlOrMeta+Enter")  # from its notes too
     page.wait_for_selector(".flashes >> text=Added to inbox: meta enter in the dialog")
+    # Added with notes, the next task's notes start empty, and ⌘Z can't bring the last one's back.
+    page.click(".add-inbox")
+    page.fill(".capture-dialog input[name=title]", "with notes")
+    page.locator(".capture-dialog .md-editor").click()
+    page.keyboard.type("first")
+    page.wait_for_timeout(1100)  # a pause: two undo steps
+    page.keyboard.type(" notes")
+    page.keyboard.press("ControlOrMeta+Enter")
+    page.wait_for_selector(".flashes >> text=Added to inbox: with notes")
+    page.click(".add-inbox")
+    notes = page.locator(".capture-dialog .md-editor")
+    notes.click()
+    page.keyboard.press("ControlOrMeta+z")
+    assert notes.text_content() == "" and page.locator(".capture-dialog textarea[name=notes]").input_value() == ""
+    # Cancel adds nothing, and its category isn't offered later.
+    cat = page.locator(".capture-dialog input[name=category]")
+    cat.fill("Zebra")
+    page.locator(".capture-dialog").get_by_role("button", name="Cancel").click()
+    assert not page.locator(".capture-dialog").evaluate("d => d.open")
+    page.click(".add-inbox")
+    cat.fill("")
+    cat.type("zeb")
+    page.wait_for_timeout(100)
+    assert page.locator(".ctx-suggest:not([hidden]) a").count() == 0
+    page.keyboard.press("Escape")
     page.click(".add-inbox")
     page.mouse.click(5, 5)  # beside it, on the backdrop: closed
     assert not page.locator(".capture-dialog").evaluate("d => d.open")
@@ -990,6 +1015,20 @@ def test_tick_off_updates_the_band_count_and_nav_dot(page, live):
     page.wait_for_selector("li.task.gone")
     page.wait_for_function(f"document.querySelector('details[data-band=now] summary b').textContent === '{n - 1}'")
     page.wait_for_function(f"document.querySelector('nav a[href=\"/next\"] .badge')?.ariaLabel === '{n - 1}'")
+    # Two tick-offs whose /nav answers arrive out of order: the later refresh's counts stay.
+    stale = []
+    page.route("**/nav", lambda r: stale.append((r, r.fetch().text())) if not stale else r.continue_())
+    page.locator("details[data-band=week] summary").click()
+    row(page, "call mum").locator("form.done button").click()  # not due yet: the dot stays n - 1
+    while not stale:
+        page.wait_for_timeout(50)
+    row(page, "buy tiles").locator("form.done button").click()
+    dot = "(document.querySelector('nav a[href=\"/next\"] .badge')?.ariaLabel ?? '0')"  # a zero shows no dot
+    page.wait_for_function(f"{dot} === '{n - 2}'")
+    route, body = stale[0]
+    route.fulfill(body=body, content_type="text/html")
+    page.wait_for_timeout(300)
+    assert page.evaluate(dot) == str(n - 2)
 
 
 def test_capture_keys_do_nothing_while_help_is_open(page, live):
@@ -1068,6 +1107,41 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     with page.expect_navigation():
         page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Delete for good").click()
     assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_task(conn, 5) is None
+    # A toast in the frame (an unreadable box's warning) doesn't take Esc: it still closes the overlay.
+    page.goto(live + "/next?task=6")  # "bins"
+    task_overlay(page)
+    frame = page.frame_locator("dialog.overlay iframe")
+    frame.locator("input[name=due_date]").fill("gibberish")
+    frame.locator("input[name=due_date]").press("Tab")
+    frame.locator(".flashes").wait_for()
+    page.keyboard.press("Escape")
+    page.wait_for_selector("dialog.overlay", state="detached")
+    # Esc on an open popover (Outcome reached) closes only the popover; the next Esc closes the overlay.
+    page.goto(live + "/projects?project=1")
+    page.wait_for_selector("dialog.overlay[open]")
+    frame = page.frame_locator("dialog.overlay iframe")
+    frame.get_by_role("button", name="Outcome reached").click()
+    sync_api.expect(frame.locator("#reached")).to_be_visible()
+    page.keyboard.press("Escape")
+    sync_api.expect(frame.locator("#reached")).to_be_hidden()
+    assert page.locator("dialog.overlay").count() == 1
+    page.keyboard.press("Escape")
+    page.wait_for_selector("dialog.overlay", state="detached")
+    # Closed while a tick-off is still on its way, it waits for it, then reloads the page under it.
+    page.goto(live + "/projects?project=1")
+    page.wait_for_selector("dialog.overlay[open]")
+    held = []
+    page.route("**/tasks/2/complete", lambda r: held.append(r))
+    frame = page.frame_locator("dialog.overlay iframe")
+    frame.locator("li.task", has_text="buy tiles").locator("form.done button").click()
+    while not held:
+        page.wait_for_timeout(50)
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    assert page.locator("dialog.overlay").count() == 1  # still waiting for the post
+    with page.expect_navigation():
+        held[0].continue_()
+    assert page.locator("dialog.overlay").count() == 0 and db.get_task(conn, 2)["state"] == "done"
 
 
 def test_an_overlay_opened_from_the_url_starts_focused_on_itself(page, live):
@@ -1135,6 +1209,17 @@ def test_horizons_map(page, live, conn):
     node("Home").locator("circle").click()
     sync_api.expect(page.locator("dialog.overlay iframe")).to_have_attribute("src", re.compile(r"/horizons/\d+\?embed=overlay"))
     assert page.url == live + "/horizons"
+    # Panned or zoomed, a resize keeps the view's scale (a fit would change it).
+    page.locator("dialog.overlay .close").click()
+    page.wait_for_selector("dialog.overlay", state="detached")
+    view = lambda: page.locator("svg.graph > g").first.get_attribute("transform")
+    svg = page.locator("svg.graph").bounding_box()
+    page.mouse.move(svg["x"] + svg["width"] / 2, svg["y"] + svg["height"] / 2)
+    page.mouse.wheel(0, -300)
+    zoomed = view()
+    page.set_viewport_size({"width": 1000, "height": 700})
+    page.wait_for_function(f"document.querySelector('svg.graph > g').getAttribute('transform') !== {zoomed!r}")
+    assert re.search(r"scale\(([\d.]+)\)", view())[1] == re.search(r"scale\(([\d.]+)\)", zoomed)[1]
     page.goto(live + "/horizons?level=purpose")
     box = page.locator(".visions textarea").nth(1)  # Work
     box.fill("Teaching what I love")
@@ -1668,6 +1753,17 @@ def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):
     with page.expect_navigation():
         page.keyboard.press("Escape")
     assert row(page, "buy tiles").locator(".ctx").text_content() == "@deep-work"
+    # Closed while still typing, the name saves as the box is left, and the page redraws once it has.
+    page.keyboard.press("?")
+    box = page.locator(f'.context-list li[data-id="{ids["morning"]}"] input[name=context_name]')
+    box.fill("focus")
+    with page.expect_navigation():
+        page.keyboard.press("Escape")
+    assert row(page, "buy tiles").locator(".ctx").text_content() == "@focus"
+    page.keyboard.press("?")
+    box.fill("deep work")
+    with page.expect_response(lambda r: r.url.endswith("/rename")):
+        box.press("Enter")
     # Onto another's name: it asks; turned down, nothing changes.
     page.keyboard.press("?")
     morning = page.locator(f'.context-list li[data-id="{ids["morning"]}"]')
