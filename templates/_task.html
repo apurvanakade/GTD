@@ -36,9 +36,9 @@
 </li>
 {% endmacro %}
 
-{# A done or abandoned project's row (Done, Projects' completed): its date and Revive, the same for either. #}
+{# A done or abandoned project's row (Done, Projects' completed): ✓ or ✕ as a task row has, its date and Revive. #}
 {% macro closed_project(p) %}
-<li class="task"><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>
+<li class="task"><span class="check" title="{{ 'Done' if p.status == 'done' else 'Abandoned' }}" aria-hidden="true">{{ '✓' if p.status == 'done' else '✕' }}</span><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>
   <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to someday / maybe, with its steps">Revive</button></form></li>
 {% endmacro %}
 
@@ -169,7 +169,7 @@
    moved waiting step stays). #}
 {% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the places to file to open">File to</button>{% endmacro %}
 {% macro move_panel(current=none, reload=False, stays=none) %}
-<aside class="drop-panel" data-move="{{ url_for('task_move') }}"{% if current %} data-current="{{ current }}"{% endif %}{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>
+<aside class="drop-panel" data-move="{{ url_for('task_move') }}"{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>
   <button type="button" class="unpin" title="Hide the panel" aria-label="Hide the panel">✕</button>{{ project_targets(current) }}</aside>
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}

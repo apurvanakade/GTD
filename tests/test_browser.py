@@ -97,6 +97,14 @@ def test_tick_off_fades_the_row_in_place(page, live, conn):
     assert db.get_task(conn, 5)["state"] == "done"
 
 
+def test_ticking_off_the_timed_task_drops_the_timer_pill(page, live):
+    page.goto(live + "/horizons?level=ground")
+    assert page.locator(".running-timer").count() == 1  # "call mum" is being timed
+    row(page, "call mum").locator("form.done button").click()
+    page.wait_for_selector("li.task.gone")
+    assert page.locator(".running-timer").count() == 0
+
+
 def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
     page.goto(live + "/horizons?level=ground")
     row(page, "vacuum").locator("form.done button").click()
@@ -257,6 +265,20 @@ def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, co
             break
         page.wait_for_timeout(50)
     assert db.get_task(conn, 2)["due_date"] == "2026-11-05"
+
+
+def test_a_typed_date_saves_when_the_picker_is_closed_without_a_pick(page, live, conn):
+    page.goto(live + "/tasks/2?embed=overlay")
+    page.fill("input[name=due_date]", "fri")
+    field = page.locator(".date-field", has=page.locator("input[name=due_date]"))
+    field.locator(".pick").click()  # the box keeps its focus
+    page.keyboard.press("Escape")  # no pick
+    page.locator("main .md-editor").click()  # leaving the box saves it
+    for _ in range(50):
+        if db.get_task(conn, 2)["due_date"] == "2026-10-23":
+            break
+        page.wait_for_timeout(50)
+    assert db.get_task(conn, 2)["due_date"] == "2026-10-23"
 
 
 def test_running_timer_clock_ticks(page, live):

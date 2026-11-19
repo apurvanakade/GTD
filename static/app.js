@@ -1,12 +1,22 @@
 // Every page's JS (base.html loads it after the page); GO, the go-keys' targets, is set inline before it.
 // A background save (tick-off, drag, filing). If it fails, reload so the page shows what was really saved.
-async function post(url, body) {
-  try {
-    const r = await fetch(url, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-    if (r.ok) { changed(); projectsSaved(r); return true; }
-  } catch {}
-  location.reload();
-  return false;
+// Marked changed before it's sent, and tracked (postsSettled()), so an overlay closed at once still waits for it and
+// reloads what's under it.
+const posting = new Set();
+function postsSettled() { return Promise.allSettled([...posting]); }
+function post(url, body) {
+  changed();
+  const p = (async () => {
+    try {
+      const r = await fetch(url, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
+      if (r.ok) { projectsSaved(r); return true; }
+    } catch {}
+    location.reload();
+    return false;
+  })();
+  posting.add(p);
+  p.finally(() => posting.delete(p));
+  return p;
 }
 // A background save that made a project (X-Projects-Changed, set by app.py) leaves every project list on the page
 // stale: the dropdowns (project_select()) and the drop panel (project_targets()), each marked data-projects with
@@ -30,15 +40,14 @@ async function refreshProjects() {
 // The nav slides away while you scroll down and comes back when you scroll up, reach the top, or point at the top
 // edge. Touch scrolling (iPad) drives it too; the clamp ignores Safari's rubber band.
 (() => {
-  const nav = document.querySelector('nav');
-  if (!nav) return;  // in a frame: no nav
+  if (!document.querySelector('nav')) return;  // in a frame: no nav
   let last = scrollY;
   // Shown throughout a project drag, since its tabs are drop targets (below).
   const show = on => document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
   addEventListener('scroll', () => {
     const y = Math.max(0, Math.min(scrollY, document.documentElement.scrollHeight - innerHeight));
     if (Math.abs(y - last) < 4) return;
-    show(y < last || y <= nav.offsetHeight);
+    show(y < last || y <= (document.querySelector('nav')?.offsetHeight ?? 0));  // looked up each time: refreshNav() replaces it
     last = y;
   }, {passive: true});
   addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
@@ -151,7 +160,7 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
 })();
 // A field marked data-submit (the project page's status and tickler date)
 // saves its form as soon as it's changed; a text box waits while its 📅 picker is open. A form[data-background]
-// (the Vision card's area lines) saves in the background instead, as it's left; Enter just leaves the box.
+// (the Vision card's area lines) saves in the background instead, as it's left (a textarea: Enter is a new line).
 document.addEventListener('submit', e => {
   if (!('background' in e.target.dataset)) return;
   e.preventDefault();
@@ -295,7 +304,8 @@ document.addEventListener('change', e => {
     setFilter(ids);
     showAll.hidden = !ids.length;
   };
-  dialog.addEventListener('close', () => { if (stale) location.reload(); });
+  let renaming = Promise.resolve();  // closing may fire the name box's change: wait for that save, then redraw
+  dialog.addEventListener('close', async () => { await renaming; if (stale) location.reload(); });
   const clearFilter = () => {
     list?.querySelectorAll('input[type=checkbox]').forEach(c => { c.checked = false; });
     saveFilter();
@@ -318,13 +328,15 @@ document.addEventListener('change', e => {
       return;
     }
     let row;
+    stale = true;  // set now: the dialog's close handler may already be waiting on this save
     try {
-      const r = await fetch(`/contexts/${li.dataset.id}/rename`, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams({name: box.value})});
+      const saving = fetch(`/contexts/${li.dataset.id}/rename`, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body: new URLSearchParams({name: box.value})});
+      renaming = saving.catch(() => {});
+      const r = await saving;
       if (!r.ok) throw r.status;
       row = await r.json();
     } catch { return location.reload(); }
     toast(row.flashes);
-    stale = true;
     box.value = box.defaultValue = row.name;
     if (String(row.id) === li.dataset.id) return;
     const into = list.querySelector(`[data-id="${row.id}"]`), tick = c => c.querySelector('input[type=checkbox]');
@@ -422,23 +434,28 @@ document.addEventListener('change', e => {
     const n = el?.value.trim().replace(/\s+/g, ' ').replace(/:+$/, '').trim().replace(/(^| )(.)/g, (_, s, c) => s + c.toUpperCase());
     if (n && !categories.some(c => lower(c) === lower(n))) categories.unshift(n);
   };
-  document.addEventListener('submit', e => learn(e.target.elements?.category), true);
+  document.addEventListener('submit', e => { if (e.submitter?.formMethod !== 'dialog') learn(e.target.elements?.category); }, true);  // not on Cancel
   document.addEventListener('change', e => { if (e.target.matches?.('input[name=category]') && e.target.form && 'saveOnChange' in e.target.form.dataset) learn(e.target); });
 })();
 // A message goes as soon as it's pointed at, so it's never in the way.
 document.addEventListener('mouseover', e => e.target.closest('.flashes')?.remove());
 // Messages from a background save, shown like the server's.
 function toast(messages) {
-  document.querySelector('body > .flashes')?.remove();
+  document.querySelectorAll('body > .flashes').forEach(f => f.remove());
   if (!messages?.length) return;
   const box = Object.assign(document.createElement('div'), {className: 'flashes'});
   box.setAttribute('role', 'status');
   for (const m of messages) box.append(Object.assign(document.createElement('p'), {className: 'flash', textContent: m}));
-  document.querySelector('main').before(box);
+  // A manual popover joins the top layer above any open dialog (Site info, an overlay), so the message is never under one.
+  box.popover = 'manual';
+  document.body.append(box);
+  box.showPopover();
 }
 // 📅 opens the native date picker; its pick lands in the text box beside it. On a touch screen the native input
 // itself lies over 📅 (style.css), since iPad Safari doesn't always open showPicker(): the tap opens it.
-// Pressing 📅 leaves the box: its own change waits for the pick (`picking`), which then saves it.
+// A mouse press on 📅 keeps the focus in the box, so what's typed there saves when the box is left, picked or not.
+// On a touch screen the tap lands on the picker input and leaves the box: its change waits for the pick (`picking`),
+// and a picker closed without a pick saves the box itself (the picker's blur).
 // The picker starts on the box's date (and time, for the Remind box) when it holds one, else today.
 const startPick = field => {
   field.classList.add('picking');
@@ -446,13 +463,26 @@ const startPick = field => {
   picker.value = (picker.type === 'date' ? /^\d{4}-\d\d-\d\d$/ : /^\d{4}-\d\d-\d\dT\d\d:\d\d$/).test(v) ? v : '';
   return picker;
 };
+document.addEventListener('mousedown', e => { if (e.target.closest('.date-field .pick')) e.preventDefault(); });
 document.addEventListener('pointerdown', e => {
-  const field = e.target.closest('.date-field .pick, .date-field .picker')?.parentElement;
+  const field = e.target.closest('.date-field .picker')?.parentElement;
   if (field) startPick(field);
+});
+document.addEventListener('focusout', e => {  // the touch picker closed: a box still waiting saves now
+  const field = e.target.matches?.('.date-field .picker') && e.target.closest('.date-field.picking');
+  if (!field) return;
+  setTimeout(() => {
+    if (!field.classList.contains('picking')) return;  // a pick arrived and saved it
+    field.classList.remove('picking');
+    field.querySelector('input[name]').dispatchEvent(new Event('change', {bubbles: true}));
+  });
 });
 document.addEventListener('click', e => {
   const b = e.target.closest('.date-field .pick');
-  if (b) startPick(b.parentElement).showPicker();
+  if (!b) return;
+  const picker = startPick(b.parentElement);
+  b.parentElement.classList.remove('picking');  // the box kept its focus: nothing waits
+  picker.showPicker();
 });
 document.addEventListener('focusin', e => { if (e.target.matches('.date-field input[name]')) e.target.parentElement.classList.remove('picking'); });
 document.addEventListener('change', e => {
@@ -546,12 +576,12 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   const unmark = () => document.querySelectorAll('nav a.over').forEach(a => a.classList.remove('over'));
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
-  const listOf = e => e.target.closest?.('ul[data-reorder]');
-  // Only the grip starts a drag, so titles stay links.
-  document.addEventListener('pointerdown', e => { if (listOf(e)) { const g = e.target.closest('.grip'); if (g) g.closest('li').draggable = true; } });
-  document.addEventListener('pointerup', e => listOf(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
+  const listUnder = e => e.target.closest?.('ul[data-reorder]');
+  // Only the grip starts a drag, so titles stay links; a row ticked off in place stays put.
+  document.addEventListener('pointerdown', e => { if (listUnder(e)) { const g = e.target.closest('li:not(.gone) > .grip'); if (g) g.closest('li').draggable = true; } });
+  document.addEventListener('pointerup', e => listUnder(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
   document.addEventListener('dragstart', e => {
-    const list = listOf(e), li = list && e.target.closest('li[draggable]');
+    const list = listUnder(e), li = list && e.target.closest('li[draggable]');
     if (!li) return;
     const picked = li.classList.contains('selected') ? [...document.querySelectorAll('main li.task.selected')] : [li];
     if (picked.some(r => r.parentElement !== list)) return;  // a selection across lists only moves out (move.js)
@@ -567,7 +597,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     const tab = tabOf(e);
     unmark();
     if (tab) { e.preventDefault(); tab.classList.add('over'); return; }
-    const list = listOf(e);
+    const list = listUnder(e);
     if (!dragged || !list || list !== from) return;
     // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
     // block of both doesn't move.
@@ -581,7 +611,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     if (e.clientY < r.top + r.height / 2) over.before(...dragged); else over.after(...dragged);
   });
   document.addEventListener('drop', e => {
-    if (listOf(e)) e.preventDefault();
+    if (listUnder(e)) e.preventDefault();
     const tab = tabOf(e);
     if (!tab) return;
     e.preventDefault();
@@ -670,16 +700,20 @@ document.addEventListener('submit', async e => {
   li.append(revive);
   const n = li.closest('details.band')?.querySelector('summary b');
   if (n) n.textContent = Math.max(0, n.textContent - 1);
+  // Its timer, if running, was stopped with it (complete_task()); a done task gets no stopped pill either.
+  document.querySelectorAll(`.running-timer a[href="/tasks/${li.dataset.id}"]`).forEach(a => a.closest('.running-timer').remove());
   refreshNav();
 });
 // The nav's dots after a change made in place (tick-off, a row dragged to another project).
 // /nav renders it alone, without knowing the page, so the current tab keeps its own highlight.
+let navAsked = 0;
 async function refreshNav() {
   try {
-    const old = document.querySelector('nav');
-    if (!old) return;
+    if (!document.querySelector('nav')) return;
+    const mine = ++navAsked;
     const fresh = new DOMParser().parseFromString(await (await fetch('/nav')).text(), 'text/html').querySelector('nav');
-    if (!fresh) return;
+    const old = document.querySelector('nav');  // now, not before the fetch: an earlier refresh may have replaced it
+    if (!fresh || !old || mine !== navAsked) return;  // a later refresh is on its way, with fresher counts
     fresh.querySelectorAll('a').forEach(a => a.classList.toggle('on', !!old.querySelector(`a.on[href="${a.getAttribute('href')}"]`)));
     old.replaceWith(fresh);
   } catch {}  // only the dots go stale
@@ -707,8 +741,8 @@ function fitFrame(frame) {
   let watch = null;
   const fit = () => {
     watch?.disconnect();
-    const html = frame.contentDocument?.documentElement;
-    if (!html || frame.src === 'about:blank') return;
+    const doc = frame.contentDocument, html = doc?.documentElement;
+    if (!html || doc.URL === 'about:blank') return;  // its first, empty document: the CSS height holds until the page loads
     watch = new ResizeObserver(() => frame.style.height = html.offsetHeight + 'px');
     watch.observe(html);
   };
@@ -717,10 +751,11 @@ function fitFrame(frame) {
 }
 // Everything typed in a frame's page saved: the box being typed in leaves it (saving it), title and notes through
 // autosave. False on a conflict, to be settled in the frame first; true with nothing loaded.
-function frameSaved(frame) {
+async function frameSaved(frame) {
   const w = frame.contentWindow;
   w?.document.activeElement?.blur?.();
-  return w?.autosaved?.() ?? Promise.resolve(true);
+  await w?.postsSettled?.();  // a tick or a filing still on its way
+  return w?.autosaved?.() ?? true;
 }
 // The record a link opens ("/projects/4"), or nothing for any other link.
 const RECORD = /^\/(tasks|projects|horizons|reference)\/\d+$/;
@@ -749,7 +784,7 @@ if (frameElement) {
     if (await post(by.formAction, new FormData(e.target, by))) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });
   document.addEventListener('keydown', e => {  // Esc in the frame closes its overlay
-    if (e.key === 'Escape' && !document.querySelector('dialog[open]')) frameElement.closest('dialog')?.querySelector('.close')?.click();
+    if (e.key === 'Escape' && !document.querySelector('dialog[open], :popover-open')) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });
 }
 // A record's link opens its overlay, in a frame too (on the page around it).

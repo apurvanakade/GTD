@@ -2016,7 +2016,6 @@ def test_every_task_list_has_the_drop_panel(client, conn):
                     for t in [new, *(str(p["id"]) for p in db.projects(conn, s))]]
         assert targets == [t for t in ["h0", "waiting", "someday", *projects, "reference"] if t != current], url
         assert re.findall(r"<h3>(?:<a [^>]*>)?([\w /()]+)(?:</a>)?</h3>", panel) == ["Tasks (no project)", "Active", "Waiting", "Someday"], url
-        assert f'data-current="{current}"' in html if current else "data-current" not in html, url
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):

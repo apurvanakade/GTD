@@ -28,7 +28,7 @@
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && !naming) unselect(); });
   const close = () => {
-    body.classList.remove('dragging-tasks', 'naming');
+    body.classList.remove('dragging-tasks');
     if (naming) { naming.target.classList.remove('naming'); naming.target.querySelector('input').value = ''; }
     naming = null;
   };
@@ -47,7 +47,7 @@
     refreshNav();
   };
   document.addEventListener('dragstart', e => {
-    const li = e.target.closest?.('li.task');
+    const li = e.target.closest?.('li.task[draggable]');  // by its grip only (app.js), not a title link's own drag
     if (!movable(li)) return;
     dragged = li.classList.contains('selected') ? selected() : [li];
     dragged.forEach(r => r.classList.add('dragging'));
@@ -72,7 +72,6 @@
     if (!t.dataset.project.startsWith('__new__')) return move(dragged, {project_id: t.dataset.project});
     // The panel stays open for the name; Enter moves it into a new project, Esc or clicking away cancels.
     naming = {rows: dragged, target: t};
-    body.classList.add('naming');
     t.classList.add('naming');
     t.querySelector('input').focus();
   });
