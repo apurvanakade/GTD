@@ -107,7 +107,8 @@ def submissions(page_url, form):
 
 
 CALENDAR_MONTHS = {"", "m=2026-09", "m=2026-10", "m=2026-11",
-                   "w=2026-10-18", "w=2026-10-11", "w=2026-10-25"}  # ← and → go on forever
+                   "w=2026-10-18", "w=2026-10-11", "w=2026-10-25",
+                   "view=agenda"}  # ← and → go on forever
 
 
 def internal(href):
