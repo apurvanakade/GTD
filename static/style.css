@@ -256,10 +256,9 @@ header.page .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: ce
 main > .capture { margin-top: 24px; }  /* first on the page, in the header's place */
 .add:focus-within { border-color: var(--accent); }
 .add .plus { color: var(--accent); font-size: 1.25rem; line-height: 1; width: 20px; text-align: center; }
-.add input[name="title"] { flex: 1 1 200px; width: auto; min-width: 0; border-color: transparent; background: transparent; padding: 6px 4px; }
-/* A task's category box, before its title (category_input()): short, unlabeled, a soft chip until it's in use. */
-input.category { flex: 0 0 9em; width: 9em; min-width: 0; background: var(--soft); border-color: transparent; }
-input.category:focus { background: var(--card); border-color: var(--accent); }
+.add input[name="title"] { flex: 1 1 200px; width: auto; min-width: 0; padding: 6px 10px; }
+/* A task's category box, before its title (category_input()): short and unlabeled. */
+input.category { flex: 0 0 9em; width: 9em; min-width: 0; }
 .add input.category { padding: 4px 8px; }
 /* An idle add line shows no empty category box: it folds to nothing (still focusable; a click on the line lands in it,
    static/app.js) and opens once the line is in use (the rules below). The negative margin takes back the flex gap. */
