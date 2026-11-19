@@ -60,4 +60,6 @@ To refuse commits while tests fail, enable the pre-commit hook once per clone:
 git config core.hooksPath .githooks
 ```
 
+If `git config core.hooksPath` already prints something (another hook manager), don't replace it: have that setup run `.githooks/pre-commit` too.
+
 See [CLAUDE.md](CLAUDE.md) for the architecture and the GTD rules built into the code.
