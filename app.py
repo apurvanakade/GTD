@@ -1043,9 +1043,11 @@ def calendar_view():
         add_next_action()
         return back("calendar_view")
     week = None
-    # A bare /calendar opens the last view used (cookie `cal_view`); an explicit ?w= or ?m= sets it.
+    # A bare /calendar opens the last view used (cookie `cal_view`); an explicit ?w=, ?m= or ?view=agenda sets it.
     # ?n=2 makes the week view two weeks (this one and the next), for planning.
     cookie = request.cookies.get("cal_view")
+    if request.args.get("view") == "agenda" or (not {"w", "m"} & request.args.keys() and cookie == "agenda"):
+        return agenda_view()
     if "w" in request.args or ("m" not in request.args and cookie in ("week", "2weeks")):
         span = 2 if request.args.get("n") == "2" or ("w" not in request.args and cookie == "2weeks") else 1
         try:
@@ -1074,11 +1076,20 @@ def calendar_view():
     else:
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
     resp = make_response(render_template(
-        "calendar.html", first=first, week=week, span=span, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
+        "calendar.html", agenda=None, first=first, week=week, span=span, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
         by_day=by_day, events=events, calendars=[name for name, _ in calendars], cal_errors=dict(cal_errors),
         prev=prev, next=next_,
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", ("2weeks" if span == 2 else "week") if week else "month", max_age=365 * 86400, samesite="Lax")
+    return resp
+
+
+def agenda_view():
+    """The calendar's Agenda: every open task due today or overdue, from every list, oldest due first."""
+    resp = make_response(render_template(
+        "calendar.html", agenda=filtered(db.agenda(conn(), today())), week=None, span=0, project_groups=db.project_groups(conn()),
+        this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
+    resp.set_cookie("cal_view", "agenda", max_age=365 * 86400, samesite="Lax")
     return resp
 
 

@@ -1,22 +1,29 @@
 {% extends "base.html" %}
-{% from "_task.html" import project_select, add_form, task_fields, context_chip, category_input with context %}
-{% block title %}Calendar{% endblock %}
-{% block heading %}<h1>{% if week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
-{% block actions %}{% set p = 'w' if week else 'm' %}{% set q = {'n': 2} if span == 2 else {} %}
+{% from "_task.html" import row, project_select, add_form, task_fields, context_chip, category_input, nothing_here with context %}
+{% block title %}{{ 'Agenda' if agenda is not none else 'Calendar' }}{% endblock %}
+{% block heading %}<h1>{% if agenda is not none %}Agenda{% elif week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
+{% block actions %}
 {{ context_chip() }}
+{% if agenda is none %}{% set p = 'w' if week else 'm' %}{% set q = {'n': 2} if span == 2 else {} %}
 <span class="seg">
   <a href="{{ url_for('calendar_view', **dict(q, **{p: prev})) }}" title="Previous {{ 'week' if week else 'month' }}" aria-label="Previous {{ 'week' if week else 'month' }}">‹</a>
   <a href="{{ url_for('calendar_view', w=this_week, **q) if week else url_for('calendar_view', m=this_month) }}">Today</a>
   <a href="{{ url_for('calendar_view', **dict(q, **{p: next})) }}" title="Next {{ 'week' if week else 'month' }}" aria-label="Next {{ 'week' if week else 'month' }}">›</a>
-</span>
+</span>{% endif %}
 <span class="seg">
-  <a href="{{ url_for('calendar_view', m=this_month) }}" {% if not week %}aria-current="page"{% endif %}>Month</a>
+  <a href="{{ url_for('calendar_view', view='agenda') }}" {% if agenda is not none %}aria-current="page"{% endif %} title="Everything due today or overdue">Agenda</a>
+  <a href="{{ url_for('calendar_view', m=this_month) }}" {% if agenda is none and not week %}aria-current="page"{% endif %}>Month</a>
   <a href="{{ url_for('calendar_view', w=this_week) }}" {% if span == 1 %}aria-current="page"{% endif %}>Week</a>
   <a href="{{ url_for('calendar_view', w=this_week, n=2) }}" {% if span == 2 %}aria-current="page"{% endif %}>2 weeks</a>
 </span>
 {% endblock %}
 {% block body %}
 {% call add_form(url_for('calendar_view'), 'Add a dated next action…', task=True, due=today, due_required=True) %}<label>Project {{ project_select() }}</label>{% endcall %}
+{% if agenda is not none %}
+{#- Every open task due today or overdue, from every list, oldest due first. Sorted by date, so no drag. #}
+<div data-filtered>{% if agenda %}<ul class="tasks agenda">{% for t in agenda %}{{ row(t) }}{% endfor %}</ul>
+{%- elif context_filter %}{{ nothing_here() }}{% else %}<p class="empty clear">Nothing due.</p>{% endif %}</div>
+{% else %}
 {#- A day number opens this, on that day (the script below). #}
 <dialog class="day-dialog">
   <form method="post" action="{{ url_for('calendar_view') }}">
@@ -96,4 +103,5 @@ cal.addEventListener('dragend', () => {
   dragged = null;
 });
 </script>
+{% endif %}
 {% endblock %}

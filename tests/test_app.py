@@ -378,6 +378,25 @@ def test_calendar_two_week_view(client, conn):
     assert "18 Oct – 24 Oct 2026" in client.get("/calendar").data.decode()
 
 
+def test_calendar_agenda(client, conn):
+    """Agenda: every open task due today or overdue, from any list, oldest due first; remembered like the others."""
+    assert 'class="empty clear"' in client.get("/calendar?view=agenda").data.decode()
+    db.add_task(conn, "old inbox", due_date="2026-09-30")  # inbox
+    db.add_task(conn, "late later", project_id=db.add_project(conn, "Garden"), step="later", due_date="2026-10-21")
+    db.add_task(conn, "chase Ann", step="waiting", ground=1, due_date="2026-10-22")
+    db.add_task(conn, "fix gate", step="next", ground=1, due_date="2026-10-23")
+    db.add_task(conn, "no date yet", step="next", ground=1)
+    done = db.add_task(conn, "finished", step="next", ground=1, due_date="2026-10-20")
+    db.complete_task(conn, done, today=date(2026, 10, 22))
+    html = client.get("/calendar?view=agenda").data.decode()
+    assert "<h1>Agenda" in html and 'class="cal' not in html
+    assert html.index("old inbox") < html.index("late later") < html.index("chase Ann")
+    assert "fix gate" not in html and "no date yet" not in html and "finished" not in html
+    assert "<h1>Agenda" in client.get("/calendar").data.decode()  # remembered
+    assert "October 2026" in client.get("/calendar?m=2026-10").data.decode()
+    assert "<h1>Agenda" not in client.get("/calendar").data.decode()
+
+
 def test_calendar_remembers_the_view(client):
     assert "Oct 2026" not in client.get("/calendar").data.decode()  # month view by default
     client.get("/calendar?w=2026-11-04")

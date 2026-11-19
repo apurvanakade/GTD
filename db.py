@@ -893,6 +893,12 @@ def stalled_projects(c):
 
 # --- calendar --------------------------------------------------------------
 
+def agenda(c, today):
+    """Every open task due today or before, wherever it is (inbox, any step, any project), oldest due first."""
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.due_date <= ?
+        ORDER BY t.due_date, t.created_at DESC, t.id DESC""", (today.isoformat(),)).fetchall()
+
+
 def dated_tasks(c, start, end):
     return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.due_date BETWEEN ? AND ?
         ORDER BY t.due_date, t.created_at DESC, t.id DESC""", (start.isoformat(), end.isoformat())).fetchall()
