@@ -3405,6 +3405,10 @@ def test_a_task_category(client, conn):
     conn.execute("UPDATE task_categories SET name = 'office chores for AMS 210' WHERE task_id = ?", (t["id"],))
     db.set_task_category(conn, other, "OFFICE chores for AMS 210")
     assert {db.get_task(conn, i)["category"] for i in (t["id"], other)} == {"Office Chores For AMS 210"}
+    # Whatever the case beyond ASCII too (SQLite's NOCASE folds only ASCII).
+    conn.execute("UPDATE task_categories SET name = 'école' WHERE task_id = ?", (t["id"],))
+    db.set_task_category(conn, other, "ÉCOLE")
+    assert {db.get_task(conn, i)["category"] for i in (t["id"], other)} == {"École"}
     client.post(f"/tasks/{t['id']}?embed=overlay", data={"category": ""}, headers={"X-Requested-With": "fetch"})
     assert db.get_task(conn, t["id"])["label"] == "grade hw"
     assert not client.post(f"/tasks/{t['id']}?embed=overlay", data={"due_date": "fri"}, headers={"X-Requested-With": "fetch"}) \

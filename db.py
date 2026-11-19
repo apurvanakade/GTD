@@ -617,10 +617,12 @@ def set_task_category(c, id, name):
     name = category_name(name)
     c.execute("DELETE FROM task_categories WHERE task_id = ?", (id,))
     if name:
-        known = c.execute("""SELECT name FROM task_categories WHERE name = ? GROUP BY name COLLATE BINARY
-            ORDER BY count(*) DESC, max(task_id) DESC LIMIT 1""", (name,)).fetchone()
-        name = category_name(known["name"]) if known else name
-        c.execute("UPDATE task_categories SET name = ? WHERE name = ?", (name, name))  # NOCASE: every spelling
+        # Matched by Python's casefold(), not the column's NOCASE, which folds only ASCII ("école" vs "École").
+        spellings = [r["name"] for r in c.execute("""SELECT name FROM task_categories GROUP BY name COLLATE BINARY
+            ORDER BY count(*) DESC, max(task_id) DESC""") if r["name"].casefold() == name.casefold()]
+        name = category_name(spellings[0]) if spellings else name
+        c.executemany("UPDATE task_categories SET name = ? WHERE name = ? COLLATE BINARY",
+                      [(name, s) for s in spellings])
         c.execute("INSERT INTO task_categories (task_id, name) VALUES (?, ?)", (id, name))
 
 
