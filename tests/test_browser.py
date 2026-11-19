@@ -223,6 +223,26 @@ def test_on_a_touch_screen_the_calendar_button_is_the_native_picker(browser, liv
     assert errors == []
 
 
+def test_send_to_inbox_on_a_row_needs_hover(browser, page, live, conn):
+    """A row's ↩ shows on hover; with no hover (a phone, an iPad) it would be an invisible tap target beside ▶ that
+    clears the task's project and dates, so it isn't there at all (the task page's ↩ still is)."""
+    page.goto(live + "/next")
+    row = page.locator("li.task", has=page.locator("form.to-inbox")).first
+    assert row.locator(".to-inbox button").evaluate("b => getComputedStyle(b).opacity") == "0"
+    row.hover()
+    sync_api.expect(row.locator(".to-inbox button")).to_be_visible()
+    assert row.locator(".to-inbox button").evaluate("b => getComputedStyle(b).opacity") == "1"
+    ctx = browser.new_context(has_touch=True, is_mobile=True, viewport={"width": 1024, "height": 768})
+    touch = ctx.new_page()
+    touch.goto(live + "/next")
+    assert touch.evaluate("matchMedia('(hover: none)').matches")
+    assert touch.locator("form.to-inbox").count() > 0
+    assert touch.eval_on_selector_all(".task .to-inbox", "els => els.every(e => !e.offsetParent)")
+    touch.goto(live + "/tasks/2?embed=overlay")
+    sync_api.expect(touch.get_by_role("button", name="Send to inbox")).to_be_visible()
+    ctx.close()
+
+
 def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, conn):
     page.goto(live + "/tasks/2?embed=overlay")
     page.fill("input[name=due_date]", "")

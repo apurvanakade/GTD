@@ -25,6 +25,9 @@
     {% if t.remind_at and not t.reminded_at and not closed %}<span class="remind" title="Reminder {{ t.remind_at|local_minute }}">🔔</span>
     {%- else %}<span class="remind"></span>{% endif %}
   </span>
+  {# ↩ back to the inbox, cleared to title and notes, to clarify from scratch; its slot stays on an inbox item. #}
+  {% if not closed and not t.inbox %}<form method="post" action="{{ url_for('to_inbox', id=t.id) }}" class="to-inbox"><button title="Back to the inbox: clears project, step, dates, repeat, reminder and contexts" aria-label="Send to inbox">↩</button></form>
+  {%- elif not closed %}<span class="to-inbox"></span>{% endif %}
   {% if timer and timer.task_id == t.id %}<form method="post" action="{{ url_for('timer_stop') }}" class="timing"><button title="Stop the timer">■</button></form>
   {% elif not closed %}<form method="post" action="{{ url_for('task_start', id=t.id) }}" class="start"><button title="Start the timer">▶</button></form>{% endif %}
   {% if closed %}<form method="post" action="{{ url_for('revive', id=t.id) }}" class="row-btn"><button title="Bring it back">Revive</button></form>{% endif %}

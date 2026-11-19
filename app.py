@@ -860,6 +860,16 @@ def make_later(id):
     return back()
 
 
+@app.post("/tasks/<int:id>/to-inbox")
+def to_inbox(id):
+    """↩: back to the inbox to be clarified from scratch, keeping only title, category and notes (db.send_to_inbox())."""
+    c = conn()
+    db.get_task(c, id) or abort(404)
+    if db.send_to_inbox(c, id):
+        flash("Back in the inbox, cleared to its title and notes.")
+    return back()
+
+
 # --- projects --------------------------------------------------------------
 
 @app.route("/projects", defaults={"status": "active"})

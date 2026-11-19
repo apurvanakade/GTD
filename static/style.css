@@ -406,9 +406,16 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps .meta { display: flex; gap: 8px; }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
-.task .start button, .task .timing button, .task .set-step button, .task .row-btn button {
+.task .start button, .task .timing button, .task .set-step button, .task .row-btn button, .task .to-inbox button {
   padding: 0 6px; font-size: var(--fs-xs); line-height: 20px; color: var(--muted);
 }
+/* ↩ (.to-inbox) shows on hover, in a slot every open row keeps, so ▶ lines up down the list. */
+.task .to-inbox { width: 1.6em; }
+.task .to-inbox button { opacity: 0; }
+.task:is(:hover, :focus-within) .to-inbox button { opacity: 1; }
+.task .to-inbox button:hover { color: var(--accent); }
+/* With no hover (a phone, an iPad) ↩ would be an invisible tap target beside ▶: it goes, and the task page's ↩ does the job. */
+@media (hover: none) { .task .to-inbox { display: none; } }
 /* ▶ (.start) always shows, so the timer starts from anywhere. */
 .task .start button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
@@ -636,7 +643,7 @@ textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line
   /* A row: grip and ✓ (or ▸), then the title across the line, leaving room for ▶ alone; a date, a button or a slider
      wraps below, right-aligned. Empty cells and hover-only controls (no hover here) take no room. */
   .tasks > li.task > :is(.title, .name) { flex: 1 1 calc(100% - 6rem); }
-  .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step) { display: none; }
+  .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step), .task .to-inbox { display: none; }
   .tasks > li.task { justify-content: flex-end; }
   .task > .balance { flex-basis: 100%; max-width: none; margin: 0; }
   .visions .task form { flex-basis: 100%; }

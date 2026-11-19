@@ -303,6 +303,19 @@ def update_task(c, id, today=None, **fields):
     _next_to_top(c, id, was_next=current is not None and current["step"] == "next")
 
 
+@atomic
+def send_to_inbox(c, id):
+    """Back to the inbox, to be clarified from scratch: an open task keeps only its title, category, notes and time;
+    its project or H0, step, due date, repeat, reminder, contexts, area and someday review go. On top of the Inbox."""
+    t = get_task(c, id)
+    if t is None or t["state"] != "open":
+        return False
+    update_task(c, id, project_id=None, ground=0, step=None, position=None, due_date=None, recur=None, remind_at=None)
+    for table in ("task_contexts", "task_areas", "task_reviews"):
+        c.execute(f"DELETE FROM {table} WHERE task_id = ?", (id,))
+    return True
+
+
 def list_of(c, id):
     return (c.execute(f"SELECT {LIST} FROM tasks t WHERE t.id = ?", (id,)).fetchone() or [None])[0]
 
