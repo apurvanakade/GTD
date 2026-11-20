@@ -496,7 +496,9 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .review > li > h2 { margin-top: 14px; }
 /* Review: the steps by name down the left, the shown step's card on the right. */
 .review-page { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 32px; align-items: start; }
-.review-steps { position: sticky; top: 12px; margin-top: 12px; font-size: var(--fs-s); }
+.review-steps { position: sticky; top: 12px; margin-top: 12px; font-size: var(--fs-s); transition: top .2s; }
+:root { --nav-h: 0px; }  /* the nav's height, which app.js keeps set */
+body:not(.nav-hidden) .review-steps { top: calc(var(--nav-h) + 12px); }  /* under the nav while it shows */
 .review-steps h3 { margin: 14px 0 4px; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 .review-steps h3:first-child { margin-top: 4px; }
 .review-steps ol { list-style: none; margin: 0; padding: 0; }
@@ -545,7 +547,6 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .guide ol { padding-left: 1.4em; }
 .guide li + li { margin-top: 4px; }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
-.deck .count.clear { color: var(--muted); }
 .streak { display: flex; gap: 3px; flex-wrap: wrap; }
 .streak .wk { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
 .streak .wk.hit { background: var(--accent); }

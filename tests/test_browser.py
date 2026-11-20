@@ -1016,6 +1016,23 @@ def test_review_arrow_keys_move_between_steps(page, live):
     page.wait_for_url("**/review?step=nexts")
 
 
+def test_review_step_list_sticks_below_the_shown_nav(page, live):
+    """The step list is sticky; when the nav slides back on scrolling up, the list moves down under it, not behind it."""
+    page.set_viewport_size({"width": 1200, "height": 500})
+    page.goto(live + "/review?step=projects")
+    page.evaluate("document.querySelector('.review-page').style.minHeight = '3000px'")  # a long card
+    page.mouse.move(600, 300)
+    page.mouse.wheel(0, 1000)
+    page.wait_for_function("document.body.classList.contains('nav-hidden')")
+    page.mouse.wheel(0, -100)
+    page.wait_for_function("!document.body.classList.contains('nav-hidden')")
+    page.wait_for_function("""document.querySelector('.review-steps').getBoundingClientRect().top
+        >= document.querySelector('nav').getBoundingClientRect().bottom""")
+    page.wait_for_timeout(300)  # past both transitions: still clear of the nav
+    assert page.evaluate("""document.querySelector('.review-steps').getBoundingClientRect().top
+        >= document.querySelector('nav').getBoundingClientRect().bottom""")
+
+
 # --- review fixes (2026-10-27) ---------------------------------------------
 
 def test_a_failed_tick_off_reloads_instead_of_faking_it(page, live, conn):

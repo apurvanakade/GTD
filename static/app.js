@@ -43,11 +43,17 @@ async function refreshProjects() {
   if (!document.querySelector('nav')) return;  // in a frame: no nav
   let last = scrollY;
   // Shown throughout a project drag, since its tabs are drop targets (below).
-  const show = on => document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
+  // --nav-h: the shown nav's height, so a sticky panel below it (Review's step list) can stick under it.
+  const navH = () => document.querySelector('nav')?.offsetHeight ?? 0;  // looked up each time: refreshNav() replaces it
+  const show = on => {
+    document.documentElement.style.setProperty('--nav-h', navH() + 'px');
+    document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
+  };
+  show(true);
   addEventListener('scroll', () => {
     const y = Math.max(0, Math.min(scrollY, document.documentElement.scrollHeight - innerHeight));
     if (Math.abs(y - last) < 4) return;
-    show(y < last || y <= (document.querySelector('nav')?.offsetHeight ?? 0));  // looked up each time: refreshNav() replaces it
+    show(y < last || y <= navH());
     last = y;
   }, {passive: true});
   addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
