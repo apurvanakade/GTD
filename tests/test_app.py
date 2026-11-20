@@ -933,6 +933,15 @@ def test_project_step_without_title_is_ignored(client, conn):
     client.post("/capture", data={"project_id": str(pid), "title": "first"})
     assert db.project_tasks(conn, pid)[0]["step"] == "later"  # "next" is always chosen, even with no next yet
     assert b'<option selected>later</option>' in client.get(f"/projects/{pid}?embed=overlay").data
+    # A closed project's page files its new step there too, which reopens it
+    db.close_project(conn, pid, "abandoned")
+    conn.commit()
+    page = client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True)
+    line = page.split('<form method="post" action="/capture" class="add">')[1].split("</form>")[0]
+    assert preset(line) == {"project_id": str(pid), "step": "later"}
+    client.post("/capture", data={"title": "second", **preset(line)})
+    assert [t["title"] for t in db.project_tasks(conn, pid) if t["state"] == "open"] == ["second"]
+    assert db.get_project(conn, pid)["status"] == "active"
 
 
 def test_capture_on_inbox_has_no_flash_and_blank_is_ignored(client, conn):
@@ -3518,6 +3527,10 @@ def test_a_task_added_on_a_filtered_list_stays_in_view(client, conn):
     for page, step, title in (("/next", "next", "i"), ("/waiting", "waiting", "j")):
         client.post("/capture", data={"project_id": "h0", "step": step, "title": title}, headers=on(page))
         assert names(conn, title) == ["home"]
+    # An active project's undated next action is on Next too, so it stays in view, unflashed
+    r = client.post("/capture", data={"project_id": str(pid), "step": "next", "title": "k"}, headers=on("/next"),
+                    follow_redirects=True)
+    assert names(conn, "k") == ["home"] and "Added to P: k" not in r.get_data(as_text=True)
 
 
 def test_reordering_a_filtered_list_leaves_the_hidden_rows_in_place(client, conn):

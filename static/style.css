@@ -152,8 +152,8 @@ textarea { resize: vertical; }
 .md-tools button:hover { color: var(--fg); background: var(--soft); }
 .md-tools .tool-icon { width: 1.1em; height: 1em; vertical-align: -.15em; }  /* drawn edge to edge, so no blank margin of its own */
 .md-tools button:has(.tool-icon) { padding: 0 4px; min-width: 0; }
-[hidden] { display: none !important; }
-input:disabled { opacity: .45; cursor: not-allowed; }  /* Repeats while someday or waiting: seen to be off */  /* `button`'s display would otherwise show a hidden one */
+[hidden] { display: none !important; }  /* `button`'s display would otherwise show a hidden one */
+input:disabled { opacity: .45; cursor: not-allowed; }  /* Repeats while someday or waiting: seen to be off */
 button, .button {
   cursor: pointer; display: inline-block; background: transparent; border-color: transparent; color: var(--muted);
 }

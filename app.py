@@ -338,6 +338,8 @@ def landing(t):
     if t["step"] == "waiting":
         pages.add(url_for("waiting"))
     if t["project_id"]:
+        if t["step"] == "next" and not t["due_date"] and t["project_status"] == "active":
+            pages.add(url_for("next_view"))  # Next lists active projects' undated next actions too
         return t["project_title"], pages | {url_for("project_view", id=t["project_id"])}
     if t["step"] == "next":
         return ("the calendar", pages) if t["due_date"] else ("Next", {url_for("next_view")})
