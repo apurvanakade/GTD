@@ -198,7 +198,7 @@ document.addEventListener('keydown', e => {
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
-// Done's bands: remember which you opened or folded, per page. Only a click is saved: a band that starts open fires
+// Done's and Someday's bands: remember which you opened or folded, per page. Only a click is saved: a band that starts open fires
 // 'toggle' too, which would freeze today's default.
 const foldKey = d => `fold:${location.pathname}:${d.dataset.band}`;
 const restoreBands = () => document.querySelectorAll('details.band').forEach(d => {
