@@ -434,7 +434,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 }
 .done button:hover { border-color: var(--accent); background: var(--accent); }
 .task .peek { width: 1.2em; padding: 0; line-height: 20px; color: var(--muted); }
-.peek-all, .tickled-toggle { font-size: var(--fs-s); }
+.peek-all, .tickled-toggle, .pin-panel { font-size: var(--fs-s); }
 .task .steps { display: none; flex-basis: 100%; list-style: none; margin: 0; padding: 0 0 0 calc(1.2em + 10px); }
 .task.open .steps { display: block; margin-top: 2px; }
 /* The fold-out slides open and shut (height to auto, then display), fading as it goes; clipped with room for a step's tint (its -6px margin) and focus ring. */
