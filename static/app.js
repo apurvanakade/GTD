@@ -200,10 +200,11 @@ document.addEventListener('change', e => {
   })();
 });
 // ⌘Enter (Ctrl+Enter) submits the form it's typed in, as its first submit button would (a task page's hidden Save, an
-// add line's ⏎, a dialog's Add), from a field where Enter doesn't (the notes) too. A task page's box saves first.
+// add line's ⏎, a dialog's Add). Not from the notes, where it cycles a line's list state (notes.js). A task page's
+// box saves first.
 document.addEventListener('keydown', e => {
   const f = e.target.closest?.('form');
-  if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || !f) return;
+  if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || !f || e.target.closest('.md-editor')) return;
   e.preventDefault();
   if ('saveOnChange' in f.dataset) e.target.blur?.();  // its change saves the box in the background
   f.requestSubmit(f.querySelector('button:not([type=button]):not([type=reset]), input[type=submit]'));

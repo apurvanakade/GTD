@@ -151,7 +151,10 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.click(".add-inbox")
     page.fill(".capture-dialog input[name=title]", "meta enter in the dialog")
     page.locator(".capture-dialog .md-editor").click()
-    page.keyboard.press("ControlOrMeta+Enter")  # from its notes too
+    page.keyboard.press("ControlOrMeta+Enter")  # in the notes it makes a list item instead
+    assert page.locator(".capture-dialog textarea[name=notes]").input_value() == "- "
+    page.keyboard.press("ControlOrMeta+z")
+    page.locator(".capture-dialog input[name=title]").press("ControlOrMeta+Enter")
     page.wait_for_selector(".flashes >> text=Added to inbox: meta enter in the dialog")
     # Added with notes, the next task's notes start empty, and ⌘Z can't bring the last one's back.
     page.click(".add-inbox")
@@ -160,7 +163,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.keyboard.type("first")
     page.wait_for_timeout(1100)  # a pause: two undo steps
     page.keyboard.type(" notes")
-    page.keyboard.press("ControlOrMeta+Enter")
+    page.locator(".capture-dialog input[name=title]").press("ControlOrMeta+Enter")
     page.wait_for_selector(".flashes >> text=Added to inbox: with notes")
     page.click(".add-inbox")
     notes = page.locator(".capture-dialog .md-editor")
@@ -589,9 +592,8 @@ def test_add_line_shows_every_field_once_focused(page, live, conn, path):
       return els[els.length - 1].matches('.primary'); }""")  # ⏎ is last in tab order, after every field
     line.locator("[name=title]").fill("by meta enter")
     line.locator("[name=due_date]").fill("today")  # required on the calendar
-    line.locator(".md-editor").click()
     with page.expect_navigation():
-        page.keyboard.press("ControlOrMeta+Enter")  # from the notes, where Enter is a new line
+        line.locator("[name=due_date]").press("ControlOrMeta+Enter")
     assert conn.execute("SELECT 1 FROM tasks WHERE title = 'by meta enter'").fetchone()
 
 
@@ -1437,6 +1439,27 @@ def test_notes_toolbar_formats(page, live, conn):
     assert notes_text(page) == "[# milk]()"
     page.keyboard.type("https://x.com")
     assert notes_text(page) == "[# milk](https://x.com)"
+    # Indent and outdent, on a list.
+    pid = db.add_reference(conn, "Tools", notes="- a\n- b\n\n- c")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
+    ed.click()
+    page.keyboard.press("ControlOrMeta+End")
+    tool("indent")
+    assert notes_text(page) == "- a\n- b\n\n  - c" and ed.locator(".ind").count() == 1
+    tool("indent")
+    page.keyboard.type("d")  # the caret stayed at the line's end
+    assert notes_text(page) == "- a\n- b\n\n    - cd"
+    page.keyboard.press("Enter")  # a new item keeps the indent
+    page.keyboard.type("e")
+    assert notes_text(page) == "- a\n- b\n\n    - cd\n    - e"
+    for _ in range(3):  # the third has nothing left to take off
+        tool("outdent")
+    assert notes_text(page) == "- a\n- b\n\n    - cd\n- e"
+    page.keyboard.press("ControlOrMeta+a")
+    tool("indent")  # every selected line but the blank one
+    assert notes_text(page) == "  - a\n  - b\n\n      - cd\n  - e"
+    page.keyboard.press("ControlOrMeta+z")
+    assert notes_text(page) == "- a\n- b\n\n    - cd\n- e"
 
 
 def test_checklists_tick_continue_and_reset(page, live, conn):
@@ -1459,6 +1482,29 @@ def test_checklists_tick_continue_and_reset(page, live, conn):
     page.locator(".md-tools [data-tool=untick]").click()
     assert notes_text(page) == "- [ ] passport\n- [ ] charger\n"
     assert page.locator(".md-tools [data-tool=untick]").is_hidden()
+    # ⌘Enter cycles a line, or every selected line, through the list states.
+    pid = db.add_reference(conn, "Tools", notes="milk\n\n  - [x] eggs\n1. tea")
+    page.goto(live + f"/reference/{pid}?embed=overlay")
+    ed.click()
+    page.keyboard.press("ControlOrMeta+Home")
+    page.keyboard.press("End")
+    cycle = lambda: page.keyboard.press("ControlOrMeta+Enter")
+    states = ["- milk", "- [ ] milk", "- [x] milk", "milk"]
+    for want in states:  # one line: plain → bullet → box → ticked → plain; the page doesn't submit
+        cycle()
+        assert notes_text(page).split("\n")[0] == want
+    page.keyboard.type("!")  # the caret stayed at the line's end
+    assert notes_text(page).startswith("milk!\n")
+    page.keyboard.press("ControlOrMeta+a")
+    cycle()  # every line takes the first one's next state, keeping its indent and number; blank lines stay
+    assert notes_text(page) == "- milk!\n\n  - eggs\n1. tea"
+    cycle()
+    assert notes_text(page) == "- [ ] milk!\n\n  - [ ] eggs\n1. [ ] tea"
+    cycle()
+    cycle()
+    assert notes_text(page) == "milk!\n\n  eggs\ntea"
+    page.keyboard.press("ControlOrMeta+z")
+    assert notes_text(page) == "- [x] milk!\n\n  - [x] eggs\n1. [x] tea"
 
 
 def test_dragging_an_inbox_row_onto_someday(page, live, conn):
