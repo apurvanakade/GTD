@@ -41,7 +41,6 @@ def seed(c):
     stalled = db.add_project(c, "Stalled")
     waiting = db.add_project(c, "Waiting proj", status="waiting")
     db.set_project_outcome(c, waiting, "permit granted")
-    someday = db.add_project(c, "Someday proj", status="someday")
     done = db.add_project(c, "Done proj")  # marked done once its step is
     db.add_task(c, "inbox item", notes="from email")
     db.add_task(c, "buy tiles", step="next", project_id=active, due_date="2026-10-01")
@@ -52,7 +51,6 @@ def seed(c):
     db.add_task(c, "bins", step="next", ground=1, recur="every 2 weeks", due_date="2026-11-03")
     db.add_task(c, "call mum", step="next", ground=1, due_date="2026-10-24", remind_at="2026-10-23T13:00:00+00:00")
     db.add_task(c, "parked step", step="next", project_id=waiting)
-    db.add_task(c, "dream step", step="later", project_id=someday)
     db.add_task(c, "legacy orphan", step="next")
     finished = db.add_task(c, "old tiles", step="next", project_id=done)
     db.complete_task(c, finished, TODAY)
@@ -60,19 +58,18 @@ def seed(c):
     db.abandon_task(c, db.add_task(c, "dropped idea", step="later", project_id=active))
     db.add_reference(c, "Plumber", notes="Ask for Sam\nhttps://example.com/plumber")
     db.add_reference(c, "Packing", notes="- [ ] passport\n- [x] charger")  # a checklist
-    db.set_project_tickle(c, someday, "2027-01-01")
     db.set_project_outcome(c, active, "Kitchen retiled")  # "Stalled" has none: ⚠ for both reasons
     db.timer_start(c, 2, NOW - timedelta(hours=2))  # "buy tiles"
     db.timer_stop(c, NOW - timedelta(hours=1))
     db.timer_start(c, 7, NOW - timedelta(minutes=10))  # "call mum", still running
-    db.mark_reviewed(c, someday, NOW - timedelta(days=15))  # someday: reviewed 2 weeks ago
+    db.mark_reviewed(c, waiting, NOW - timedelta(days=15))  # reviewed 2 weeks ago
     db.mark_reminded(c, 4, NOW)  # "quote from Bob": sent; "call mum" still to come
     db.complete_review(c, TODAY - timedelta(days=7))
     db.toggle_review_step(c, "sweep")  # this week's review under way
     db.update_scratchpad(c, 1, "call the bank")  # the pad: cleared once (so Undo clear shows), then new text
     db.clear_scratchpad(c)
     db.update_scratchpad(c, 1, "book the dentist")
-    dropped = db.add_project(c, "Dropped proj", status="someday")
+    dropped = db.add_project(c, "Dropped proj")
     db.add_task(c, "given-up step", step="next", project_id=dropped)
     db.close_project(c, dropped, "abandoned")
     db.add_task(c, "parcel from Ann", ground=1, step="waiting", due_date="2026-10-27")  # H0, waiting
@@ -84,7 +81,7 @@ def seed(c):
     measure = db.add_task(c, "measure wall", step="next", ground=1)
     mail = db.add_task(c, "sort mail", step="next", ground=1, remind_at="2026-10-23T13:00:00+00:00")
     # The horizons' links: Home's vision line, the goal serving Home, Kitchen moving the goal, Stalled under Work, vacuum
-    # Home's upkeep. Waiting proj, Someday proj and the other H0 actions serve nothing: loose on the map.
+    # Home's upkeep. Waiting proj and the other H0 actions serve nothing: loose on the map.
     db.set_area_vision(c, area, "A calm house we love")
     db.set_goal_area(c, goal, area)
     db.link_project(c, active, goal)
@@ -105,6 +102,6 @@ def seed(c):
     db.set_task_category(c, finished, "Discrete Math")
     db.set_task_category(c, italian, "Languages")  # Someday's bands: "Languages", then "Other" for "juggle"
     db.add_task(c, "juggle", ground=1, step="someday")
-    return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
+    return {"active": active, "stalled": stalled, "waiting": waiting, "done": done,
             "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum,
             "measure": measure, "mail": mail}

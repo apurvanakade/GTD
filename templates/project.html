@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, date_input, add_form, tally, tickler with context %}
+{% from "_task.html" import row, date_input, add_form, tally with context %}
 {% block title %}{{ p.title }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -11,9 +11,8 @@
     <input name="title" value="{{ p.title }}" class="big" aria-label="Project title">
     {% if p.warning %}<span class="warn" title="{{ p.warning }}">⚠</span>{% endif %}
     <select name="status" data-submit aria-label="Status" title="Status: saves when picked">
-      {% for s in ['active', 'waiting', 'someday', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
+      {% for s in ['active', 'waiting', 'done', 'abandoned'] %}<option{% if s == p.status %} selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>
-    {% if p.status == 'someday' %}{{ tickler(p.tickle_on) }}{% endif %}
     {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" formtarget="_top" class="danger" title="Delete project" aria-label="Delete project" onclick="return confirm('Delete this project?')">✕</button>{% endif %}
   </div>
   <div class="title-line outcome">

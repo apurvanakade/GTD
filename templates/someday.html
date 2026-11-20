@@ -5,7 +5,7 @@
   {%- if tasks %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
 {# H0's someday tasks, in a band per category (someday_groups(), "Other" last), each band a list of its own to drag
-   in: drag one onto Next or a project to commit to it. Someday projects have their own tab. No context filter:
+   in: drag one onto Next or a project to commit to it. No context filter:
    its ideas aren't picked by context (a task's contexts are kept). #}
 {% if tasks %}{% for key, name, rows in groups %}
 <details class="band" data-band="{{ key }}" open>

@@ -58,14 +58,6 @@ def same_origin_only():
         abort(403)
 
 
-@app.before_request
-def tickle_projects():
-    """A someday project whose tickler date has come turns active, before anything is shown (one cheap query when
-    none has)."""
-    if request.endpoint != "static":
-        db.activate_tickled(conn(), today())
-
-
 CAPTURE_VIEWS = ("inbox", "next_view", "waiting", "someday")  # the task lists: base.html puts the capture line on them
 
 
@@ -108,7 +100,7 @@ def stopped_timer():
         return e
 
 
-NEW = "__new__"  # project_select's "＋ New project…" options (_task.html): __new__, __new__waiting, __new__someday
+NEW = "__new__"  # project_select's "＋ New project…" options (_task.html): __new__, __new__waiting
 
 
 def form_value(name):
@@ -277,24 +269,6 @@ def split_title(title):
             fields[name] = value
         title = title[:m.start()].rstrip()
     return title, fields
-
-
-def tickle_from_form():
-    """The form's tickler date (`tickle_on`, in words): {"tickle_on": date}, or {"tickle_on": None} when blank, or {}
-    when absent or unreadable (flashed)."""
-    if "tickle_on" not in request.form:
-        return {}
-    raw = form_value("tickle_on")
-    if not raw:
-        return {"tickle_on": None}
-    due = parse_due(raw)
-    return {"tickle_on": due} if due else {}
-
-
-@app.template_global()
-def someday_url(x):
-    """A row of db.someday_to_review(): a task's page or a project's."""
-    return url_for("task_view" if x["kind"] == "task" else "project_view", id=x["id"])
 
 
 def orphaned(project_id, ground, say=None):
@@ -604,7 +578,7 @@ def waiting():
 
 
 def hide_tickled(rows):
-    """Someday's rows (tasks or projects) without those tickled to a later date, unless ?tickled=1 asks for them,
+    """Someday's tasks without those tickled to a later date, unless ?tickled=1 asks for them,
     and the template variables for that toggle."""
     later = lambda x: x["tickle_on"] and x["tickle_on"] > today().isoformat()
     show = request.args.get("tickled") == "1"
@@ -614,8 +588,7 @@ def hide_tickled(rows):
 
 @app.route("/someday")
 def someday():
-    """H0's someday tasks; what's tickled to a later date is out of sight until then. Someday projects have their
-    own tab."""
+    """H0's someday tasks; what's tickled to a later date is out of sight until then."""
     tasks, toggle = hide_tickled(db.someday_tasks(conn()))
     return render_template("someday.html", tasks=tasks, groups=someday_groups(tasks),
                            project_groups=db.project_groups(conn()), **toggle)
@@ -635,10 +608,8 @@ def someday_groups(tasks):
 
 @app.post("/someday/add")
 def someday_add():
-    """The review's new ideas: an H0 someday task or a someday project (kind=project)."""
-    if request.form.get("kind") == "project":
-        add_project_from_form("someday")
-    elif form_value("title"):
+    """The review's new ideas: an H0 someday task."""
+    if form_value("title"):
         fields = task_fields_from_form()
         db.add_task(conn(), fields.pop("title"), today=today(), ground=1, step="someday",
                     **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
@@ -777,7 +748,7 @@ def unseen(rows):
 
 @app.post("/projects/<int:id>/reviewed")
 def project_reviewed(id):
-    """The review's projects and someday steps: this project has been looked at now."""
+    """The review's projects step: this project has been looked at now."""
     db.get_project(conn(), id) or abort(404)
     db.mark_reviewed(conn(), id, now())
     return back("review")
@@ -981,21 +952,18 @@ def to_inbox(id):
 
 # --- projects --------------------------------------------------------------
 
-@app.route("/projects/<any(active, waiting, someday):status>")
+@app.route("/projects/<any(active, waiting):status>")
 def projects_view(status):
-    """A project tab: the active, waiting or someday projects. Active offers the closed ones (?done=1); someday
-    hides what's tickled to a later date (?tickled=1 shows it)."""
+    """A project tab: the active or waiting projects. Active offers the closed ones (?done=1)."""
     c = conn()
-    projects, toggle = (hide_tickled if status == "someday" else lambda ps: (ps, {}))(db.projects(c, status))
     show = status == "active" and request.args.get("done") == "1"
-    return render_template("projects.html", status=status, projects=projects, steps=db.open_steps(c, status),
+    return render_template("projects.html", status=status, projects=db.projects(c, status), steps=db.open_steps(c, status),
                            project_groups=db.project_groups(c),
                            show_done=show, toggle_url=toggle_url(show),
-                           done_projects=[p for s in db.CLOSED for p in db.closed_projects(c, s)] if show else [],
-                           **toggle)
+                           done_projects=[p for s in db.CLOSED for p in db.closed_projects(c, s)] if show else [])
 
 
-@app.post("/projects/order/<any(active, waiting, someday):status>")
+@app.post("/projects/order/<any(active, waiting):status>")
 def projects_order(status):
     """A project tab's drag-and-drop sends the project ids in their new order."""
     c = conn()
@@ -1005,7 +973,7 @@ def projects_order(status):
 
 @app.post("/projects/<int:id>/move")
 def project_move(id):
-    """A project row dropped on a nav tab (a project tab, Waiting, Someday: that status; Done: closed as done, its open
+    """A project row dropped on a nav tab (a project tab, Active or Waiting: that status; Done: closed as done, its open
     steps with it, as its page's status select does); open projects only."""
     c = conn()
     p = db.get_project(c, id) or abort(404)
@@ -1019,21 +987,16 @@ def project_move(id):
     return ("", 204) if fetched() else back("projects_view", status="active")
 
 
-def add_project_from_form(status="active"):
-    """The add line's new project (a project tab, the review's new ideas)."""
-    if title := form_value("title"):
-        new_project_made(title, status=status)
-
-
 @app.post("/projects")
 def project_create():
     """A project tab's add line: a project of that tab's status (the hidden `status`)."""
     status = request.form.get("status")
-    add_project_from_form(status if status in PROJECT_STATUSES else "active")
+    if title := form_value("title"):
+        new_project_made(title, status=status if status in PROJECT_STATUSES else "active")
     return back("projects_view", status="active")
 
 
-PROJECT_STATUSES = ("active", "waiting", "someday")  # what the status select sets; done or abandoned closes it
+PROJECT_STATUSES = ("active", "waiting")  # what the status select sets; done or abandoned closes it
 
 
 def project_list(p, **args):
@@ -1067,14 +1030,6 @@ def project_view(id):
             db.update_project(c, id, **fields)
             if "outcome" in request.form:
                 db.set_project_outcome(c, id, request.form["outcome"])
-            tickle = tickle_from_form()
-            if tickle and fields.get("status", p["status"]) == "someday":  # someday projects only
-                db.set_project_tickle(c, id, tickle["tickle_on"])
-                if tickle["tickle_on"] and tickle["tickle_on"] <= today().isoformat():
-                    db.activate_tickled(c, today())
-                    flash("Its tickler date has come: it's active now.")
-        if fields.get("status") == "someday" != p["status"]:
-            flash(f"Moved “{p['title']}” to someday / maybe.")
         return back()
     if not request.args.get("embed"):  # a project opens over its list, like a task
         return redirect(project_home(p))
@@ -1102,7 +1057,7 @@ def project_revive(id):
     c = conn()
     db.get_project(c, id) or abort(404)
     db.revive_project(c, id)
-    flash("Revived to someday / maybe.")
+    flash("Revived as active: pick its next action.")
     return back()
 
 
@@ -1474,7 +1429,7 @@ def horizon_todo(tree):
             "vision": int(blank(tree["vision"])) + sum(not a["h"]["vision"] for a in tree["areas"]),
             "goal": sum(bool(g["warning"]) for g in tree["goals"]),
             "area": sum(bool(a["warning"]) for a in tree["areas"]),
-            "projects": sum(p["horizon_id"] is None and p["status"] != "someday" for p in tree["projects"]),
+            "projects": sum(p["horizon_id"] is None for p in tree["projects"]),
             "ground": sum(t["horizon_id"] is None for t in tree["tasks"])}
 
 

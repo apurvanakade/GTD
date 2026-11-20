@@ -61,7 +61,7 @@
     'what': "Every result you've committed to finish that takes more than one step, within about a year. Each one should serve a goal or an area; one serving nothing is either missing its reason or not worth doing.",
     'steps': [
       "For each project serving nothing (on top), pick the goal or area it serves.",
-      "If none fits, ask why it's there: move it to someday or abandon it, or add the area it reveals.",
+      "If none fits, ask why it's there: abandon it, or add the area it reveals.",
       "Fix every ⚠: open the project, write what done looks like under its title, and pick at least one next action.",
       "Look for missing projects: anything you're worrying about or keep thinking about is probably a project nobody wrote down.",
     ],
@@ -219,7 +219,7 @@
     {% set loose = rows|selectattr('horizon_id', 'none')|list %}
     {% if rows %}<ul class="plain linked">
       {%- for x in loose + rows|rejectattr('horizon_id', 'none')|list %}
-      <li{% if x in loose and (kind == 'task' or x.status != 'someday') %} class="flagged"{% endif %}>
+      <li{% if x in loose %} class="flagged"{% endif %}>
         {%- set warning = x.warning if kind == 'project' else '' %}
         <a href="{{ url_for('project_view' if kind == 'project' else 'task_view', id=x.id) }}"{% if warning %} title="{{ warning }}"{% endif %}>{% if warning %}⚠ {% endif %}{{ x.title }}</a>
         {% if (x.status if kind == 'project' else x.step) not in ('active', 'next') %}<span class="meta">{{ x.status if kind == 'project' else x.step }}</span>{% endif %}
