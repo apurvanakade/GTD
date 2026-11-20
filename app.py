@@ -17,13 +17,6 @@ import db
 import extcal
 import recur
 
-HORIZON_LEVELS = [
-    ("purpose", "H5 · Purpose & principles", "Why do I do what I do? What principles won't I compromise?"),
-    ("vision", "H4 · Vision (3–5 years)", "What does wild success look like at work, at home, in health?"),
-    ("goal", "H3 · Goals (1–2 years)", "Goal"),
-    ("area", "H2 · Areas of focus", "Area"),
-]
-
 app = Flask(__name__)
 app.secret_key = os.environ.get("GTD_SECRET", os.urandom(16))
 NTFY_URL = os.environ.get("NTFY_URL")  # the ntfy topic reminders are POSTed to; unset (dev, tests): none are sent
@@ -1372,35 +1365,89 @@ if NTFY_URL:
 
 # --- horizons --------------------------------------------------------------
 
-# The Horizons page's cards, top down; horizons.html has one card per key.
 # An area's balance, -3 .. 3: how much attention it gets against what it needs.
 BALANCE = {-3: "Far too little", -2: "Too little", -1: "A bit too little", 0: "Balanced",
            1: "A bit too much", 2: "Too much", 3: "Far too much"}
-# Purpose (H5) and vision (H4) share one card, "purpose": two notes, one above the other.
-HORIZON_STEPS = ("purpose", "goal", "area", "projects", "ground")
-HORIZON_TITLES = {**{level: label for level, label, _ in HORIZON_LEVELS}, "purpose": "H5 · H4 · Purpose & vision",
-                  "projects": "H1 · Projects", "ground": "H0 · Ground level"}
-HORIZON_FLOORS = (("H5", "purpose", None), ("H4", "purpose", "vision"), ("H3", "goal", None),  # label, card, place on it
-                  ("H2", "area", None), ("H1", "projects", None), ("H0", "ground", None))
+# The Horizons page's steps, top down, one card each in horizons.html: (key, level, name). Its `?level=` is the key.
+HORIZON_STEPS = (("purpose", "H5", "Purpose"), ("vision", "H4", "Vision"), ("goal", "H3", "Goals"),
+                 ("area", "H2", "Areas"), ("projects", "H1", "Projects"), ("ground", "H0", "Actions"))
+HORIZON_KEYS = tuple(key for key, _, _ in HORIZON_STEPS)
+# What a goal's or area's add line can make under it (the kind select's options).
+HORIZON_ADDS = {"goal": ("project", "action"), "area": ("project", "action", "goal")}
 
 
 @app.template_global()
 def horizon_url(h):
-    """Where a horizon opens: a goal's or area's overlay, or its place on the card purpose and vision share."""
+    """Where a horizon opens: a goal's or area's overlay, or purpose's or vision's card."""
     if h["level"] in ("goal", "area"):
         return url_for("horizon_view", id=h["id"])
-    return url_for("horizons_view", level="purpose", _anchor="vision" if h["level"] == "vision" else None)
+    return url_for("horizons_view", level=h["level"])
+
+
+def horizon_todo(tree):
+    """{step: how many things on its card want attention}: an empty purpose or vision note, an area with no vision
+    line, a goal or area with a ⚠, an active or waiting project or an H0 action serving nothing."""
+    blank = lambda h: not (h["notes"] or "").strip()
+    return {"purpose": int(blank(tree["purpose"])),
+            "vision": int(blank(tree["vision"])) + sum(not a["h"]["vision"] for a in tree["areas"]),
+            "goal": sum(bool(g["warning"]) for g in tree["goals"]),
+            "area": sum(bool(a["warning"]) for a in tree["areas"]),
+            "projects": sum(p["horizon_id"] is None and p["status"] != "someday" for p in tree["projects"]),
+            "ground": sum(t["horizon_id"] is None for t in tree["tasks"])}
 
 
 @app.route("/horizons")
 def horizons_view():
-    level = request.args.get("level")
-    if level not in HORIZON_STEPS:
-        level = None  # the overview: every horizon, folded out
+    """Steps down the left (H5 … H0, each with what wants attention counted), one card on the right: `?level=`, else
+    the first with something to do, else purpose."""
     c = conn()
-    return render_template("horizons.html", balance_words=BALANCE, levels=HORIZON_LEVELS, steps=HORIZON_STEPS, floors=HORIZON_FLOORS, step=level, titles=HORIZON_TITLES,
-                           items=db.horizons(c), projects=db.projects(c), ground=db.h0_actions(c),
-                           graph=None if level else db.horizon_graph(c, BALANCE))
+    tree = db.horizon_tree(c)
+    todo = horizon_todo(tree)
+    step = request.args.get("level")
+    if step not in HORIZON_KEYS:
+        step = next((key for key in HORIZON_KEYS if todo[key]), "purpose")
+    return render_template("horizons.html", balance_words=BALANCE, steps=HORIZON_STEPS, keys=HORIZON_KEYS, step=step,
+                           tree=tree, todo=todo, adds=HORIZON_ADDS)
+
+
+@app.post("/horizons/<int:id>/add")
+def horizon_add(id):
+    """A goal's or area's add line on Horizons: a new active project (`kind=project`), H0 next action (`action`) or,
+    under an area, goal (`goal`), already linked here. The action is next: adding it here is the decision to do it."""
+    c = conn()
+    h = db.get_horizon(c, id) or abort(404)
+    kind = request.form.get("kind")
+    if kind not in HORIZON_ADDS.get(h["level"], ()):
+        abort(400)
+    if not form_value("title"):
+        return back("horizons_view")
+    with db.transaction(c):
+        if kind == "project":
+            db.link_project(c, new_project_made(form_value("title"), status="active"), id)
+        elif kind == "goal":
+            db.set_goal_area(c, db.add_horizon(c, "goal", form_value("title")), id)
+        else:
+            fields = task_fields_from_form()
+            tid = db.add_task(c, fields.pop("title"), today=today(), ground=1, step="next",
+                              **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
+            db.link_task(c, tid, id)
+    return back("horizons_view")
+
+
+@app.post("/horizons/serve")
+def horizon_serve():
+    """Horizons' "Serves …" selects: hang a project (`kind=project`) or H0 action (`task`), `id`, under the goal or
+    area `horizon`, or a goal (`goal`) under the area `horizon` (blank: under none)."""
+    c = conn()
+    link = {"project": db.link_project, "task": db.link_task, "goal": db.set_goal_area}.get(request.form.get("kind"))
+    id, horizon = request.form.get("id", ""), request.form.get("horizon", "")
+    if not link or not id.isdigit() or horizon and not horizon.isdigit():
+        abort(400)
+    try:
+        link(c, int(id), int(horizon) if horizon else None)
+    except ValueError:
+        abort(400)
+    return ("", 204) if request.headers.get("X-Requested-With") == "fetch" else back("horizons_view")
 
 
 @app.post("/horizons")

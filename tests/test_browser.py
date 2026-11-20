@@ -89,24 +89,25 @@ def test_every_nav_page_loads_without_js_errors(page, live):
 
 
 def test_tick_off_fades_the_row_in_place(page, live, conn):
-    page.goto(live + "/horizons?level=ground")
+    page.goto(live + "/next")
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
-    assert page.url == live + "/horizons?level=ground"
+    assert page.url == live + "/next"
     assert row(page, "vacuum").get_attribute("class").split().count("gone") == 1
     assert db.get_task(conn, 5)["state"] == "done"
 
 
 def test_ticking_off_the_timed_task_drops_the_timer_pill(page, live):
-    page.goto(live + "/horizons?level=ground")
+    page.goto(live + "/next")
     assert page.locator(".running-timer").count() == 1  # "call mum" is being timed
+    page.locator("details[data-band=week] summary").click()  # due in two days
     row(page, "call mum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
     assert page.locator(".running-timer").count() == 0
 
 
 def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
-    page.goto(live + "/horizons?level=ground")
+    page.goto(live + "/next")
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
     gone = row(page, "vacuum")
@@ -116,7 +117,7 @@ def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
     page.keyboard.press("Escape")
     gone.get_by_role("button", name="Revive").click()  # like any done row, it can be revived
     page.wait_for_selector("li.task:has-text('vacuum') form.done")
-    assert page.url == live + "/horizons?level=ground"
+    assert page.url == live + "/next"
 
 
 def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
@@ -1239,42 +1240,15 @@ def test_clicking_a_rows_button_does_not_open_it(page, live):
     assert page.url == live + "/projects/active"
 
 
-def test_horizons_map(page, live, conn):
-    """The overview draws every horizon as a graph: hovering lights a node's neighbours, a swatch hides a level (H0
-    actions start hidden), a click opens a record's overlay, and the purpose & vision card's area lines save in place."""
-    page.goto(live + "/horizons")
-    node = lambda title: page.locator(".graph .node", has=page.locator(f"text={title}")).first
-    sync_api.expect(node("Home")).to_be_visible()
-    sync_api.expect(node("vacuum")).to_be_hidden()  # H0 starts hidden
-    page.locator(".swatch[data-kind=task]").click()
-    sync_api.expect(node("vacuum")).to_be_visible()
-    node("Home").hover()
-    sync_api.expect(node("Ship the kitchen")).to_have_class(re.compile(r"\blit\b"))
-    assert "lit" not in node("Work").get_attribute("class")
-    page.locator(".swatch[data-kind=goal]").click()
-    sync_api.expect(node("Ship the kitchen")).to_be_hidden()
-    page.reload()  # what's hidden is remembered
-    sync_api.expect(node("Home")).to_be_visible()
-    sync_api.expect(node("Ship the kitchen")).to_be_hidden()
-    node("Home").locator("circle").click()
-    sync_api.expect(page.locator("dialog.overlay iframe")).to_have_attribute("src", re.compile(r"/horizons/\d+\?embed=overlay"))
-    assert page.url == live + "/horizons"
-    # Panned or zoomed, a resize keeps the view's scale (a fit would change it).
-    page.locator("dialog.overlay .close").click()
-    page.wait_for_selector("dialog.overlay", state="detached")
-    view = lambda: page.locator("svg.graph > g").first.get_attribute("transform")
-    svg = page.locator("svg.graph").bounding_box()
-    page.mouse.move(svg["x"] + svg["width"] / 2, svg["y"] + svg["height"] / 2)
-    page.mouse.wheel(0, -300)
-    zoomed = view()
-    page.set_viewport_size({"width": 1000, "height": 700})
-    page.wait_for_function(f"document.querySelector('svg.graph > g').getAttribute('transform') !== {zoomed!r}")
-    assert re.search(r"scale\(([\d.]+)\)", view())[1] == re.search(r"scale\(([\d.]+)\)", zoomed)[1]
+def test_horizons_walk_and_link_in_place(page, live, conn):
+    """→ walks the levels; a card's guide waits behind its ?; an area's vision line saves as it's left; a "Serves …"
+    select saves on pick, and a goal's add line adds under it, both staying on the card."""
     page.goto(live + "/horizons?level=purpose")
+    page.keyboard.press("ArrowRight")
+    page.wait_for_url("**/horizons?level=vision")
     guide = page.locator("#guide-vision")
-    sync_api.expect(guide).to_be_hidden()  # the guide waits behind its ?
-    page.get_by_role("button", name="How to work H4 · Vision (3–5 years)").click()
-    sync_api.expect(guide).to_be_visible()
+    sync_api.expect(guide).to_be_hidden()
+    page.get_by_role("button", name="How to work Vision").click()
     sync_api.expect(guide.get_by_text("Do this")).to_be_visible()
     page.keyboard.press("Escape")
     sync_api.expect(guide).to_be_hidden()
@@ -1282,8 +1256,20 @@ def test_horizons_map(page, live, conn):
     box.fill("Teaching what I love")
     with page.expect_response("**/vision"):
         box.press("Tab")  # saved as it's left
-    assert page.url.endswith("?level=purpose")  # saved in place
+    assert page.url.endswith("?level=vision")
     assert db.horizons(conn)["area"][1]["vision"] == "Teaching what I love"
+    page.goto(live + "/horizons?level=projects")
+    page.locator(".linked li", has_text="Waiting proj").locator("select").select_option(label="Ship the kitchen")
+    page.wait_for_load_state()
+    sync_api.expect(page.locator(".linked li", has_text="Waiting proj").locator("select option:checked")).to_have_text("Ship the kitchen")
+    assert page.url.endswith("?level=projects")
+    page.goto(live + "/horizons?level=goal")
+    line = page.locator(".tree > li", has=page.locator(".head", has_text="Ship the kitchen")).locator("form.add")
+    line.locator("input[name=title]").fill("Order cabinets")
+    line.locator("select[name=kind]").select_option("project")
+    line.locator("input[name=title]").press("Enter")
+    sync_api.expect(page.locator(".tree .kids").get_by_role("link", name="⚠ Order cabinets")).to_be_visible()
+    assert page.url.endswith("?level=goal")
 
 
 def test_remind_box_previews_how_it_reads(page, live):
@@ -1754,11 +1740,12 @@ def test_an_areas_balance_slider_saves_in_place_on_its_page_and_h2(page, live, c
             slider.press("ArrowLeft")
     assert page.locator(".balance output").text_content() == "Too little"
     assert db.horizons(conn)["area"][0]["balance"] == -2 and page.evaluate("window.stay")
-    page.goto(live + "/horizons?level=area")  # H2's sliders move it too
+    page.goto(live + "/horizons?level=area")  # the Areas card's sliders move it too (→ doesn't walk to Projects)
     page.evaluate("window.stay = true")
+    home = page.locator(".tree > li", has=page.locator(".head .title", has_text="Home"))
     with page.expect_response(lambda r: r.url.endswith("/balance")):
-        row(page, "Home").locator(".balance input").press("ArrowRight")
-    assert row(page, "Home").locator(".balance output").text_content() == "A bit too little"
+        home.locator(".balance input").press("ArrowRight")
+    assert home.locator(".balance output").text_content() == "A bit too little"
     assert db.horizons(conn)["area"][0]["balance"] == -1 and page.evaluate("window.stay")
 
 

@@ -56,7 +56,7 @@
 <section class="horizon-links">
   {% if h.level == 'area' %}{{ links_row('Goals', 'goal', links.goals, links.more_goals, 'goal…') }}{% endif %}
   {{ links_row('Projects', 'project', links.projects, links.more_projects, 'project…') }}
-  {% if h.level == 'area' %}{{ links_row('Actions', 'task', links.tasks, links.more_tasks, 'H0 action…') }}{% endif %}
+  {{ links_row('Actions', 'task', links.tasks, links.more_tasks, 'H0 action…') }}
 </section>
 {% endif %}
 {% endblock %}

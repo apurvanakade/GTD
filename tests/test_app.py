@@ -11,7 +11,7 @@ import dates
 import db
 import extcal
 import recur
-from app import BALANCE, HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, app, local_input
+from app import HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
 
 OUT_OF_RANGE = ("in 99999999999 days", "in 99999 weeks", "in 999999 years", "in " + "9" * 5000 + " days", "9999-12-31", "12/31/9999")
@@ -680,42 +680,42 @@ def horizon_card(html):
     return m and m.group(1), m and re.sub(r'<dialog class="guide-dialog".*?</dialog>', "", m.group(2), flags=re.S)
 
 
-def test_horizons_show_one_level_at_a_time(client, conn):
-    """One card per horizon, reached directly by its elevator button (H5 … H0), on the overview too, where none is lit."""
+def test_horizons_page_is_laid_out_like_the_review(client, conn):
+    """The levels down the left (H5 … H0), each counting what wants attention; one card on the right, ‹ › to its
+    neighbours; `?level=` picks it, else the first with something to do."""
     seed(conn)
-    html = client.get("/horizons").get_data(as_text=True)
-    floors = lambda page: re.findall(r'<a class="floor( on)?" href="([^"]+)"[^>]*>(H\d)</a>', page)
-    assert 'class="horizon-map"' in html
-    assert floors(html) == [("", "/horizons?level=purpose", "H5"), ("", "/horizons?level=purpose#vision", "H4"),
-                            ("", "/horizons?level=goal", "H3"), ("", "/horizons?level=area", "H2"),
-                            ("", "/horizons?level=projects", "H1"), ("", "/horizons?level=ground", "H0")]  # none lit
-    assert html.count('class="swatch') == len(HORIZON_STEPS) == 5  # a line per level under it (H5 and H4 share one)
-    for step in HORIZON_STEPS:
-        assert f'href="/horizons?level={step}"' in html
-    assert horizon_card(html)[0] is None
-    assert 'class="horizon-map"' in client.get("/horizons?level=bogus").get_data(as_text=True)
-    assert '<a href="/horizons">Horizons</a>' in client.get("/horizons?level=goal").get_data(as_text=True)  # crumb back
-    top = client.get("/horizons?level=purpose").get_data(as_text=True)
-    assert horizon_card(top)[0] == "purpose" and not ADD_LINE.search(top)  # no add line there
-    assert [label for on, _, label in floors(top) if on] == ["H5", "H4"]  # they share this card
-    assert 'id="vision"' in top
-    goal = client.get("/horizons?level=goal").get_data(as_text=True)
-    assert [label for on, _, label in floors(goal) if on] == ["H3"]
-    assert 'rel="prev"' not in goal and 'rel="next"' not in goal  # not a sequence
+    get = lambda q="": client.get("/horizons" + q).get_data(as_text=True)
+    steps = lambda page: re.findall(r'<a href="/horizons\?level=(\w+)"[^>]*><span class="lv">(H\d)</span>(\w+)(?:<span class="n">(\d+)</span>)?</a>', page)
+    # Purpose and vision empty (1 each); Work has no vision line; the goal lacks an outcome, Work a standard and Home
+    # one too; Waiting proj serves nothing (Someday proj doesn't count); call mum, bins and parcel from Ann are loose.
+    assert steps(get("?level=goal")) == [("purpose", "H5", "Purpose", "1"), ("vision", "H4", "Vision", "2"),
+                                         ("goal", "H3", "Goals", "1"), ("area", "H2", "Areas", "2"),
+                                         ("projects", "H1", "Projects", "1"), ("ground", "H0", "Actions", "3")]
+    assert [k for k, _, _ in HORIZON_STEPS] == [s for s, *_ in steps(get())]
+    assert horizon_card(get())[0] == "purpose" == horizon_card(get("?level=bogus"))[0]  # the first with something to do
+    db.update_horizon(conn, db.horizons(conn)["purpose"][0]["id"], notes="Help people understand")
+    assert horizon_card(get())[0] == "vision"
+    assert re.findall(r'<li id="(\w+)" class="step', get("?level=area")) == ["area"]  # only the shown card
+    top = get("?level=purpose")
+    assert 'rel="prev"' not in top and '<a class="next" href="/horizons?level=vision" rel="next"' in top
+    goal = get("?level=goal")
+    assert 'href="/horizons?level=vision" rel="prev"' in goal and 'href="/horizons?level=area" rel="next"' in goal
+    assert 'rel="next"' not in get("?level=ground")
     key, card = horizon_card(goal)
-    assert key == "goal" and "Ship the kitchen" in card and "Home" not in card
-    assert '<input type="hidden" name="level" value="goal">' in goal  # the add line adds to the card shown
-    assert '<span class="count">1</span>' in card
-    area = client.get("/horizons?level=area").get_data(as_text=True)
-    assert '<input type="hidden" name="level" value="area">' in area and ">Home<" in horizon_card(area)[1]
-    assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
-    # Each level's guide hides in a dialog behind a ? beside its heading: one each on the cards, two on purpose & vision.
-    for page, keys in ((top, ["purpose", "vision"]), (goal, ["goal"]), (area, ["area"])):
-        assert re.findall(r"getElementById\('guide-(\w+)'\)\.showModal\(\)", page) == keys
-        assert re.findall(r'<dialog class="guide-dialog" id="guide-(\w+)">', page) == keys
+    assert key == "goal" and "Ship the kitchen" in card
+    assert '<input type="hidden" name="level" value="goal">' in goal  # the page's add line adds to the card shown
+    area = get("?level=area")
+    assert '<input type="hidden" name="level" value="area">' in area and "Home</a>" in horizon_card(area)[1]
+    for page in (top, get("?level=vision"), get("?level=projects"), get("?level=ground")):
+        assert '<input type="hidden" name="level"' not in page
+    # Each card's guide hides in a dialog behind a ? beside its heading.
+    for page, key in ((top, "purpose"), (goal, "goal"), (area, "area")):
+        assert re.findall(r"getElementById\('guide-(\w+)'\)\.showModal\(\)", page) == [key]
+        assert re.findall(r'<dialog class="guide-dialog" id="guide-(\w+)">', page) == [key]
         assert "Do this" not in horizon_card(page)[1]
     purpose, vision = (db.horizons(conn)[level][0]["id"] for level in ("purpose", "vision"))
-    assert top.index(f'data-autosave="/autosave/horizons/{purpose}"') < top.index(f'data-autosave="/autosave/horizons/{vision}"')  # one card, H5 above H4
+    assert f'data-autosave="/autosave/horizons/{purpose}"' in top
+    assert f'data-autosave="/autosave/horizons/{vision}"' in get("?level=vision")
 
 
 def test_reference(client, conn):
@@ -974,7 +974,7 @@ def iso(dt):
 def test_timer_starts_from_a_task_and_starting_another_stops_it(client, conn):
     a = db.add_task(conn, "write", step="next", ground=1)
     b = db.add_task(conn, "read", step="next", ground=1)
-    assert b'action="/tasks/%d/start"' % a in client.get("/horizons?level=ground").data  # ▶ on task rows
+    assert b'action="/tasks/%d/start"' % a in client.get("/next").data  # ▶ on task rows
     client.post(f"/tasks/{a}/start", headers={"Referer": "/next"})
     assert db.timer_running(conn)["task_id"] == a
     page = client.get("/inbox").get_data(as_text=True)  # the running timer shows on every page
@@ -1600,7 +1600,7 @@ def test_fuzzy_score():
 
 def test_search_suggest(client, conn):
     seed(conn)
-    for word, url in (("vision", "/horizons?level=purpose#vision"), ("purpose", "/horizons?level=purpose")):
+    for word, url in (("vision", "/horizons?level=vision"), ("purpose", "/horizons?level=purpose")):
         assert [s["url"] for s in client.get(f"/search/suggest?q={word}").get_json() if s["kind"] == word] == [url]
         assert f'href="{url}"' in client.get(f"/search?q={word}").get_data(as_text=True)
     r = client.get("/search/suggest?q=tils").get_json()
@@ -2700,7 +2700,8 @@ def test_an_area_is_a_note_on_horizons(client, conn):
     page = client.get(f"/horizons/{ids['area']}?embed=overlay").get_data(as_text=True)
     assert "Clean and calm" in page and "Archive" not in page and 'aria-label="Delete"' in page
     card = horizon_card(client.get("/horizons?level=area").get_data(as_text=True))[1]
-    assert ">Home<" in card and "project" not in card.lower().replace("projects", "")
+    assert "⚠ Home</a>" in card and 'title="No standard"' in card
+    assert "Ship the kitchen</a>" in card and ">vacuum</a>" in card  # what hangs under it
     assert "Clean and calm" not in card and 'class="balance unset"' in card  # its slider, not the notes' first line
     assert 'placeholder="Kept up when…"' in page
     client.post(f"/horizons/{ids['area']}", data={"title": "Home", "notes": "x", "outcome": " Tidy weekly "})
@@ -2748,7 +2749,7 @@ def chips(page):
 
 
 def test_horizons_link_up_and_down(client, conn):
-    """Areas are the spine: a goal serves an area, a project hangs under a goal or an area, an H0 action under an area;
+    """Areas are the spine: a goal serves an area, a project or H0 action hangs under a goal or an area;
     one parent each, set only from the goal's or area's page."""
     ids = seed(conn)
     home, work, goal, kitchen, stalled = ids["area"], ids["work"], ids["goal"], ids["active"], ids["stalled"]
@@ -2773,7 +2774,9 @@ def test_horizons_link_up_and_down(client, conn):
     for bad in (dict(kind="task", add=task("buy tiles")), dict(kind="task", add=task("inbox item")),  # no H0 tasks
                 dict(kind="task", add=999), dict(kind="goal", add=home), dict(kind="bogus", add=1), dict(kind="project", add="x")):
         assert link(home, **bad).status_code == 400, bad
-    assert link(goal, kind="task", add=ids["vacuum"]).status_code == 400  # an H0 action hangs under an area only
+    assert link(goal, kind="task", add=ids["vacuum"]).status_code == 204  # an H0 action can serve a goal too
+    assert chips(page(goal))["task"] == ["vacuum"] and "task" not in chips(page(home))
+    link(home, kind="task", add=ids["vacuum"])
     assert link(goal, kind="goal", add=goal).status_code == 400
     purpose = db.horizons(conn)["purpose"][0]["id"]
     assert link(purpose, kind="project", add=kitchen).status_code == 400
@@ -2782,11 +2785,11 @@ def test_horizons_link_up_and_down(client, conn):
     # A repeat's next instance stays under its area.
     new = db.complete_task(conn, ids["vacuum"], TODAY)
     assert conn.execute("SELECT area_id FROM task_areas WHERE task_id = ?", (new,)).fetchone()[0] == home
-    # An area's vision line: only on the purpose & vision card, which lists them under the vision.
+    # An area's vision line: only on the Vision card, which lists them under the vision.
     assert 'name="vision"' not in client.get(f"/horizons/{home}?embed=overlay").get_data(as_text=True)
     client.post(f"/horizons/{work}/vision", data={"vision": " Teaching what I love "})
     assert db.get_horizon(conn, work)["vision"] == "Teaching what I love"
-    vision = client.get("/horizons?level=purpose").get_data(as_text=True)
+    vision = client.get("/horizons?level=vision").get_data(as_text=True)
     assert ">A calm house we love</textarea>" in vision and ">Teaching what I love</textarea>" in vision
     assert f'action="/horizons/{work}/vision" data-background' in vision
     client.post(f"/horizons/{home}/vision", data={"vision": ""})  # blank clears it
@@ -2798,32 +2801,72 @@ def test_horizons_link_up_and_down(client, conn):
     assert db.get_task(conn, ids["vacuum"])
 
 
-def test_horizon_graph(client, conn):
-    """The map's data: every horizon as nodes and edges, drawn by static/graph.js and nothing else."""
+def test_horizon_tree(client, conn):
+    """What hangs under each goal and area, why one is ⚠, and every open project and H0 action with its parent."""
     ids = seed(conn)
-    g = db.horizon_graph(conn, BALANCE)
-    kinds = {n["id"]: n["kind"] for n in g["nodes"]}
-    title = {n["title"]: n for n in g["nodes"]}  # seed's titles are unique
-    edges = {(kinds[a], title_of(g, a), title_of(g, b)) for a, b in g["edges"]}
-    assert ("purpose", "Purpose & vision", "Home") in edges and ("purpose", "Purpose & vision", "Work") in edges
-    assert sum(n["kind"] == "purpose" for n in g["nodes"]) == 1 and "vision" not in kinds.values()  # H5 and H4 one node
-    assert ("area", "Home", "Ship the kitchen") in edges and ("goal", "Ship the kitchen", "Kitchen") in edges
-    assert ("area", "Work", "Stalled") in edges and ("area", "Home", "vacuum") in edges
-    loose = {n["title"] for n in g["nodes"]} - {b for _, _, b in edges} - {"Purpose & vision"}
-    assert loose >= {"Waiting proj", "Someday proj", "call mum", "parcel from Ann"}  # serving nothing: no edge up
-    assert "Done proj" not in title and "Dropped proj" not in title and "learn Italian" not in title  # closed; someday H0
-    assert "buy tiles" not in title  # a project's steps aren't on it
-    assert title["Someday proj"]["dim"] and not title["Kitchen"]["dim"] and title["parcel from Ann"]["dim"]
-    assert title["Stalled"]["warn"] == "No next action, no desired outcome"
-    assert title["Home"]["sub"] == "A calm house we love" and title["Work"]["sub"] == "A bit too much"
-    assert title["Kitchen"]["url"] == f"/projects/{ids['active']}" and title["Purpose & vision"]["url"] == "/horizons?level=purpose"
-    html = client.get("/horizons").get_data(as_text=True)
-    assert json.loads(re.search(r'<script type="application/json" id="horizon-graph">(.*?)</script>', html, re.S).group(1)) == g
-    assert "/static/graph.js" in html
+    t = db.horizon_tree(conn)
+    titles = lambda rows: [r["title"] for r in rows]
+    (goal,), (home, work) = t["goals"], t["areas"]
+    assert goal["h"]["title"] == "Ship the kitchen" and goal["area"] == "Home" and titles(goal["projects"]) == ["Kitchen"]
+    assert goal["warning"] == "No desired outcome"  # Kitchen (active) moves it, it serves Home
+    assert [g["h"]["title"] for g in home["goals"]] == ["Ship the kitchen"] and titles(home["tasks"]) == ["vacuum"]
+    assert home["warning"] == "No standard" and titles(work["projects"]) == ["Stalled"]
+    loose = lambda rows: {r["title"] for r in rows if r["horizon_id"] is None}
+    assert loose(t["projects"]) == {"Waiting proj", "Someday proj"}  # closed ones aren't there
+    assert loose(t["tasks"]) == {"call mum", "Home: bins", "parcel from Ann"}  # next and waiting H0 actions only
+    assert "buy tiles" not in titles(t["tasks"])  # a project's steps aren't H0 actions
+    # Nothing moving a goal: only a waiting project under it; then an H0 next action moves it.
+    db.link_project(conn, ids["active"], None)
+    db.link_project(conn, ids["waiting"], ids["goal"])
+    assert db.horizon_tree(conn)["goals"][0]["warning"] == "Nothing moving it, No desired outcome"
+    db.link_task(conn, ids["vacuum"], ids["goal"])  # an H0 action can serve a goal too
+    db.set_horizon_outcome(conn, ids["goal"], "Kitchen done")
+    db.set_goal_area(conn, ids["goal"], None)
+    t = db.horizon_tree(conn)
+    assert t["goals"][0]["warning"] == "Serves no area" and titles(t["goals"][0]["tasks"]) == ["vacuum"]
+    assert t["areas"][0]["warning"] == "Nothing under it, No standard"
 
 
-def title_of(g, id):
-    return next(n["title"] for n in g["nodes"] if n["id"] == id)
+def test_horizons_add_under_a_goal_or_area(client, conn):
+    """A goal's or area's add line makes a project (active), an H0 next action or, under an area, a goal, linked
+    there; the Projects, Actions and Goals cards' "Serves …" selects move one under another goal or area, or none."""
+    ids = seed(conn)
+    goal, home = ids["goal"], ids["area"]
+    add = lambda id, **f: client.post(f"/horizons/{id}/add", data=f, headers={"Referer": "/horizons?level=goal"})
+    r = add(goal, kind="project", title="Order cabinets")
+    assert r.status_code == 302 and r.headers["Location"] == "/horizons?level=goal"  # stays on the card
+    p = next(p for p in db.horizon_tree(conn)["projects"] if p["title"] == "Order cabinets")
+    assert p["horizon_id"] == goal and p["status"] == "active"
+    add(goal, kind="action", title="Measure the wall @home")
+    a = next(t for t in db.horizon_tree(conn)["tasks"] if t["title"] == "Measure the wall")
+    assert a["horizon_id"] == goal and a["step"] == "next"
+    assert db.get_task(conn, a["id"])["ground"] and db.get_task(conn, a["id"])["contexts"] == "home"
+    add(home, kind="goal", title="Garden in bloom")
+    g = next(g for g in db.horizons(conn)["goal"] if g["title"] == "Garden in bloom")
+    assert g["area_id"] == home
+    assert add(goal, kind="goal", title="x").status_code == 400  # a goal under a goal
+    assert add(goal, kind="bogus", title="x").status_code == 400
+    assert add(db.horizons(conn)["purpose"][0]["id"], kind="project", title="x").status_code == 400
+    before = len(db.horizon_tree(conn)["projects"])
+    add(goal, kind="project", title="  ")  # blank: nothing
+    assert len(db.horizon_tree(conn)["projects"]) == before
+    card = client.get("/horizons?level=goal").get_data(as_text=True)
+    assert f'action="/horizons/{goal}/add"' in card and "Order cabinets" in card and "Measure the wall" in card
+    assert f'action="/horizons/{home}/add"' in client.get("/horizons?level=area").get_data(as_text=True)
+    serve = lambda **f: client.post("/horizons/serve", data=f, headers={"X-Requested-With": "fetch"})
+    assert serve(kind="project", id=ids["waiting"], horizon=home).status_code == 204
+    assert db.horizon_links(conn, db.get_horizon(conn, home))["projects"][-1]["id"] == ids["waiting"]
+    serve(kind="project", id=ids["waiting"], horizon="")
+    assert not any(p["id"] == ids["waiting"] for p in db.horizon_links(conn, db.get_horizon(conn, home))["projects"])
+    serve(kind="goal", id=goal, horizon=ids["work"])
+    assert db.get_horizon(conn, goal)["area_id"] == ids["work"]
+    for bad in (dict(kind="goal", id=goal, horizon=goal), dict(kind="task", id=ids["active"], horizon=home),
+                dict(kind="bogus", id=1, horizon=home), dict(kind="project", id="x", horizon=home),
+                dict(kind="project", id=ids["active"], horizon="x")):
+        assert serve(**bad).status_code == 400, bad
+    page = client.get("/horizons?level=ground").get_data(as_text=True)
+    assert page.index("call mum") < page.index("vacuum")  # loose ones first
+    assert f'<input type="hidden" name="id" value="{ids["vacuum"]}">' in page
 
 
 def test_task_rows_show_their_project(client, conn):

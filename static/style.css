@@ -686,39 +686,50 @@ a.who:hover { color: var(--fg); }
 .help-dialog dd { margin: 0; }
 .help-dialog kbd { font: inherit; font-size: .85em; padding: 0 .4em; border: 1px solid currentColor; border-radius: 4px; opacity: .8; }
 
-/* Horizons' map (static/graph.js): plain ink, darker the higher the level; ⚠ amber as everywhere; someday and waiting
-   faint; anything serving nothing a hollow dashed ring. Hovering fades all but a node and its neighbours. */
-.horizon-map { height: min(72vh, 680px); margin-top: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); overflow: hidden; }
-.graph { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; user-select: none; }
-.graph.dragging { cursor: grabbing; }
-.graph .edges line { stroke: var(--line); stroke-width: 1.2; }
-.graph .edges line.k-area { stroke: color-mix(in srgb, var(--muted) 45%, var(--line)); stroke-width: 1.6; }
-.graph .node { cursor: pointer; outline: none; }
-.graph .node circle { fill: var(--k); stroke: var(--card); stroke-width: 1.5; }
-.graph .node text { font-size: var(--fs-xs); fill: var(--muted); paint-order: stroke; stroke: var(--card); stroke-width: 3px; stroke-linejoin: round; display: none; }
-.graph .node:is(.labelled, :hover, :focus, .lit) text, .graph.zoomed .node text { display: inline; }
-.graph .node:is(.k-purpose, .k-area) text { font-size: var(--fs-m); fill: var(--fg); font-weight: 600; }
-.graph .node.k-goal text { font-size: var(--fs-s); fill: var(--fg); }
-.k-purpose { --k: var(--fg); }
-.k-area { --k: color-mix(in srgb, var(--fg) 75%, var(--card)); } .k-goal { --k: color-mix(in srgb, var(--fg) 55%, var(--card)); }
-.k-project { --k: color-mix(in srgb, var(--fg) 40%, var(--card)); } .k-task { --k: color-mix(in srgb, var(--fg) 28%, var(--card)); }
-.graph .node.warn { --k: var(--warn); }
-.graph .node.dim { opacity: .5; }
-.graph .node.loose circle { fill: var(--card); stroke: var(--k); stroke-dasharray: 2 2; }
-.graph .node.loose.warn circle { stroke: var(--warn); }
-.graph.focus :is(.node, line):not(.lit) { opacity: .12; }
-.graph.focus line.lit { stroke: var(--muted); }
-.graph .hidden { display: none; }
-/* Under the map, one line per level: its swatch shows or hides it there, its name opens its card. */
-.floors { display: flex; flex-wrap: wrap; gap: 6px; }
-.floor { width: 32px; height: 32px; display: grid; place-items: center; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--muted); color: var(--fg); font-size: var(--fs-xs); font-weight: 600; text-decoration: none; }
-.floor:hover { background: var(--soft); text-decoration: none; }
-.floor.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-.levels { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: var(--fs-s); }
-.levels li { display: flex; align-items: center; gap: 6px; }
-.levels a { color: var(--fg); }
-.levels .swatch { width: 12px; height: 12px; padding: 0; border-radius: 50%; background: var(--k); border: 1.5px solid var(--k); }
-.levels .swatch[aria-pressed=false] { background: transparent; opacity: .5; }
+/* Horizons: laid out as the review (.review-page), each level's tag in place of the review's tick circle. */
+.horizon-steps ol { margin-top: 4px; }
+.horizon-steps a::before { content: none; }
+.horizon-steps .lv { flex: none; width: 1.6rem; color: var(--muted); font-size: var(--fs-xs); font-weight: normal; font-variant-numeric: tabular-nums; }
+.step-foot .next { margin-left: auto; }
+/* Goals and areas: each a block (⠿, title, its area or balance), its outcome, what hangs under it, then its own add
+   line, quiet until used. Flagged ones' titles amber, as task rows'. */
+.tree { list-style: none; margin: 8px -6px 0; padding: 0; }
+.tree > li { padding: 8px 6px; border-radius: 8px; }
+.tree > li + li { margin-top: 6px; }
+.tree > li:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.tree .head { display: flex; align-items: center; gap: 8px; }
+.tree .grip { flex: none; width: 1rem; cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: 0; transition: opacity .2s ease-out; }
+.tree > li:hover .grip { opacity: 1; transition-duration: .1s; }
+.tree .head .title { flex: 1 1 0; min-width: 0; color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.tree .head .meta { color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
+.tree .head .balance { flex: 0 1 300px; margin: 0; }
+.tree .head .balance output { min-width: 7.5em; }
+.tree > li.flagged > .head .title, .tree .kids .flagged a { color: var(--warn); }
+.tree :is(.outcome, .kids, .add) { margin: 2px 0 0 calc(1rem + 8px); }
+.tree .outcome { color: var(--muted); font-size: var(--fs-s); }
+.tree .kids { list-style: none; padding: 0; font-size: var(--fs-m); }
+.tree .kids li { padding: 1px 0; }
+.tree .kids a { color: var(--fg); }
+.tree .kids a:hover { color: var(--accent); }
+.tree .kids a::before { color: var(--muted); display: inline-block; width: 1.1em; }
+.tree .kids .goal a::before { content: "◎"; }
+.tree .kids .project a::before { content: "▸"; }
+.tree .kids .action a::before { content: "·"; text-align: center; }
+.tree .kids .meta, .linked .meta { color: var(--muted); font-size: var(--fs-s); }
+.tree .add.under { margin-top: 4px; margin-bottom: 0; padding: 0 4px; border-color: transparent; background: transparent; font-size: var(--fs-s); }
+.tree .add.under:is(:hover, :focus-within) { border-color: var(--line); background: var(--card); }
+.tree .add.under:focus-within { border-color: var(--accent); }
+.tree .add.under .plus { font-size: 1rem; width: 14px; }
+.tree .add.under input[name="title"] { padding: 3px 6px; border-color: transparent; background: transparent; font-size: var(--fs-s); }
+.tree .add.under > .primary { width: 24px; height: 24px; }
+.tree .add.under .add-more { padding-left: 20px; padding-bottom: 4px; }
+/* Projects and Actions: every one, those serving nothing first, each with its "Serves …" select on the right. */
+.linked > li { align-items: center; }
+:is(.linked, .tree) .serves { margin: 0 0 0 auto; }
+:is(.linked, .tree) .serves select { padding: 2px 6px; font-size: var(--fs-s); color: var(--muted); border-color: transparent; background: transparent; max-width: 14rem; }
+:is(.linked, .tree) .serves select:is(:hover, :focus) { border-color: var(--line); color: var(--fg); }
+:is(.linked .flagged, .tree .unset) select { color: var(--warn); }
+
 /* A goal's or area's links (horizon.html): a row per kind of chips, each opening its record, × unlinking it. */
 .horizon-links { margin-top: 18px; }
 .horizon-links .links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
