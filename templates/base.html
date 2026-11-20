@@ -105,7 +105,7 @@
 </div>{% endif %}
 <dialog class="capture-dialog">
   <form class="capture" method="post" action="{{ url_for('capture') }}">
-    <h2>Add to inbox</h2>
+    <h2>Capture</h2>
     <p class="title-pair">{{ category_input() }}<input name="title" placeholder="What's on your mind?" autocomplete="off" required></p>
     {{ task_fields() }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
@@ -119,8 +119,8 @@
 {# Messages float over the page and fade, so a record page opened on its title (below) still shows them. #}
 {% with flashes = get_flashed_messages() %}{% if flashes %}<div class="flashes" role="status">{% for m in flashes %}<p class="flash">{{ m }}</p>{% endfor %}</div>{% endif %}{% endwith %}
 <main>
-  {#- The task lists' one add line (CAPTURE_VIEWS): it always captures to the inbox, where a task's destination is decided. #}
-  {% if capture_line %}{{ add_form(url_for('capture'), 'Capture to inbox…  ( / )', cls='capture', task=True) }}{% endif %}
+  {#- The task lists' one add line (CAPTURE_VIEWS): its File to and Step preset to the page's own list. #}
+  {% if capture_line %}{{ add_form(url_for('capture'), 'Add a task…  ( / )', cls='capture', task=True, file_to=capture_line[0], step=capture_line[1]) }}{% endif %}
   {# Every page: an optional link up, the heading with its few actions, then the page (add line, list). #}
   <header class="page">
     {% block crumb %}{% endblock %}

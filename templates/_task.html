@@ -102,16 +102,34 @@
   <input name="new_context" placeholder="new…" aria-label="New context" autocomplete="off" size="8">
 {% endmacro %}
 
-{# Every line and dialog adding a task: the task page's fields, all shown, none hidden: notes, then Due, Repeats and
-   Remind (each previewed as typed, static/app.js), contexts and the title marks' hint. `where` (a project, a step)
-   is a column of their row, before Due. #}
-{% macro task_fields(where='', due='', due_required=False) %}
+{# Where a task is filed, the task page's row and every task add form's: File to (blank: the inbox) and Step. Step
+   holds every step, those File to doesn't allow hidden and disabled (a project's next, waiting, later; H0's next,
+   waiting, someday; none for the inbox, the whole select then); on an add form fitStep() in static/app.js keeps that
+   so as File to changes. `open`: a closed task's page, with no Step and no inbox or Reference to file to.
+   `before` (Horizons' kind select) is a column before File to; `link` (the task page's ↗) follows the select. #}
+{% macro filing_fields(selected='', step=none, keep=none, open=True, reference=False, before='', link='') %}
+{%- set allowed = [] if not selected else ['next', 'waiting', 'someday'] if selected == 'h0' else ['next', 'waiting', 'later'] %}
+<div class="fields filing">
+  {%- if before %}<div class="where">{{ before }}</div>{% endif %}
+  <label>File to <span class="with-link">{{ project_select(selected, keep=keep, filing=open, reference=reference) }}{{ link }}</span></label>
+  {%- if open %}
+  <label class="step"{% if not allowed %} hidden{% endif %}>Step <select name="step"{% if not allowed %} disabled{% endif %}>
+    {%- for s in ['next', 'waiting', 'later', 'someday'] %}<option{% if s == step %} selected{% endif %}{% if s not in allowed %} hidden disabled{% endif %}>{{ s }}</option>{% endfor %}
+  </select></label>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Every line and dialog adding a task: the task page's fields, all shown, none hidden: notes, then File to and Step
+   (filing_fields(), preset to `file_to` and `step`, the page's own list), then Due, Repeats and Remind (each
+   previewed as typed, static/app.js), contexts and the title marks' hint. `where` (Horizons' kind) goes before
+   File to. A someday or waiting step leaves Repeats off, and a someday's date is its tickler, as on the task page. #}
+{% macro task_fields(where='', due='', due_required=False, file_to='', step=none) %}
 <div class="task-fields">
   <textarea name="notes" rows="2" placeholder="notes…" aria-label="Notes"></textarea>
+  {{ filing_fields(file_to, step, before=where) }}
   <div class="fields">
-    {%- if where %}<div class="where">{{ where }}</div>{% endif %}
-    <label>Due {{ date_input(due, required=due_required) }} <span class="hint when" data-parse="due"></span></label>
-    <label>Repeats <input name="recur" placeholder="weekly, every 2 weeks after done…"> <span class="hint when" data-parse="recur"></span></label>
+    <label><span class="due-word">{{ 'Tickler' if step == 'someday' else 'Due' }}</span> {{ date_input(due, required=due_required) }} <span class="hint when" data-parse="due"></span></label>
+    <label>Repeats <input name="recur" placeholder="weekly, every 2 weeks after done…"{% if step in ('someday', 'waiting') %} disabled title="Not while {{ step }}"{% endif %}> <span class="hint when" data-parse="recur"></span></label>
     <label>Remind {{ date_input(placeholder='tomorrow 9am, fri 14:00…', name='remind_at', label='Remind', type='datetime-local') }} <span class="hint when" data-parse="remind"></span></label>
   </div>
   <span class="contexts">{{ context_words() }}</span>
@@ -129,9 +147,9 @@
    task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there.
    Both mark their list `data-projects` (its kind), so refreshProjects() in static/app.js redraws every one of them
    once a background save made a project. #}
-{% macro project_select(selected=none, keep=none, filing=False) %}
-{#- One H0, whose step the task's step select picks. filing: the task page's File to, where blank means the inbox, and
-    Reference is on offer. #}
+{% macro project_select(selected=none, keep=none, filing=False, reference=False) %}
+{#- One H0, whose step the task's step select picks. filing: File to (filing_fields()), where blank means the inbox;
+    reference: Reference is on offer too (an open task's page). #}
 <select name="project_id" aria-label="{{ 'File to' if filing else 'Project' }}" data-projects="select">
   <option value="">{{ 'inbox' if filing else 'project…' }}</option>
   <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
@@ -139,7 +157,7 @@
     <option value="{{ new }}">＋ New project…</option>
     {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
   </optgroup>{% endfor %}
-  {% if filing %}<option value="reference">Reference</option>{% endif %}
+  {% if reference %}<option value="reference">Reference</option>{% endif %}
   {% if keep %}<optgroup label="Abandoned"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
 </select>
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">
@@ -223,14 +241,14 @@
 {% macro title_marks() %}<p class="hint marks">^fri due · *weekly repeat · !3pm remind · @home context · Math: first, category</p>{% endmacro %}
 
 {# Every page's add line: a title box, then the call block's fields. task=True: a task's, every field shown
-   (task_fields(), the call block's first, then `due`, `due_required`). #}
-{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', task=False, due='', due_required=False) %}
+   (task_fields(), the call block's first, then `due`, `due_required`, `file_to`, `step`). #}
+{% macro add_form(action, placeholder, cls='', id=none, list=none, button='⏎', label='Add', task=False, due='', due_required=False, file_to='', step=none) %}
 {% set more = caller() if caller is defined else '' %}
 <form method="post" action="{{ action }}" class="add{{ ' ' ~ cls if cls }}"{% if id %} id="{{ id }}"{% endif %}>
   <span class="plus" aria-hidden="true">+</span>
   {% if task %}{{ category_input() }}{% endif %}
   <input name="title" placeholder="{{ placeholder }}" autocomplete="off" required{% if list %} list="{{ list }}"{% endif %}>
-  {% if task %}{{ task_fields(more, due, due_required) }}{% elif more|trim %}<div class="add-more">{{ more }}</div>{% else %}{{ more }}{% endif %}
+  {% if task %}{{ task_fields(more, due, due_required, file_to, step) }}{% elif more|trim %}<div class="add-more">{{ more }}</div>{% else %}{{ more }}{% endif %}
   {#- Last in tab order, after every field; CSS shows it beside the title. -#}
   <button class="primary" title="{{ label }} (Enter, ⌘Enter)" aria-label="{{ label }}">{{ button }}</button>
 </form>

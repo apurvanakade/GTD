@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row, project_select, add_form, task_fields, context_chip, category_input, nothing_here with context %}
+{% from "_task.html" import row, add_form, task_fields, context_chip, category_input, nothing_here with context %}
 {% block title %}{{ 'Agenda' if agenda is not none else 'Calendar' }}{% endblock %}
 {% block heading %}<h1>{% if agenda is not none %}Agenda{% elif week %}{{ week.strftime('%-d %b') }} – {{ end.strftime('%-d %b %Y') }}{% else %}{{ first.strftime('%B %Y') }}{% endif %}</h1>{% endblock %}
 {% block actions %}
@@ -18,7 +18,7 @@
 </span>
 {% endblock %}
 {% block body %}
-{% call add_form(url_for('calendar_view'), 'Add a dated next action…', task=True, due=today, due_required=True) %}<label>Project {{ project_select() }}</label>{% endcall %}
+{{ add_form(url_for('capture'), 'Add a dated next action…', task=True, due=today, due_required=True, file_to='h0', step='next') }}
 {% if agenda is not none %}
 {#- Every open task due today or overdue, from every list, under two headings: Overdue (oldest first), then Today.
     Dated next actions live only here and on the calendar, so nothing due is ever out of sight. No drag. #}
@@ -29,10 +29,10 @@
 {% else %}
 {#- A day number opens this, on that day (the script below). #}
 <dialog class="day-dialog">
-  <form method="post" action="{{ url_for('calendar_view') }}">
+  <form method="post" action="{{ url_for('capture') }}">
     <h2>Add</h2>
     <p class="title-pair">{{ category_input() }}<input name="title" placeholder="Add a dated next action…" autocomplete="off" required></p>
-    {% set where %}<label>Project {{ project_select() }}</label>{% endset %}{{ task_fields(where, today, True) }}
+    {{ task_fields(due=today, due_required=True, file_to='h0', step='next') }}
     <p class="row"><button class="primary">Add</button> <button type="submit" formmethod="dialog" formnovalidate>Cancel</button></p>
   </form>
 </dialog>

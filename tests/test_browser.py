@@ -144,7 +144,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.fill(".capture-dialog input[name=title]", "from the dialog")
     page.evaluate("window.mark = 1")
     page.keyboard.press("Enter")  # added in the background: the page stays
-    page.wait_for_selector(".flashes >> text=Added to inbox: from the dialog")
+    page.wait_for_selector(".flashes >> text=Added to the inbox: from the dialog")
     box = page.locator(".flash").bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)  # pointed at, it goes
     page.wait_for_selector(".flashes", state="detached")
@@ -157,7 +157,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     assert page.locator(".capture-dialog textarea[name=notes]").input_value() == "- "
     page.keyboard.press("ControlOrMeta+z")
     page.locator(".capture-dialog input[name=title]").press("ControlOrMeta+Enter")
-    page.wait_for_selector(".flashes >> text=Added to inbox: meta enter in the dialog")
+    page.wait_for_selector(".flashes >> text=Added to the inbox: meta enter in the dialog")
     # Added with notes, the next task's notes start empty, and ⌘Z can't bring the last one's back.
     page.click(".add-inbox")
     page.fill(".capture-dialog input[name=title]", "with notes")
@@ -166,7 +166,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     page.wait_for_timeout(1100)  # a pause: two undo steps
     page.keyboard.type(" notes")
     page.locator(".capture-dialog input[name=title]").press("ControlOrMeta+Enter")
-    page.wait_for_selector(".flashes >> text=Added to inbox: with notes")
+    page.wait_for_selector(".flashes >> text=Added to the inbox: with notes")
     page.click(".add-inbox")
     notes = page.locator(".capture-dialog .md-editor")
     notes.click()
@@ -574,7 +574,8 @@ def test_search_suggestions_keyboard(page, live):
 def test_add_line_shows_every_field_once_focused(page, live, conn, path):
     page.goto(live + path)
     line = page.locator("main form.add")
-    fields = (".md-editor", "[name=due_date]", "[name=recur]", "[name=remind_at]", "[name=new_context]", ".marks")
+    fields = (".md-editor", "[name=project_id]", "[name=due_date]", "[name=recur]", "[name=remind_at]",
+              "[name=new_context]", ".marks")
     assert all(line.locator(f).is_hidden() for f in fields)
     assert line.locator("[name=category]").is_hidden()  # no empty box on an idle line
     line.locator("[name=title]").click()  # a click on the idle line starts in the category box
@@ -597,6 +598,33 @@ def test_add_line_shows_every_field_once_focused(page, live, conn, path):
     with page.expect_navigation():
         line.locator("[name=due_date]").press("ControlOrMeta+Enter")
     assert conn.execute("SELECT 1 FROM tasks WHERE title = 'by meta enter'").fetchone()
+
+
+def test_add_line_step_follows_file_to(page, live, conn):
+    """An add line's Step offers what its File to allows, a changed kind taking the step a move would (next is never
+    picked for you), and a someday or waiting step turns Repeats off, a someday's date its tickler."""
+    page.goto(live + "/someday")
+    line = page.locator("main form.add")
+    line.locator("[name=title]").click()
+    step, recur = line.locator("select[name=step]"), line.locator("[name=recur]")
+    offered = lambda: step.evaluate("s => [...s.options].filter(o => !o.hidden).map(o => o.value)")
+    assert step.input_value() == "someday" and recur.is_disabled() and line.locator(".due-word").inner_text() == "Tickler"
+    line.locator("select[name=project_id]").select_option("1")  # a project: someday isn't one of its steps
+    assert (step.input_value(), offered()) == ("later", ["next", "waiting", "later"])
+    assert recur.is_enabled() and line.locator(".due-word").inner_text() == "Due"
+    step.select_option("waiting")
+    assert recur.is_disabled()
+    line.locator("select[name=project_id]").select_option("h0")  # waiting stays waiting
+    assert (step.input_value(), offered()) == ("waiting", ["next", "waiting", "someday"])
+    line.locator("select[name=project_id]").select_option("")  # the inbox: no step at all
+    assert step.is_hidden() and step.is_disabled() and recur.is_enabled()
+    line.locator("select[name=project_id]").select_option("1")
+    assert step.input_value() == "later"  # filing an inbox item: later, not next
+    line.locator("[name=title]").fill("filed from someday")
+    with page.expect_navigation():
+        line.locator("[name=title]").press("Enter")
+    t = conn.execute("SELECT * FROM tasks WHERE title = 'filed from someday'").fetchone()
+    assert (t["project_id"], t["step"]) == (1, "later")
 
 
 def test_new_option_reveals_the_name_box(page, live):

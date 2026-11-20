@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% from "_task.html" import task_fields, category_input with context %}
-{% block title %}Add to inbox{% endblock %}
+{% block title %}Capture{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
 {#- The bookmarklet's popup (base.html's ? overlay): static/app.js adds in the background, then closes the window. #}
 <form class="capture popup" method="post" action="{{ url_for('capture') }}">
-  <h2>Add to inbox</h2>
+  <h2>Capture</h2>
   <p class="title-pair">{{ category_input(autofocus=True) }}<input name="title" placeholder="What's on your mind?" autocomplete="off" required></p>
   {{ task_fields() }}
   <input type="hidden" name="page_title" value="{{ page_title }}">

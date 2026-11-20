@@ -58,7 +58,9 @@ def same_origin_only():
         abort(403)
 
 
-CAPTURE_VIEWS = ("inbox", "next_view", "waiting", "someday")  # the task lists: base.html puts the capture line on them
+# The task lists: base.html puts the capture line on them, its File to and Step preset to the page's own list.
+CAPTURE_VIEWS = {"inbox": ("", None), "next_view": ("h0", "next"), "waiting": ("h0", "waiting"),
+                 "someday": ("h0", "someday")}
 
 
 @app.context_processor
@@ -69,8 +71,9 @@ def template_globals():
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
-            "capture_line": request.endpoint in CAPTURE_VIEWS, "filtered_view": request.endpoint in FILTERED_VIEWS,
+            "capture_line": CAPTURE_VIEWS.get(request.endpoint), "filtered_view": request.endpoint in FILTERED_VIEWS,
             "overlays": [] if embed else opened(),
+            "project_groups": db.project_groups(conn()),  # every task form's File to (the capture dialog's on every page)
             "app_url": GTD_URL or request.host_url.rstrip("/"),
             "contexts": db.contexts(conn()), "categories": db.categories(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
             "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0),
@@ -149,6 +152,8 @@ def task_fields_from_form(current=None):
         # The picker offers "h0": ground level, a deliberate choice of no project.
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
+        if fields["project_id"] and not db.get_project(conn(), fields["project_id"]):
+            abort(400)  # no such project
     if new_project:  # typed into the "new project" box. Its group sets the status.
         status = (raw or "").removeprefix(NEW)
         fields["project_id"] = new_project_made(new_project, status=status if status in PROJECT_STATUSES else "active")
@@ -325,22 +330,47 @@ def bookmark(fields):
 SAFE_URL = ":/?#[]@!$&'*+,;=%~"  # all but ( ) and spaces, which would end a Markdown link
 
 
+def landing(t):
+    """Where a new task is listed, as (its name, the pages listing it)."""
+    if t["inbox"]:
+        return "the inbox", {url_for("inbox")}
+    pages = {url_for("calendar_view")} if t["due_date"] else set()
+    if t["step"] == "waiting":
+        pages.add(url_for("waiting"))
+    if t["project_id"]:
+        return t["project_title"], pages | {url_for("project_view", id=t["project_id"])}
+    if t["step"] == "next":
+        return ("the calendar", pages) if t["due_date"] else ("Next", {url_for("next_view")})
+    return t["step"].capitalize(), pages | {url_for(t["step"])}
+
+
 @app.post("/capture")
 def capture():
+    """Every task add form (the task lists' line, the capture dialog and popup, a project page's, the calendar's line
+    and its day dialog): the task goes where its File to and Step put it, the inbox when File to is blank."""
+    c = conn()
+    if not (form_value("title") or form_value("link")):  # before reading the form, which may make a "＋ New…" project
+        return {"flashes": [], "warned": False} if fetched() else back()
     fields = task_fields_from_form()
     bookmark(fields)
     if fields.get("title"):
-        title = fields.pop("title")
-        id = db.add_task(conn(), title, today=today(), **fields)
-        if urlsplit(request.referrer or "").path != url_for("inbox"):  # the inbox list already shows it
-            parts = [f"Added to inbox: {db.get_task(conn(), id)['label']}"]
+        here = urlsplit(request.referrer or "").path
+        with db.transaction(c):
+            id = db.add_task(c, fields.pop("title"), today=today(), **fields)
+            t = db.get_task(c, id)
+            place, pages = landing(t)
+            if here in pages and stay_in_view(fields):  # on a filtered list showing it: the filter's contexts
+                db.set_task_contexts(c, id, fields["contexts"])
+                t = db.get_task(c, id)
+        if here not in pages:  # else the page shows it
+            parts = [f"Added to {place}: {t['label']}"]
             if "due_date" in fields:
                 parts.append(f"due {fields['due_date']}")
             if "recur" in fields:
                 parts.append(f"↻ {fields['recur']}")
             if fields.get("remind_at"):
                 parts.append(f"reminder {local_minute(fields['remind_at'], WHEN)}")
-            parts += [f"@{name}" for name in fields.get("contexts", ())]
+            parts += [f"@{name}" for name in (t["contexts"] or "").split()]
             flash(" · ".join(parts))
     if fetched():  # the capture dialog, in the background: whatever is open under it stays
         return {"flashes": get_flashed_messages(), "warned": g.get("warned", False)}
@@ -352,7 +382,7 @@ def capture():
 @app.route("/inbox")
 def inbox():
     """One task list: the inbox items, and the someday tasks whose tickler date has come, back to be decided."""
-    return render_template("inbox.html", tasks=db.inbox_list(conn(), today()), project_groups=db.project_groups(conn()))
+    return render_template("inbox.html", tasks=db.inbox_list(conn(), today()))
 
 
 @app.post("/tasks/move")
@@ -399,7 +429,7 @@ H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the d
 def file_to():
     """The File to menu a task row's → opens (file_menu() in _task.html, static/app.js): the drop panel's places, filed
     to through task_move()."""
-    return render_template("file_menu.html", project_groups=db.project_groups(conn()))
+    return render_template("file_menu.html")
 
 
 @app.post("/tasks/to/<any(timer, inbox, next, waiting, someday, done, reference):tab>")
@@ -489,12 +519,13 @@ def filtered(tasks):
 
 def stay_in_view(fields):
     """A task added on a filtered list takes the checked contexts, or it would vanish as it's added. A @mark wins; if
-    that leaves it hidden, it says so."""
+    that leaves it hidden, it says so. True when it gave the task the filter's contexts."""
     if urlsplit(request.referrer or "").path not in map(url_for, FILTERED_VIEWS):
         return
     chosen = [x["name"] for x in chosen_contexts()]
     if chosen and "contexts" not in fields:
         fields["contexts"] = chosen
+        return True
     elif chosen and not {n.lower() for n in fields["contexts"]} & {n.lower() for n in chosen}:
         flash(f"Added @{' @'.join(fields['contexts'])}, but the filter hides it.")
 
@@ -554,27 +585,15 @@ def completed(abandoned=False, **filters):
 @app.route("/next")
 def next_view():
     done = completed()
-    return render_template("next.html", tasks=filtered(db.next_list(conn())), project_groups=db.project_groups(conn()),
+    return render_template("next.html", tasks=filtered(db.next_list(conn())), 
                            **{**done, "done_tasks": filtered(done["done_tasks"])})
-
-
-def add_next_action():
-    """The calendar's add line: the form's task as a next action (beside any its project has), the inbox if orphaned."""
-    if not form_value("title"):  # before reading the form, which may create a "＋ New…" project
-        return
-    fields = task_fields_from_form()
-    pid = fields.get("project_id")
-    fields["step"] = "next"
-    orphaned(pid, fields.get("ground"), say="it")
-    stay_in_view(fields)
-    db.add_task(conn(), fields.pop("title"), today=today(), **fields)
 
 
 @app.route("/waiting")
 def waiting():
     """Waiting tasks, H0's and project steps, in one dragged order. Waiting projects have their own tab."""
     c = conn()
-    return render_template("waiting.html", tasks=filtered(db.tasks_with_step(c, "waiting")), project_groups=db.project_groups(c))
+    return render_template("waiting.html", tasks=filtered(db.tasks_with_step(c, "waiting")))
 
 
 def hide_tickled(rows):
@@ -591,7 +610,7 @@ def someday():
     """H0's someday tasks; what's tickled to a later date is out of sight until then."""
     tasks, toggle = hide_tickled(db.someday_tasks(conn()))
     return render_template("someday.html", tasks=tasks, groups=someday_groups(tasks),
-                           project_groups=db.project_groups(conn()), **toggle)
+                           **toggle)
 
 
 def someday_groups(tasks):
@@ -867,7 +886,7 @@ def task_view(id):
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
     up = url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t)
-    return render_template("task.html", t=t, project_groups=db.project_groups(c), seconds=db.task_seconds(c, id, now()),
+    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()),
                            up=up)
 
 
@@ -958,7 +977,6 @@ def projects_view(status):
     c = conn()
     show = status == "active" and request.args.get("done") == "1"
     return render_template("projects.html", status=status, projects=db.projects(c, status), steps=db.open_steps(c, status),
-                           project_groups=db.project_groups(c),
                            show_done=show, toggle_url=toggle_url(show),
                            done_projects=[p for s in db.CLOSED for p in db.closed_projects(c, s)] if show else [])
 
@@ -1034,7 +1052,7 @@ def project_view(id):
     if not request.args.get("embed"):  # a project opens over its list, like a task
         return redirect(project_home(p))
     return render_template("project.html", p=p, up=project_list(p), tasks=db.project_tasks(c, id),
-                           project_groups=db.project_groups(c), deletable=db.project_deletable(c, id),
+                           deletable=db.project_deletable(c, id),
                            times=db.step_totals(c, id, now()), **completed(abandoned=True, project_id=id))
 
 
@@ -1081,17 +1099,6 @@ def project_order(id):
     return ("", 204) if fetched() else back()
 
 
-@app.post("/projects/<int:id>/tasks")
-def project_add_task(id):
-    c = conn()
-    db.get_project(c, id) or abort(404)
-    fields = task_fields_from_form()
-    if fields.get("title"):
-        fields.setdefault("step", "later")  # "next" is only ever chosen, never a default
-        db.add_task(c, fields.pop("title"), today=today(), project_id=id, **fields)
-    return back()
-
-
 # --- calendar --------------------------------------------------------------
 
 def sunday(d):
@@ -1114,11 +1121,8 @@ def task_due(id):
     return ("", 204) if fetched() else back("calendar_view")
 
 
-@app.route("/calendar", methods=["GET", "POST"])
+@app.route("/calendar")
 def calendar_view():
-    if request.method == "POST":
-        add_next_action()
-        return back("calendar_view")
     week = None
     # A bare /calendar opens the last view used (cookie `cal_view`); an explicit ?w=, ?m= or ?view=agenda sets it.
     # ?n=2 makes the week view two weeks (this one and the next), for planning.
@@ -1153,7 +1157,7 @@ def calendar_view():
     else:
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
     resp = make_response(render_template(
-        "calendar.html", agenda=None, first=first, week=week, span=span, end=end, project_groups=db.project_groups(conn()), weeks=weeks,
+        "calendar.html", agenda=None, first=first, week=week, span=span, end=end, weeks=weeks,
         by_day=by_day, events=events, calendars=[name for name, _ in calendars], cal_errors=dict(cal_errors),
         prev=prev, next=next_,
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
@@ -1171,7 +1175,7 @@ def agenda_split(tasks):
 def agenda_view():
     """The calendar's Agenda: every open task due today or overdue, from every list, oldest due first."""
     resp = make_response(render_template(
-        "calendar.html", agenda=filtered(db.agenda(conn(), today())), week=None, span=0, project_groups=db.project_groups(conn()),
+        "calendar.html", agenda=filtered(db.agenda(conn(), today())), week=None, span=0, 
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", "agenda", max_age=365 * 86400, samesite="Lax")
     return resp
@@ -1452,7 +1456,8 @@ def horizons_view():
 @app.post("/horizons/<int:id>/add")
 def horizon_add(id):
     """A goal's or area's add line on Horizons: a new active project (`kind=project`), H0 next action (`action`) or,
-    under an area, goal (`goal`), already linked here. The action is next: adding it here is the decision to do it."""
+    under an area, goal (`goal`), already linked here. The action's File to and Step are preset to H0 next: adding it
+    here is the decision to do it."""
     c = conn()
     h = db.get_horizon(c, id) or abort(404)
     kind = request.form.get("kind")
@@ -1465,11 +1470,15 @@ def horizon_add(id):
             db.link_project(c, new_project_made(form_value("title"), status="active"), id)
         elif kind == "goal":
             db.set_goal_area(c, db.add_horizon(c, "goal", form_value("title")), id)
-        else:
+        else:  # filed as its File to and Step say (H0 next, preset); only an H0 task hangs here
             fields = task_fields_from_form()
-            tid = db.add_task(c, fields.pop("title"), today=today(), ground=1, step="next",
-                              **{k: v for k, v in fields.items() if k not in ("ground", "project_id", "step")})
-            db.link_task(c, tid, id)
+            tid = db.add_task(c, fields.pop("title"), today=today(), **fields)
+            t = db.get_task(c, tid)
+            if t["ground"]:
+                db.link_task(c, tid, id)
+            else:
+                flash(f"Added to {landing(t)[0]}: {t['label']}, not under {h['title']}: only H0 actions hang under a "
+                      f"goal or area.")
     return back("horizons_view")
 
 

@@ -43,7 +43,10 @@ class Page(HTMLParser):
             self._form["fields"].append(self._textarea)
         elif tag == "select":
             self._select = {"name": a.get("name"), "options": []}
-            self._form["selects"].append(self._select)
+            if "disabled" not in a:  # a browser doesn't send a disabled select (a task form's Step, filed to the inbox)
+                self._form["selects"].append(self._select)
+        elif tag == "option" and self._select is not None and "disabled" in a:
+            self._option = {"text": ""}  # can't be picked (a Step the File to doesn't allow)
         elif tag == "option" and self._select is not None:
             self._option = {"value": a.get("value"), "text": "", "selected": "selected" in a}
             self._select["options"].append(self._option)
@@ -163,7 +166,7 @@ def test_every_link_works(client, conn):
 
 def test_every_page_has_the_same_skeleton(client, conn):
     """One layout everywhere: header (title + actions), then the add line, then the list. The four task lists share one
-    capture line instead, the same on each, above the header."""
+    capture line instead, the same on each but for its preset, above the header."""
     seed(conn)
     pages, _ = crawl(client)
     checked = 0
@@ -175,7 +178,9 @@ def test_every_page_has_the_same_skeleton(client, conn):
         if urlsplit(url).path in ("/inbox", "/next", "/waiting", "/someday"):
             capture_line, main = main.split('<header class="page">', 1)
             assert capture_line.startswith('<form method="post" action="/capture"'), url
-            capture_lines.add(capture_line)
+            # the same on each but for its preset File to and Step (and what the Step turns off)
+            capture_lines.add(re.sub(r' (selected|hidden|disabled)\b| title="Not while \w+"', "",
+                                     capture_line.replace(">Tickler<", ">Due<")))
             main = '<header class="page">' + main
         assert main.startswith('<header class="page">'), url
         header = main[:main.index("</header>")]
