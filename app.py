@@ -676,7 +676,6 @@ REVIEW_PHASES = (
 REVIEW_NAMES = {key: name for _, steps in REVIEW_PHASES for key, name in steps}
 REVIEW_STEPS = tuple(REVIEW_NAMES)
 
-
 @app.template_filter()
 def local_date(utc):
     """The local date of a SQLite datetime('now') stamp, which is UTC: a task finished at 9pm is done today."""
@@ -695,20 +694,14 @@ def review():
     step = request.args.get("step")
     if step not in REVIEW_STEPS:  # the first step still to do
         step = next((s for s in REVIEW_STEPS if s not in checked), REVIEW_STEPS[0])
-    past = db.reviews(c)
-    # The last 26 weeks, Monday first, oldest first, each with the review done in it (or None).
-    monday = today() - timedelta(days=today().weekday())
-    by_week = {}
-    for d in past:
-        by_week.setdefault(date.fromisoformat(d) - timedelta(days=date.fromisoformat(d).weekday()), d)
-    weeks = [(m, by_week.get(m)) for m in (monday - timedelta(weeks=k) for k in range(25, -1, -1))]
+    past = [date.fromisoformat(d) for d in db.reviews(c)]  # newest first
     return render_template("review.html", projects=db.projects_to_review(c),
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=db.next_actions(c, today()), waiting=db.tasks_with_step(c, "waiting"),
                            checklists=db.checklists(c), unseen=unseen, scratchpad=db.scratchpad(c),
                            phases=REVIEW_PHASES, names=REVIEW_NAMES, steps=REVIEW_STEPS, step=step,
-                           checked=checked, past=past, weeks=weeks)
+                           checked=checked, past=past)
 
 
 def unseen(rows):
@@ -728,10 +721,20 @@ def project_reviewed(id):
 @app.template_filter()
 def ago(utc):
     """How long ago a UTC stamp was, by local date: today, 3d ago, 2w ago, 4mo ago; never without one."""
-    if not utc:
-        return "never"
-    days = (today() - date.fromisoformat(local_date(utc))).days
+    return days_ago(date.fromisoformat(local_date(utc))) if utc else "never"
+
+
+@app.template_filter()
+def days_ago(d):
+    """How long ago a local date was: today, 3d ago, 2w ago, 4mo ago."""
+    days = (today() - d).days
     return "today" if days <= 0 else f"{days}d ago" if days < 14 else f"{days // 7}w ago" if days < 60 else f"{days // 30}mo ago"
+
+
+@app.template_filter()
+def short_date(d):
+    """The last review's date, as the Due preview's (DAY): Sun Nov 15, with the year when it isn't this one."""
+    return d.strftime(DAY if d.year == today().year else DAY + " %Y")
 
 
 @app.post("/review/scratchpad/clear")

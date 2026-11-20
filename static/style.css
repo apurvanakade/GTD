@@ -486,7 +486,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps li.next + li:not(.next) { margin-top: 6px; }
 .task .set-step button { min-width: 6.5em; }
 
-/* Decks (Review, Horizons): one card at a time. Review's past weeks: a streak. */
+/* Decks (Review, Horizons): one card at a time. */
 .deck { list-style: none; padding-left: 0; }
 .deck > li:not(.on) { display: none; }
 .deck > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
@@ -514,7 +514,7 @@ body:not(.nav-hidden) .review-steps { top: calc(var(--nav-h) + 12px); }  /* unde
 .review-steps a.done::before { background: var(--accent); border-color: var(--accent); }
 .review-steps a.on { background: var(--soft); font-weight: 600; color: var(--fg); }
 .review-steps .n { margin-left: auto; color: var(--muted); font-weight: normal; font-variant-numeric: tabular-nums; }
-.review-steps .streak { max-width: calc(13 * 15px); }
+.review-steps .last-review { margin: 0; }
 .step-foot { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); font-size: var(--fs-s); }
 .step-foot form { margin-left: auto; }
 .step-foot a { color: var(--muted); }
@@ -562,9 +562,6 @@ body:not(.nav-hidden) .review-steps { top: calc(var(--nav-h) + 12px); }  /* unde
 .guide ol { padding-left: 1.4em; }
 .guide li + li { margin-top: 4px; }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
-.streak { display: flex; gap: 3px; flex-wrap: wrap; }
-.streak .wk { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
-.streak .wk.hit { background: var(--accent); }
 .plain { padding-left: 18px; }
 .date { font-variant-numeric: tabular-nums; }
 .done-toggle { margin-top: 1.5em; font-size: var(--fs-m); }
