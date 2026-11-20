@@ -613,7 +613,20 @@ def someday():
     """H0's someday tasks; what's tickled to a later date is out of sight until then. Someday projects have their
     own tab."""
     tasks, toggle = hide_tickled(filtered(db.someday_tasks(conn())))
-    return render_template("someday.html", tasks=tasks, project_groups=db.project_groups(conn()), **toggle)
+    return render_template("someday.html", tasks=tasks, groups=someday_groups(tasks),
+                           project_groups=db.project_groups(conn()), **toggle)
+
+
+def someday_groups(tasks):
+    """Someday's sub-lists (Allen's themed someday lists): one per category, A to Z, then "Other" for those with none,
+    each as (key, name, rows) in the list's order. A row's label is its bare title, since its band names the category.
+    The key (its fold's memory) is `c:` and the casefolded name, unique as a category has one spelling whatever the
+    case (db.set_task_category()); `none` for "Other", so a category named "Other" is a band of its own."""
+    groups = {}
+    for t in tasks:
+        groups.setdefault(t["category"] or "", []).append({**dict(t), "label": t["title"]})
+    names = sorted(groups, key=lambda n: (not n, n.casefold()))
+    return [(f"c:{n.casefold()}" if n else "none", n or "Other", groups[n]) for n in names]
 
 
 @app.post("/someday/add")

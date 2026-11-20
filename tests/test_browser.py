@@ -1674,6 +1674,28 @@ def test_dragging_a_someday_task_onto_h0_commits_to_it(page, live, conn):
     assert (db.get_task(conn, tid)["step"], db.get_task(conn, tid)["due_date"]) == ("next", None)
 
 
+def test_someday_bands_count_what_leaves_in_place(page, live, conn):
+    """A band's count follows a tick-off; rows shift-selected across bands file together, and an emptied band hides."""
+    db.add_task(conn, "learn Greek", ground=1, step="someday", category="Languages")
+    page.goto(live + "/someday")
+    count = lambda key: page.locator(f'details.band[data-band="{key}"] > summary > b').inner_text()
+    assert (count("c:languages"), count("none")) == ("2", "2")  # "Other": the seed's juggle and sail
+    row(page, "learn Greek").locator("form.done button").click()
+    page.wait_for_selector("li.task.gone")
+    assert count("c:languages") == "1"  # the ticked row stays, struck out, but no longer counts
+    row(page, "learn Italian").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    row(page, "juggle").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    row(page, "sail").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    with page.expect_response(lambda r: r.url.endswith("/tasks/move")) as saved:
+        drag_to_panel(page, row(page, "juggle"), '[data-project="h0"]')
+    assert saved.value.ok  # 200: a toast that sail, dated, went to the calendar
+    page.wait_for_function("!document.querySelector('li.task.selected')")
+    assert page.locator('details.band[data-band="none"]').is_hidden()  # emptied
+    assert page.locator('details.band[data-band="c:languages"]').is_visible() and count("c:languages") == "0"
+    steps = conn.execute("SELECT step FROM tasks WHERE title IN ('learn Italian', 'juggle', 'sail')").fetchall()
+    assert [s for (s,) in steps] == ["next"] * 3
+
+
 def test_a_someday_projects_tickler_box(page, live, conn):
     page.goto(live + "/projects/4?embed=overlay")  # "Someday proj"
     box = page.locator(".title-line input[name=tickle_on]")  # a quiet control on the title line

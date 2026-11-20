@@ -46,6 +46,16 @@ async function refreshProjects() {
 // calendar) show as toasts. Any row where the page asks (Waiting: a waiting step stays waiting), a target whose tasks
 // the page also lists (`data-stays`: H0 on Next), or a page with no drop panel (the Agenda, a project page, Search:
 // a filed row may stay, changed) redraws the page instead: it posts `reload`, so the messages wait for the redrawn page.
+// A band's count (Someday's, `details.band > summary > b`) after rows left it or were ticked off in place: its open
+// rows. A band left with no row hides. Only the given rows' bands, so Done's (closed rows) never recount.
+const bandsOf = rows => new Set([...rows].map(li => li.closest('details.band')).filter(Boolean));
+function recount(bands) {
+  bands.forEach(d => {
+    const n = d.querySelector(':scope > summary > b');
+    if (n) n.textContent = d.querySelectorAll('li.task:not(.gone)').length;
+    d.hidden = !d.querySelector('li.task');
+  });
+}
 async function fileTasks(url, rows, data) {
   const panel = document.querySelector('.drop-panel');
   const reload = !panel || 'reload' in panel.dataset || data.project_id === panel.dataset.stays;
@@ -55,7 +65,9 @@ async function fileTasks(url, rows, data) {
   const r = await post(url, form);
   if (!r) return;
   if (reload) return keepPeeks(), location.reload();  // a project tab's fold-outs stay open
+  const bands = bandsOf(rows);
   rows.forEach(li => li.remove());
+  recount(bands);
   refreshNav();
   if (r.status !== 204) try { toast((await r.json()).flashes); } catch {}  // saved: only a message is lost
 }
@@ -198,7 +210,7 @@ document.addEventListener('keydown', e => {
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
-// Done's bands: remember which you opened or folded, per page. Only a click is saved: a band that starts open fires
+// Done's and Someday's bands: remember which you opened or folded, per page. Only a click is saved: a band that starts open fires
 // 'toggle' too, which would freeze today's default.
 const foldKey = d => `fold:${location.pathname}:${d.dataset.band}`;
 const restoreBands = () => document.querySelectorAll('details.band').forEach(d => {
@@ -819,7 +831,9 @@ function draggedTasks(li) {
     const r = await post(`/tasks/to/${tab}`, form);
     if (!r) return;
     if (!inPlace) return keepPeeks(), location.reload();
+    const bands = bandsOf(rows);
     rows.forEach(li => li.remove());
+    recount(bands);
     refreshNav();
     if (r.status !== 204) try { toast((await r.json()).flashes); } catch {}
   };
@@ -871,7 +885,8 @@ document.addEventListener('focusout', e => {
   f.classList.toggle('bad', bad);
   if (!bad) f.requestSubmit();
 });
-// Tick off a task in place instead of reloading the page; its band's count drops and the nav's dots are refetched.
+// Tick off a task in place instead of reloading the page; its Agenda heading's or Someday band's count drops (recount())
+// and the nav's dots are refetched.
 // The struck-out row turns into a done row: a ✓ and Revive instead of its buttons, so a click opens it and can't
 // finish it twice.
 document.addEventListener('submit', async e => {
@@ -890,6 +905,7 @@ document.addEventListener('submit', async e => {
   li.append(revive);
   const n = li.closest('ul.agenda')?.previousElementSibling?.querySelector(':scope.agenda-head > b');  // its Agenda heading's count
   if (n) n.textContent = Math.max(0, n.textContent - 1);
+  recount(bandsOf([li]));
   // Its timer, if running, was stopped with it (complete_task()); a done task gets no stopped pill either.
   document.querySelectorAll(`.running-timer a[href="/tasks/${li.dataset.id}"]`).forEach(a => a.closest('.running-timer').remove());
   refreshNav();

@@ -15,7 +15,7 @@
 .k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
 /* External calendars' events (GTD_CALENDARS), by feed: read-only, so no tint, only the stripe. */
 .x-0 { --k: #0d9488; } .x-1 { --k: #65a30d; } .x-2 { --k: #64748b; }
-/* Done folds into bands. */
+/* Done and Someday fold into bands. */
 .band { margin-top: 14px; }
 .band > summary { font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
 .band > summary::-webkit-details-marker { display: none; }

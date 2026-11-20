@@ -3274,6 +3274,20 @@ def test_someday_hides_what_is_tickled_to_a_later_date(client, conn):
     assert "until 2026-11-15" in shown and re.search(r'href="/projects/someday"[^>]*>Hide tickled<', shown)
 
 
+def test_someday_bands_by_category(client, conn):
+    # One band per category, A to Z whatever the case, "Other" (no category) last, apart from a category named so; a
+    # row shows its bare title.
+    for title, cat in [("lathe", "workshop"), ("rumi", "Books"), ("kite", None), ("bench", "Workshop"), ("dune", "books"), ("plan", "other")]:
+        db.add_task(conn, title, ground=1, step="someday", category=cat, today=TODAY)
+    html = client.get("/someday").get_data(as_text=True).split('class="drop-panel"')[0]
+    bands = re.findall(r'data-band="([^"]+)" open>\s*<summary>([^<]+) <b>(\d+)</b>', html)
+    assert bands == [("c:books", "Books", "2"), ("c:other", "Other", "1"), ("c:workshop", "Workshop", "2"), ("none", "Other", "1")]
+    books = html.split('data-band="c:books"')[1].split("</details>")[0]
+    assert ">dune<" in books and ">rumi<" in books and "Books:" not in books
+    assert books.index(">dune<") < books.index(">rumi<")  # the list's own order: newest on top
+    assert html.count('data-reorder="/tasks/order"') == 4  # each band is dragged in on its own
+
+
 def test_h0_tasks_can_be_someday(client, conn):
     t = db.add_task(conn, "learn Italian", ground=1, step="someday", today=TODAY)
     assert (db.get_task(conn, t)["step"], db.get_task(conn, t)["due_date"]) == ("someday", None)  # not dated: no tickler
@@ -3591,7 +3605,7 @@ def test_a_task_category(client, conn):
     page = client.get("/next").get_data(as_text=True)
     assert ">Home: sort mail</a>" in page
     offered = json.loads(re.search(r'data-categories="([^"]*)"', page).group(1).replace("&#34;", '"'))
-    assert set(offered) == {"Home", "Discrete Math"}  # "Discrete Math" is on a done task only
+    assert set(offered) == {"Home", "Discrete Math", "Languages"}  # "Discrete Math" is on a done task only
     assert 'name="category"' in page  # the capture line's box
     client.post("/capture", data={"title": "grade hw", "category": " discrete   math: "})
     t = db.inbox_tasks(conn)[0]
