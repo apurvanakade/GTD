@@ -436,10 +436,13 @@ document.addEventListener('change', e => {
   };
   let stale = false;  // a rename or delete: the rows under the overlay no longer hold
   const setFilter = ids => { document.cookie = `contexts=${ids.join('-')}; path=/; max-age=31536000; SameSite=Lax`; };
-  const saveFilter = () => {
+  const menu = document.querySelector('.ctx-menu'), picks = () => [...(menu?.querySelectorAll('.ctx-pick') ?? [])];
+  const saveFilter = () => {  // Site info's ticks hold the filter; the context menu mirrors them
     const ids = [...(list?.querySelectorAll('li:has(input[type=checkbox]:checked)') ?? [])].map(li => li.dataset.id);
     setFilter(ids);
     showAll.hidden = !ids.length;
+    picks().forEach(p => p.setAttribute('aria-checked', ids.includes(p.dataset.id)));
+    if (menu) menu.querySelector('.ctx-all').hidden = !ids.length;
   };
   // Closing with a name box still being typed in saves it first: Esc or a click beside it leaves the box (its change
   // starts the rename) before the dialog closes, since Chromium fires the box's own change only after 'close'.
@@ -453,9 +456,58 @@ document.addEventListener('change', e => {
     applyFilter();
   };
   showAll.addEventListener('click', clearFilter);
+  // The context menu (base.html): the chip's popover, so the list stays in view as it thins. A click on a context, or
+  // its digit, turns it on or off; 0 or "Show all" clears; ↑ ↓ move; Esc, a click elsewhere or the chip again closes.
+  // The chip is redrawn with the list, so the menu is placed by whichever chip is there now.
+  const chip = () => document.querySelector('.ctx-open');
+  const place = () => {  // under the chip, its right edge on the chip's
+    const b = chip()?.getBoundingClientRect();
+    if (!b) return;
+    menu.style.left = Math.max(8, Math.min(b.right - menu.offsetWidth, innerWidth - menu.offsetWidth - 8)) + 'px';
+    menu.style.top = b.bottom + 4 + 'px';
+  };
+  const toggle = p => {
+    list.querySelector(`li[data-id="${p.dataset.id}"] input[type=checkbox]`).checked = p.getAttribute('aria-checked') !== 'true';
+    saveFilter();
+    applyFilter().then(() => { if (menu.matches(':popover-open')) place(); });
+  };
+  let wasOpen = false;  // light dismiss closes it before the chip's click, so the press notes it was open
+  document.addEventListener('pointerdown', e => { wasOpen = !!menu?.matches(':popover-open') && !!e.target.closest?.('.ctx-open'); }, true);
+  const openMenu = () => {
+    if (!menu || wasOpen) { wasOpen = false; return; }
+    if (menu.matches(':popover-open')) return menu.hidePopover();
+    menu.showPopover();
+    place();
+    (picks().find(p => p.getAttribute('aria-checked') === 'true') ?? picks()[0]).focus({preventScroll: true});
+  };
+  if (menu) {
+    menu.addEventListener('click', e => {
+      const p = e.target.closest('.ctx-pick');
+      if (p) toggle(p);
+      if (e.target.closest('.ctx-all')) { clearFilter(); picks()[0].focus({preventScroll: true}); }
+    });
+    menu.addEventListener('keydown', e => {
+      e.stopPropagation();  // its keys aren't the page's go-keys
+      if (e.key === 'Escape' || e.key === '@') { e.preventDefault(); menu.hidePopover(); return chip()?.focus({preventScroll: true}); }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const all = [...menu.querySelectorAll('button:not([hidden])')], at = all.indexOf(document.activeElement);
+      const by = {ArrowDown: 1, ArrowUp: -1}[e.key];
+      if (by) { e.preventDefault(); all[(at + by + all.length) % all.length].focus({preventScroll: true}); }
+      if (e.key === '0') { clearFilter(); picks()[0]?.focus({preventScroll: true}); }
+      const p = /^[1-9]$/.test(e.key) && picks()[e.key - 1];
+      if (p) { p.focus({preventScroll: true}); toggle(p); }
+    });
+    ['resize', 'scroll'].forEach(k => addEventListener(k, () => { if (menu.matches(':popover-open')) place(); }, {passive: true}));
+  }
   document.addEventListener('click', e => {
-    if (e.target.closest('.ctx-open')) dialog.showModal();
+    if (e.target.closest('.ctx-open')) openMenu();
     if (e.target.closest('.ctx-filter .ctx-clear')) clearFilter();
+  });
+  // @ opens it, from the page (not while typing or with a dialog open: the go-keys' rules).
+  document.addEventListener('keydown', e => {
+    if (e.key !== '@' || !menu || typing() || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('dialog[open]')) return;
+    e.preventDefault();
+    openMenu();
   });
   if (!list) return;
   const nameBox = li => li.querySelector('input[name=context_name]');

@@ -54,7 +54,7 @@
   <h2 tabindex="-1" autofocus>Site info</h2>
   <div class="info">
     <section>
-      {#- Made by first use (@name in a title, a task's picker). A tick filters Next, Waiting, Someday and the Calendar at
+      {#- Made by first use (@name in a title, a task's picker). A tick filters Next, Waiting and the Calendar at
           once; the name saves when left, ✕ asks first (static/app.js). No forms, so nothing here is a page's add line. #}
       <h3>Contexts <button type="button" class="ctx-clear"{% if not filter_ids %} hidden{% endif %}>Show all</button></h3>
       {% if contexts %}<ul class="context-list" data-reorder="{{ url_for('contexts_order') }}">
@@ -73,6 +73,7 @@
         <dt><kbd>/</kbd> <kbd>+</kbd></dt><dd>Add to inbox</dd>
         <dt><kbd>⌘/</kbd></dt><dd>Add, even while typing</dd>
         <dt><kbd>f</kbd></dt><dd>Search</dd>
+        <dt><kbd>@</kbd></dt><dd>Filter by context</dd>
         <dt><kbd>Ctrl ↑</kbd></dt><dd>Up a level</dd>
         <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next step or task</dd>
         <dt><kbd>Esc</kbd></dt><dd>Close</dd>
@@ -96,6 +97,12 @@
     </section>
   </div>
 </dialog>
+{#- The context menu, on a filtered page: the chip's (and @'s) quick filter, a popover under the chip, so the list stays
+    in view as it thins. A word turns its context on or off at once, as Site info's ticks do (static/app.js). #}
+{% if filtered_view and contexts %}<div class="ctx-menu" popover role="menu" aria-label="Filter by context">
+  {% for x in contexts %}<button type="button" class="ctx-pick" role="menuitemcheckbox" data-id="{{ x.id }}" aria-checked="{{ 'true' if x.id in filter_ids else 'false' }}"><kbd>{{ loop.index if loop.index < 10 }}</kbd><span class="name">@{{ x.name }}</span><span class="count" title="On this page">{{ page_counts.get(x.id, '') }}</span></button>
+  {% endfor %}<button type="button" class="ctx-all"{% if not filter_ids %} hidden{% endif %}><kbd>0</kbd><span class="name">Show all</span></button>
+</div>{% endif %}
 <dialog class="capture-dialog">
   <form class="capture" method="post" action="{{ url_for('capture') }}">
     <h2>Add to inbox</h2>
