@@ -127,7 +127,7 @@ def new_project_made(title, status):
 
 @app.after_request
 def projects_changed(r):
-    """The page's project lists (project_select(), project_targets()) are stale once a project is made in the
+    """The page's project lists (project_select(), project_targets(), file_menu()) are stale once a project is made in the
     background: the header has refreshProjects() in static/app.js redraw them all."""
     if g.get("projects_changed"):
         r.headers["X-Projects-Changed"] = "1"

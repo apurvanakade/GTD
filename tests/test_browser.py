@@ -938,6 +938,24 @@ def test_the_file_to_menu_makes_a_new_project(page, live, conn):
     expect(menu.locator(".file-target", has_text="Garden")).to_have_count(1)
 
 
+def test_the_file_to_menu_lists_a_project_made_on_the_drop_panel(page, live, conn):
+    """The menu's cached list follows refreshProjects(), as the page's other project lists do."""
+    page.goto(live + "/inbox")
+    menu = open_file_menu(page, row(page, "legacy orphan"))  # fetched and cached before the project exists
+    expect(menu.locator(".file-target", has_text="Dragged")).to_have_count(0)
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__someday"]')
+    page.locator(".drop-panel .naming input[name=new_project]").wait_for(state="visible")
+    page.keyboard.type("Dragged")
+    page.keyboard.press("Enter")
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+    expect(page.locator(".drop-panel .target", has_text="Dragged")).to_have_count(1)  # refreshProjects() has run
+    menu = open_file_menu(page, row(page, "legacy orphan"))
+    expect(menu.locator(".file-target", has_text="Dragged")).to_have_count(1)
+
+
 def test_the_file_to_menu_on_a_page_without_a_drop_panel_and_a_folded_out_step(page, live, conn):
     """The Agenda keeps a filed row (still due), so the page redraws; a project tab's folded-out step has one too."""
     page.goto(live + "/calendar?view=agenda")

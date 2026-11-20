@@ -21,10 +21,13 @@ function post(url, body) {
 }
 // A background save that made a project (X-Projects-Changed, set by app.py) leaves every project list on the page
 // stale: the dropdowns (project_select()) and the drop panel (project_targets()), each marked data-projects with
-// its kind. Redraw them all from a fresh copy of the page, in place (scripts keep their references), each select
-// keeping its pick.
+// its kind, and the File to menu (file_menu(), below). Redraw the marked ones from a fresh copy of the page, in place
+// (scripts keep their references), each select keeping its pick; drop the menu's cached copy, so its next opening
+// fetches it again.
 function projectsSaved(r) { if (r.headers.has('X-Projects-Changed')) refreshProjects(); }
+let fileMenuHtml = null;  // the File to menu's HTML, fetched once (below); refreshProjects() drops it
 async function refreshProjects() {
+  fileMenuHtml = null;
   try {
     const fresh = new DOMParser().parseFromString(await (await fetch(location.href)).text(), 'text/html');
     const kinds = {};  // kind → its fresh lists, in page order, matched to the page's in that order
@@ -57,15 +60,16 @@ async function fileTasks(url, rows, data) {
   if (r.status !== 204) try { toast((await r.json()).flashes); } catch {}  // saved: only a message is lost
 }
 // A task row's → (file_to_button() in _task.html) opens the File to menu under it: the drop panel's places
-// (file_menu(), fetched once per page from /tasks/file-to, again after it made a project), its own place marked and
+// (file_menu(), fetched once per page from /tasks/file-to, again after refreshProjects()), its own place marked and
 // not offered. Typing filters them; ↑ ↓ and Enter pick, as a click does; "＋ New project…" asks for the name first.
 // A pick files the row, or every shift-selected row with it (as a drag of a selected row does). Esc or a click
 // elsewhere closes it (a popover, so in the top layer, over an overlay too).
 (() => {
-  let menu = null, rows = [], button = null, html = null;
+  let menu = null, rows = [], button = null;
   const load = async () => {
-    try { html ??= fetch('/tasks/file-to').then(r => r.ok ? r.text() : Promise.reject()); return await html; }
-    catch { html = null; return null; }
+    const html = fileMenuHtml ??= fetch('/tasks/file-to').then(r => r.ok ? r.text() : Promise.reject());
+    try { return await html; }
+    catch { if (fileMenuHtml === html) fileMenuHtml = null; return null; }
   };
   document.addEventListener('pointerover', e => { if (e.target.closest?.('button.file-to')) load(); });  // ready by the click
   const targets = () => [...menu.querySelectorAll('.file-target:not([hidden], :disabled)')];
@@ -101,7 +105,6 @@ async function fileTasks(url, rows, data) {
     const data = {project_id: t.dataset.project};
     if (t.matches('.new-name')) Object.assign(data, {project_id: t.previousElementSibling.dataset.project, new_project: t.value.trim()});
     const url = menu.querySelector('.file-menu-body').dataset.move, moving = rows;
-    if (data.new_project) html = null;  // the next menu lists the new project
     menu.hidePopover();
     fileTasks(url, moving, data);
   };
