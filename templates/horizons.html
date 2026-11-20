@@ -123,8 +123,8 @@
   <li id="{{ step }}" class="step on">
     <h2>{{ titles[step] }}{% if step != 'purpose' %}{{ help(step, titles[step]) }}{% endif %}</h2>
     {% if step == 'purpose' %}
-    {# Purpose (H5), then vision (H4): a note each, autosaved, its guide right under it; under the vision's note, each
-       area's part of it. #}
+    {# Purpose (H5), then vision (H4): a note each, autosaved, its guide behind the ? beside its heading;
+       under the vision's note, each area's part of it. #}
     {% for level in ('purpose', 'vision') %}{% set h = items[level][0] %}{% set label = levels|selectattr(0, 'eq', level)|map(attribute=1)|first %}
     <h3{% if level == 'vision' %} id="vision"{% endif %}>{{ label }}{{ help(level, label) }}</h3>
     {{ guide(guides[level], level, label) }}
