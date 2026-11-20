@@ -91,6 +91,7 @@ textarea { resize: vertical; }
 .md-editor .p, .md-editor .li { display: inline-block; width: 100%; }  /* a line each, parskip-style (notes.js) */
 .md-editor .p { margin-bottom: .6em; }
 .md-editor .md { color: var(--muted); }
+.md-editor .ind { letter-spacing: .5em; }  /* leading spaces (notes.js): an indent step (two) about 1.5em wide */
 .md-editor .fmt:not(.md-on) > .hide { display: none; }
 .md-editor .h { font-weight: 700; }
 .md-editor .h1 { font-size: 1.3em; }
@@ -118,6 +119,8 @@ textarea { resize: vertical; }
 .md-wrap:focus-within .md-tools { opacity: 1; pointer-events: auto; }
 .md-tools button { padding: 0 6px; min-width: 1.7em; font-size: var(--fs-s); line-height: 1.5; border-radius: 5px; }
 .md-tools button:hover { color: var(--fg); background: var(--soft); }
+.md-tools .tool-icon { width: 1.1em; height: 1em; vertical-align: -.15em; }  /* drawn edge to edge, so no blank margin of its own */
+.md-tools button:has(.tool-icon) { padding: 0 4px; min-width: 0; }
 [hidden] { display: none !important; }  /* `button`'s display would otherwise show a hidden one */
 button, .button {
   cursor: pointer; display: inline-block; background: transparent; border-color: transparent; color: var(--muted);

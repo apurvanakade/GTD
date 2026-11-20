@@ -52,7 +52,10 @@ function markdown(text) {
     if (fence) return `<span class="code-line">${esc(line)}</span>`;
     if (!line) return "";
     const tight = ITEM.test(line) && i + 1 < lines.length && ITEM.test(lines[i + 1]);
-    return `<span class="${tight ? "li" : "p"}">${lineHtml(line)}</span>`;
+    // A line's leading spaces drawn wider (.ind), so an indented (nested) line reads as one.
+    const ws = line.match(/^ */)[0], rest = line.slice(ws.length);
+    const body = ws && rest ? `<span class="ind">${ws}</span>${lineHtml(rest)}` : lineHtml(line);
+    return `<span class="${tight ? "li" : "p"}">${body}</span>`;
   }).join("\n");
 }
 
@@ -173,12 +176,19 @@ function htmlToMarkdown(html) {
 }
 
 // --- The toolbar ---
+// The indent icons: a paragraph's lines, the middle ones set in, beside an arrow pointing in (or out).
+const indentIcon = arrow => `<svg class="tool-icon" viewBox="3 4 18 16" aria-hidden="true"><path d="M3 5h18M11 10h10M11 14h10M3 19h18" stroke="currentColor" stroke-width="2"/><path d="${arrow}" fill="currentColor"/></svg>`;
 const TOOLS = [["bold", "<b>B</b>", "Bold (⌘B)"], ["italic", "<i>I</i>", "Italic (⌘I)"], ["heading", "H", "Heading"],
-               ["bullet", "•", "Bullet list"], ["check", "☐", "Checklist"], ["link", "🔗", "Link"],
+               ["bullet", "•", "Bullet list"], ["check", "☐", "Checklist"],
+               ["outdent", indentIcon("M8 8.5v7L3 12z"), "Decrease indent"],
+               ["indent", indentIcon("M3 8.5v7L8 12z"), "Increase indent"], ["link", "🔗", "Link"],
                ["untick", "↺", "Untick all"]];
 // A checklist box is "[ ]" or "[x]" followed by a space or the line's end.
 const PREFIX = {heading: /^(\s*)#{1,6} /, bullet: /^(\s*)[-*+] (?!\[[ xX]\](?: |$))/, check: /^(\s*)[-*+] \[[ xX]\](?: |$)/};
 const ADD = {heading: "# ", bullet: "- ", check: "- [ ] "};
+const INDENT = "  ";  // one indent step: a nested list's, as pasted lists nest
+// A line's indent (1), list marker (2) and checklist box (3), each optional.
+const LIST_HEAD = /^(\s*)(?:([-*+]|\d+[.)]) (\[[ xX]\](?: |$))?)?/;
 const ANY_PREFIX = /^(\s*)(?:#{1,6} |(?:[-*+]|\d+[.)]) (?:\[[ xX]\](?: |$))?)/;
 const TICKED = /^\s*(?:[-*+]|\d+[.)]) \[[xX]\](?: |$)/m;
 const TICKED_ALL = /^(\s*(?:[-*+]|\d+[.)]) \[)[xX](\](?: |$))/gm;
@@ -326,6 +336,45 @@ function editor(ta) {
                                    : [start, start + block.length];
     apply(text, sel);
   }
+  // Swaps the head of every selected line: f(line) gives [old head's length, new head], or null to leave the line
+  // be (blank lines in a several-line selection always are). The selection keeps its place in the text: an offset
+  // after a line's head moves with it, one inside it stays put but within the new head.
+  function heads(f) {
+    const t = getText(), [a, b] = selection();
+    const start = t.lastIndexOf("\n", a - 1) + 1, end = t.indexOf("\n", b) < 0 ? t.length : t.indexOf("\n", b);
+    const lines = t.slice(start, end).split("\n"), swaps = [];
+    let pos = start, same = true;
+    const out = lines.map(l => {
+      const h = lines.length > 1 && !l.trim() ? null : f(l), at = pos;
+      pos += l.length + 1;
+      if (!h || l.slice(0, h[0]) === h[1]) return l;
+      same = false;
+      swaps.push([at, h[0], h[1].length]);
+      return h[1] + l.slice(h[0]);
+    });
+    if (same) return;
+    const map = x => swaps.reduce((y, [s, was, now]) => x < s ? y : y + (x - s >= was ? now - was : Math.min(x - s, now) - (x - s)), x);
+    apply(t.slice(0, start) + out.join("\n") + t.slice(end), [map(a), map(b)]);
+  }
+  // Every selected line one INDENT step in (d = 1) or out (d = -1, as much of a step as it has).
+  const indent = d => heads(l => {
+    const n = Math.min(INDENT.length, l.match(/^ */)[0].length);
+    return d > 0 ? [0, INDENT] : [n, ""];
+  });
+  // ⌘/Ctrl-Enter, as in Obsidian: plain → bullet → checklist item → ticked → plain. Every selected line takes the
+  // state after the first one's, so a mixed selection ends up alike; a numbered item keeps its number.
+  const STATES = ["", "", "[ ] ", "[x] "];  // plain, list, box, ticked (by index)
+  const stateOf = m => !m[2] ? 0 : !m[3] ? 1 : m[3][1] === " " ? 2 : 3;
+  function cycle() {
+    const t = getText(), [a, b] = selection();
+    const start = t.lastIndexOf("\n", a - 1) + 1, end = t.indexOf("\n", b) < 0 ? t.length : t.indexOf("\n", b);
+    const first = t.slice(start, end).split("\n").find(l => l.trim()) ?? "";
+    const next = (stateOf(first.match(LIST_HEAD)) + 1) % 4;
+    heads(l => {
+      const m = l.match(LIST_HEAD);
+      return [m[0].length, next ? m[1] + (m[2] ?? "-") + " " + STATES[next] : m[1]];
+    });
+  }
   function link() {
     const t = getText(), [a, b] = selection(), label = t.slice(a, b);
     const caret = label ? a + label.length + 3 : a + 1;  // in the (url) for a selection, else in the [text]
@@ -333,6 +382,7 @@ function editor(ta) {
   }
   const TOOL = {bold: () => wrapWith("**"), italic: () => wrapWith("_"), heading: () => prefix("heading"),
                 bullet: () => prefix("bullet"), check: () => prefix("check"), link,
+                indent: () => indent(1), outdent: () => indent(-1),
                 untick: () => apply(getText().replace(TICKED_ALL, "$1 $2"), getSel())};
   bar.addEventListener("mousedown", e => e.preventDefault());  // keeps the caret (and the focus) in the editor
   bar.addEventListener("click", e => {
@@ -399,6 +449,7 @@ function editor(ta) {
     const k = e.key.toLowerCase();
     if ((e.metaKey || e.ctrlKey) && k === "z") { e.preventDefault(); step(e.shiftKey ? 1 : -1); }
     else if (e.ctrlKey && k === "y") { e.preventDefault(); step(1); }
+    else if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && !e.altKey && !e.shiftKey) { e.preventDefault(); cycle(); }
     else if ((e.metaKey || e.ctrlKey) && (k === "b" || k === "i")) { e.preventDefault(); TOOL[k === "b" ? "bold" : "italic"](); }
     else if (e.key === "Escape") ed.blur();
   });
