@@ -4,7 +4,7 @@
 {% block title %}Horizons{% endblock %}
 {% block heading %}<h1>Horizons of focus</h1>{% endblock %}
 {# One horizon shows at a time, reached directly by its elevator button. Not a sequence: no ‹ › or ← →. #}
-{# Each card's guide: what the level is, concrete steps, examples, and how often to revisit it.
+{# Each level's guide (behind its ?): what the level is, concrete steps, examples, and how often to revisit it.
    The one place besides the review's cards that explains at length, since the horizons are unfamiliar ground. #}
 {% set guides = {
   'purpose': {
@@ -79,17 +79,23 @@
     'review': "Daily, on Next. This card is for checking that what you do day to day still lines up with the horizons above.",
   },
 } %}
-{# A level's guide: what it is, how to work it, examples, when to revisit. #}
-{% macro guide(g) %}
-<div class="guide">
-  <p>{{ g.what }}</p>
-  <h3>Do this</h3>
-  <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
-  <h3>Examples</h3>
-  <p>{{ g.examples }}</p>
-  <h3>When to revisit</h3>
-  <p>{{ g.review }}</p>
-</div>
+{# A level's guide, behind a ? beside its heading: a dialog saying what the level is, how to work it, examples, when
+   to revisit. Focus starts on its heading, not a field, as in Site info. #}
+{% macro help(key, title) %}<button type="button" class="icon help" onclick="document.getElementById('guide-{{ key }}').showModal()" title="How to work this level" aria-label="How to work {{ title }}">?</button>{% endmacro %}
+{% macro guide(g, key, title) %}
+<dialog class="guide-dialog" id="guide-{{ key }}">
+  <button type="button" class="close icon" onclick="this.closest('dialog').close()" title="Close (Esc)" aria-label="Close">×</button>
+  <h2 tabindex="-1" autofocus>{{ title }}</h2>
+  <div class="guide">
+    <p class="what">{{ g.what }}</p>
+    <h3>Do this</h3>
+    <ol>{% for s in g.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+    <h3>Examples</h3>
+    <p>{{ g.examples }}</p>
+    <h3>When to revisit</h3>
+    <p>{{ g.review }}</p>
+  </div>
+</dialog>
 {% endmacro %}
 {% block crumb %}{% if step %}<a href="{{ url_for('horizons_view') }}">Horizons</a>{% endif %}{% endblock %}
 {% block actions %}<span class="floors">{% for label, s, anchor in floors %}<a class="floor{{ ' on' if s == step }}" href="{{ url_for('horizons_view', level=s, _anchor=anchor) }}" title="{{ titles[s] }}"{% if s == step %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</span>{% endblock %}
@@ -115,18 +121,18 @@
 {% endif %}
 <ol class="deck">
   <li id="{{ step }}" class="step on">
-    <h2>{{ titles[step] }}</h2>
+    <h2>{{ titles[step] }}{% if step != 'purpose' %}{{ help(step, titles[step]) }}{% endif %}</h2>
     {% if step == 'purpose' %}
-    {# Purpose (H5), then vision (H4): a note each, autosaved, its guide right under it; under the vision's note, each
-       area's part of it. #}
-    {% for level in ('purpose', 'vision') %}{% set h = items[level][0] %}
-    <h3{% if level == 'vision' %} id="vision"{% endif %}>{{ levels|selectattr(0, 'eq', level)|map(attribute=1)|first }}</h3>
+    {# Purpose (H5), then vision (H4): a note each, autosaved, its guide behind the ? beside its heading;
+       under the vision's note, each area's part of it. #}
+    {% for level in ('purpose', 'vision') %}{% set h = items[level][0] %}{% set label = levels|selectattr(0, 'eq', level)|map(attribute=1)|first %}
+    <h3{% if level == 'vision' %} id="vision"{% endif %}>{{ label }}{{ help(level, label) }}</h3>
+    {{ guide(guides[level], level, label) }}
     <form method="post" action="{{ url_for('horizon_view', id=h.id) }}" data-autosave="{{ url_for('autosave', kind='horizons', id=h.id) }}">
       <textarea name="notes" rows="8" placeholder="{{ levels|selectattr(0, 'eq', level)|map(attribute=2)|first }}">{{ h.notes }}</textarea>
       <p class="autosave hint" aria-live="polite"></p>
       <button hidden>Save</button>
     </form>
-    {% if level == 'purpose' %}{{ guide(guides.purpose) }}{% endif %}
     {% endfor %}
     {# The vision, area by area: each area's line, saved in the background as it's left; only here. #}
     <h3>Area by area</h3>
@@ -140,7 +146,6 @@
       <li class="empty">No areas yet: add them on <a href="{{ url_for('horizons_view', level='area') }}">H2</a>.</li>
       {% endfor %}
     </ul>
-    {{ guide(guides.vision) }}
     {% elif step in ('goal', 'area') %}
     <span class="count">{{ items[step]|length }}</span>
     <ul class="tasks" data-reorder="{{ url_for('horizons_order', level=step) }}">
@@ -170,7 +175,7 @@
     <span class="count">{{ ground|length }}</span>
     <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
     {% endif %}
-    {% if step != 'purpose' %}{{ guide(guides[step]) }}{% endif %}
+    {% if step != 'purpose' %}{{ guide(guides[step], step, titles[step]) }}{% endif %}
   </li>
 </ol>
 {% endif %}

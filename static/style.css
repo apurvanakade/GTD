@@ -148,7 +148,7 @@ button:hover, .button:hover { color: var(--fg); background: var(--soft); }
 .search { flex: 1 1 0; min-width: 120px; position: relative; }
 .search input { background: var(--soft); border-color: transparent; border-radius: 999px; padding: 7px 14px; }
 .search input:focus { background: var(--card); border-color: var(--line); }
-.capture-dialog, .day-dialog, .help-dialog, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
+.capture-dialog, .day-dialog, .help-dialog, .guide-dialog, .overlay, .reached { padding: 16px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; }
 /* A task's fields on every add line and dialog (task_fields() in _task.html): the task page's, all shown. */
 .task-fields { flex: 1 0 100%; margin-top: 8px; }
 .add .task-fields { margin-top: 0; padding-left: 28px; }
@@ -228,8 +228,8 @@ body.embed .popup input[name=title] { width: 100%; }
 .popup .bookmark input { width: auto; margin: 0; }
 body.embed .title-line { padding-right: 8rem; }  /* room for the overlay's ‹ › × */
 body.embed .edit .md-editor { min-height: 20rem !important; }  /* room to clarify, over notes.js's inline rows height; rem, since vh would chase the frame's own height */
-:is(.capture-dialog, .day-dialog, .help-dialog, .overlay, .reached)::backdrop { background: rgb(0 0 0 / .35); }
-:is(.capture-dialog, .day-dialog, .help-dialog, .reached) h2 { margin-top: 0; }
+:is(.capture-dialog, .day-dialog, .help-dialog, .guide-dialog, .overlay, .reached)::backdrop { background: rgb(0 0 0 / .35); }
+:is(.capture-dialog, .day-dialog, .help-dialog, .guide-dialog, .reached) h2 { margin-top: 0; }
 .suggest {
   position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px); padding: 4px; max-height: 70vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
@@ -540,8 +540,18 @@ body:not(.nav-hidden) .review-steps { top: calc(var(--nav-h) + 12px); }  /* unde
 .task:has(> .balance) .title { flex: 0 0 12em; }  /* H2: a fixed name column, then the slider across the row */
 .task > .balance { flex: 1 1 0; max-width: 520px; margin: 0 8px; }
 .task > .balance output { font-size: var(--fs-xs); min-width: 8em; }
-/* Horizons: each card's guide, what the level is and how to work it. */
-.guide { max-width: 70ch; color: var(--muted); font-size: var(--fs-m); margin: 28px 0 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+/* Horizons: each level's guide, what it is and how to work it, in a dialog behind a round ? beside its heading. */
+.help { min-width: 0; width: 1.6rem; height: 1.6rem; padding: 0; border: 1px solid var(--line); border-radius: 50%;
+  font-size: var(--fs-s); font-weight: 600; line-height: 1; vertical-align: middle; }
+.help:hover { border-color: var(--muted); }
+.deck h2 .help { margin-left: auto; }  /* the card's top right */
+.deck h3 .help { margin-left: 8px; width: 1.4rem; height: 1.4rem; font-size: var(--fs-xs); }
+.guide-dialog { width: min(44rem, calc(100vw - 32px)); padding: 20px 24px 24px; }
+.guide-dialog .close { position: absolute; top: 12px; right: 14px; }
+.guide-dialog h2 { padding-right: 40px; margin-bottom: 10px; }
+.guide-dialog h2:focus { outline: none; }
+.guide { color: var(--muted); font-size: var(--fs-m); line-height: 1.5; }
+.guide .what { color: var(--fg); }
 .guide h3 { color: var(--fg); font-size: var(--fs-s); text-transform: none; letter-spacing: 0; margin: 14px 0 4px; }
 .guide p, .guide ol { margin: 4px 0; }
 .guide ol { padding-left: 1.4em; }
