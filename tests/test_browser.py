@@ -263,8 +263,7 @@ def test_send_to_inbox_on_a_row_needs_hover(browser, page, live, conn):
     row = page.locator("li.task", has=page.locator("form.to-inbox")).first
     assert row.locator(".to-inbox button").evaluate("b => getComputedStyle(b).opacity") == "0"
     row.hover()
-    sync_api.expect(row.locator(".to-inbox button")).to_be_visible()
-    assert row.locator(".to-inbox button").evaluate("b => getComputedStyle(b).opacity") == "1"
+    sync_api.expect(row.locator(".to-inbox button")).to_have_css("opacity", "1")  # it eases in ("Hover motion")
     ctx = browser.new_context(has_touch=True, is_mobile=True, viewport={"width": 1024, "height": 768})
     touch = ctx.new_page()
     touch.goto(live + "/next")

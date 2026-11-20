@@ -390,9 +390,11 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .task, .context-list li, .suggest a { transition: background-color .22s ease-out; }
 .task:hover, .context-list li:hover, .suggest a:is(.on, :hover) { transition-duration: .09s; }
 .task.open .steps > li:hover { transition-duration: .3s, .3s, .09s; }  /* fast in, as a row's tint; the open slide keeps its own */
-.task :is(.grip, .date, .recur, .step, .to-inbox button, .set-step button), .context-list li .grip { transition: opacity .2s ease-out; }
-.task:is(:hover, :focus-within) :is(.grip, .date, .recur, .step, .to-inbox button, .set-step button), .context-list li:hover .grip { transition-duration: .1s; }
-.done button, .task :is(.start, .to-inbox) button { transition: background-color .15s, border-color .15s, color .15s; }
+.task :is(.grip, .date, .recur, .step, .set-step button), .context-list li .grip { transition: opacity .2s ease-out; }
+.task:is(:hover, :focus-within) :is(.grip, .date, .recur, .step, .set-step button), .context-list li:hover .grip { transition-duration: .1s; }
+.done button, .task .start button { transition: background-color .15s, border-color .15s, color .15s; }
+.task .to-inbox button { transition: opacity .2s ease-out, background-color .15s, border-color .15s, color .15s; }  /* ↩ fades as the rest, and colors as ▶ */
+.task:is(:hover, :focus-within) .to-inbox button { transition-duration: .1s, .15s, .15s, .15s; }
 @media (prefers-reduced-motion: reduce) { .task, .task *, .context-list li, .context-list li *, .suggest a { transition: none !important; } }
 .task .title { color: var(--fg); flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }  /* basis 0: a long title wraps rather than pushing the buttons onto a line of their own */
 .task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--fs-s); color: var(--muted); }
@@ -435,9 +437,9 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .peek-all, .tickled-toggle { font-size: var(--fs-s); }
 .task .steps { display: none; flex-basis: 100%; list-style: none; margin: 0; padding: 0 0 0 calc(1.2em + 10px); }
 .task.open .steps { display: block; margin-top: 2px; }
-/* The fold-out slides open and shut (height to auto, then display), fading as it goes; clipped with room for a focus ring. */
+/* The fold-out slides open and shut (height to auto, then display), fading as it goes; clipped with room for a step's tint (its -6px margin) and focus ring. */
 .task .steps {
-  height: 0; opacity: 0; overflow: clip; overflow-clip-margin: 4px; interpolate-size: allow-keywords;
+  height: 0; opacity: 0; overflow: clip; overflow-clip-margin: 6px; interpolate-size: allow-keywords;
   transition: height .2s ease-in, opacity .2s ease-in, margin-top .2s ease-in, display .2s allow-discrete;
 }
 .task.open .steps { height: auto; opacity: 1; transition-duration: .32s; transition-timing-function: cubic-bezier(.2, .7, .2, 1); }
