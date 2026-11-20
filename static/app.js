@@ -591,7 +591,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   document.addEventListener('pointerup', e => listUnder(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
   document.addEventListener('dragstart', e => {
     const list = listUnder(e), li = list && e.target.closest('li[draggable]');
-    if (!li) return;
+    if (li?.parentElement !== list) return;  // a project card's folded-out step only moves out (move.js)
     const picked = li.classList.contains('selected') ? [...document.querySelectorAll('main li.task.selected')] : [li];
     if (picked.some(r => r.parentElement !== list)) return;  // a selection across lists only moves out (move.js)
     dragged = picked;
@@ -731,7 +731,7 @@ async function refreshNav() {
 // steps keep their own jobs, a click that ends a text selection selects, and a shift-click selects the row (move.js).
 document.addEventListener('click', e => {
   const step = e.target.closest('.task .steps > li');  // a folded-out step: a click beside its link opens it too
-  if (step && !e.button && !e.shiftKey && !e.target.closest('a, button') && !String(getSelection())) {
+  if (step && !e.button && !e.shiftKey && !e.target.closest('a, button, .grip') && !String(getSelection())) {
     const a = step.querySelector('a');
     if (a) { if (e.metaKey || e.ctrlKey) open(a.href); else a.click(); }
     return;

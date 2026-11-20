@@ -66,12 +66,13 @@
 {% endfor %}
 {% endmacro %}
 
-{# A project row's ▸ and the open steps it folds out (static/app.js toggles them), read-only: a title opens its task. #}
+{# A project row's ▸ and the open steps it folds out (static/app.js toggles them): a title opens its task, and its ⠿
+   drags it to the drop panel (move.js), as a task list's row. #}
 {% macro peek_button() %}<button type="button" class="peek" aria-expanded="false" title="Show steps" aria-label="Show steps">▸</button>{% endmacro %}
 {% macro peek_steps(steps) %}
 <ul class="steps">
   {% for t in steps %}
-  <li{% if t.step == 'next' %} class="next"{% endif %}><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
+  <li{% if t.step == 'next' %} class="next"{% endif %} data-id="{{ t.id }}"><span class="grip" title="Drag to file it" aria-hidden="true">⠿</span><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
     <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
   {% else %}
   <li class="empty">No open steps.</li>
@@ -163,10 +164,11 @@
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item"><a href="{{ url_for('reference') }}" draggable="false">Reference</a></div></div>
 {% endmacro %}
 
-{# Every task list's drop panel (static/move.js): it slides in while an open row is dragged, or stays while pinned by
-   the header's File to button (pin_button()); dropping a row on a target moves the task there. The pin holds
-   on every page; `reload`: the page redraws after a move instead of dropping the row (Waiting, where a
-   moved waiting step stays). #}
+{# The drop panel of every task list and project tab (static/move.js): it slides in while an open row (or a project
+   card's folded-out step) is dragged, or stays while pinned by the header's File to button (pin_button()); dropping a
+   row on a target moves the task there. The pin holds on every page; `reload`: the page redraws after a move instead
+   of dropping the row (Waiting, where a moved waiting step stays; the project tabs, where a filed step can change its
+   project's ⚠ and next action). #}
 {% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the places to file to open">File to</button>{% endmacro %}
 {% macro move_panel(current=none, reload=False, stays=none) %}
 <aside class="drop-panel" data-move="{{ url_for('task_move') }}"{% if reload %} data-reload{% endif %}{% if stays %} data-stays="{{ stays }}"{% endif %}>

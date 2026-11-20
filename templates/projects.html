@@ -1,12 +1,14 @@
 {% extends "base.html" %}
-{% from "_task.html" import add_form, project_list, closed_project with context %}
+{% from "_task.html" import add_form, project_list, closed_project, pin_button, move_panel with context %}
 {% block title %}{{ {'active': 'Active projects', 'waiting': 'Waiting projects', 'someday': 'Someday projects'}[status] }}{% endblock %}
-{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{% endif %}
+{% block actions %}{% if projects %}<button type="button" class="peek-all">Expand all</button>{{ pin_button() }}{% endif %}
   {%- if status == 'someday' and tickled %}<a class="tickled-toggle" href="{{ tickled_url }}" title="{{ tickled }} out of sight until their tickler date">{{ 'Hide tickled' if show_tickled else 'Show tickled' }}</a>{% endif %}{% endblock %}
 {% block body %}
 {# A project tab: its add line makes a project of the tab's status. #}
 {% call add_form(url_for('project_create'), 'New project – describe the outcome') %}<input type="hidden" name="status" value="{{ status }}">{% endcall %}
 {{ project_list(projects, steps, status, {'active': 'No active projects.', 'waiting': 'No waiting projects.', 'someday': 'Nothing parked here.'}[status]) }}
+{#- A step dragged out of its project redraws the page: the project's ⚠ and next action may change. #}
+{% if projects %}{{ move_panel(reload=True) }}{% endif %}
 {% if status == 'active' %}
 <p class="done-toggle"><a href="{{ toggle_url }}">{{ 'Hide completed' if show_done else 'Show completed' }}</a></p>
 {% if show_done %}
