@@ -79,9 +79,9 @@
     {% if projects %}<ul class="plain review-list">{% for p in projects %}<li>
       <form method="post" action="{{ url_for('project_reviewed', id=p.id) }}"><button class="icon" title="Mark reviewed" aria-label="Mark reviewed">✓</button></form>
       <a href="{{ url_for('project_view', id=p.id) }}"{% if p.warning %} title="{{ p.warning }}"{% endif %}>{% if p.warning %}⚠ {% endif %}{{ p.title }}</a>
-      {% if p.outcome %}<span class="date">→ {{ p.outcome }}</span>{% endif %}
       {% if p.status == 'waiting' %}<span class="date">waiting</span>{% endif %}
       <span class="date" title="Last reviewed">{{ p.reviewed_at|ago }}</span>
+      {% if p.outcome %}<p class="outcome">→ {{ p.outcome }}</p>{% endif %}
       {% set actions = open_steps.get(p.id, [])|selectattr('step', 'eq', 'next')|list %}
       {% if actions %}<ul class="nexts">{% for t in actions %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a></li>{% endfor %}</ul>{% endif %}
     </li>{% endfor %}</ul>{% endif %}

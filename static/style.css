@@ -419,12 +419,30 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 /* A someday project's last review, and a tickler date still to come. */
 .task :is(.reviewed, .until) { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
 .task .until + .reviewed { margin-left: 0; }
-/* The review's projects and someday steps: ✓, title, then faint details. */
-.plain.review-list { list-style: none; padding-left: 0; }
-.review-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
-.review-list .nexts { flex-basis: 100%; list-style: none; margin: 0 0 6px; padding-left: calc(34px + 8px); font-size: var(--fs-s); }
+/* The review cards' lists: rows as everywhere else (--fs-m, ink titles), each date faint at the right. */
+.review .plain { list-style: none; margin: 8px -6px 12px; padding: 0; font-size: var(--fs-m); }
+.review .plain > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding: 4px 6px; border-radius: 6px; }
+.review .plain > li:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); }
+.review .plain > li > a { flex: 1 1 0; min-width: 0; color: var(--fg); overflow-wrap: anywhere; }
+.review .plain > li > a:hover, .review-list .nexts a:hover { color: var(--accent); }
+.review .plain .date { color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
+.review .plain .date.overdue { color: var(--danger); }
+.review > li > h3 { margin: 16px 0 4px; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }  /* as the step list's captions */
+.review h3 + .plain { margin-top: 0; }
+/* Projects and someday steps: ✓, then the title with its faint details on the right; the outcome and next actions under the title. */
+.review-list > li { align-items: center; padding: 6px; }
+.review-list > li + li { margin-top: 2px; }
 .review-list form { display: contents; }
-.review-list .date { color: var(--muted); font-size: var(--fs-s); }
+.review-list button.icon { min-width: 0; width: 26px; height: 26px; padding: 0; line-height: 1; }
+.review-list :is(.outcome, .nexts) { flex-basis: 100%; margin: 0; padding-left: calc(26px + 8px); font-size: var(--fs-s); }
+.review-list .outcome { color: var(--muted); }
+.review-list .nexts { list-style: none; margin-top: 2px; }
+.review-list .nexts li { padding: 1px 0; }
+.review-list .nexts a { color: var(--fg); opacity: .85; }
+.review-list .nexts a::before { content: "▸ "; color: var(--muted); }
+/* A card's link to its page: quiet, its text in line with the card's. */
+.review > li > p:has(> .button) { margin: 4px 0 0; }
+.review > li > p > .button { margin-left: -10px; font-size: var(--fs-m); }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
 .task.gone { text-decoration: line-through; }
 .task.gone > :not(.row-btn) { opacity: .35; }  /* Revive stays clear: it undoes the tick */
@@ -562,7 +580,6 @@ body:not(.nav-hidden) .review-steps { top: calc(var(--nav-h) + 12px); }  /* unde
 .guide ol { padding-left: 1.4em; }
 .guide li + li { margin-top: 4px; }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
-.plain { padding-left: 18px; }
 .date { font-variant-numeric: tabular-nums; }
 .done-toggle { margin-top: 1.5em; font-size: var(--fs-m); }
 .done-toggle a { color: var(--muted); }
