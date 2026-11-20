@@ -1933,6 +1933,16 @@ def test_the_category_box_offers_categories(page, live, conn):
     assert db.get_task(conn, t["id"])["label"] == "Home: grade hw"
 
 
+def test_an_empty_category_box_shows_on_the_task_page(page, live, conn):
+    """A task with no category still shows its category box before the title, so one can be added."""
+    t = next(t for t in db.inbox_tasks(conn) if not t["category"])
+    page.goto(live + f"/tasks/{t['id']}?embed=overlay")
+    cat = page.locator(".title-line input[name=category]")
+    expect(cat).to_be_visible()
+    expect(cat).to_have_attribute("placeholder", "Category")
+    assert cat.bounding_box()["width"] > 40
+
+
 def test_titles_read_on_a_phone(browser, live, conn):
     """At phone width every list row's title gets most of a line to read across, and no page scrolls sideways.
     Only reading matters there (the phone is for capture), so a row's controls may wrap below its title."""
