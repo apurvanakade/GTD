@@ -6,11 +6,11 @@
 {% block body %}
 {# H0's someday tasks, in a band per category (someday_groups(), "Other" last), each band a list of its own to drag
    in: drag one onto Next or a project to commit to it. No context filter:
-   its ideas aren't picked by context (a task's contexts are kept). #}
-{% if tasks %}{% for key, name, rows in groups %}
+   its ideas aren't picked by context (a task's contexts are kept). The bands flow into columns as width allows. #}
+{% if tasks %}<div class="someday-bands">{% for key, name, rows in groups %}
 <details class="band" data-band="{{ key }}" open>
   <summary>{{ name }} <b>{{ rows|length }}</b></summary>
   {{ task_list(rows) }}
-</details>{% endfor %}{% else %}<ul class="tasks"><li class="empty">Nothing parked here.</li></ul>{% endif %}
+</details>{% endfor %}</div>{% else %}<ul class="tasks"><li class="empty">Nothing parked here.</li></ul>{% endif %}
 {% if tasks %}{{ move_panel(current='someday') }}{% endif %}
 {% endblock %}
