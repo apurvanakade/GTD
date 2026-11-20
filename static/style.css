@@ -722,7 +722,9 @@ a.who:hover { color: var(--fg); }
 .tree .add.under .plus { font-size: 1rem; width: 14px; }
 .tree .add.under input[name="title"] { padding: 3px 6px; border-color: transparent; background: transparent; font-size: var(--fs-s); }
 .tree .add.under > .primary { width: 24px; height: 24px; }
-.tree .add.under .add-more { padding-left: 20px; padding-bottom: 4px; }
+.tree .add.under .task-fields { padding-left: 20px; padding-bottom: 4px; }
+/* Its kind select stays; the task's own fields only while it makes an action. */
+.tree .add.under:not(:has(select[name="kind"] > option[value="action"]:checked)) :is(input.category, .task-fields > :not(.fields), .task-fields .fields > label) { display: none; }
 /* Projects and Actions: every one, those serving nothing first, each with its "Serves …" select on the right. */
 .linked > li { align-items: center; }
 :is(.linked, .tree) .serves { margin: 0 0 0 auto; }

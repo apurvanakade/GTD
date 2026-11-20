@@ -132,7 +132,7 @@ CREATE TABLE IF NOT EXISTS horizon_positions (
   position INTEGER NOT NULL
 );
 -- The horizons' links, set only on Horizons, each child under one parent at most: an area's vision line (H4 is built
--- from them), a goal's area, a project's goal or area, an H0 task's area. Tables of their own (no ALTER).
+-- from them), a goal's area, a project's goal or area, an H0 task's goal or area. Tables of their own (no ALTER).
 CREATE TABLE IF NOT EXISTS area_visions (
   horizon_id INTEGER PRIMARY KEY REFERENCES horizons(id) ON DELETE CASCADE,
   vision TEXT NOT NULL
@@ -208,7 +208,6 @@ NEXT = f"t.state = 'open' AND t.step = 'next' AND (t.ground OR {ACTIVE})"
 READY = "(t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
 VISIBLE_NEXT = f"{NEXT} AND {READY}"
 DUE_NEXT = f"{NEXT} AND t.due_date <= ?"  # the nav count: due today or overdue only
-H0_NEXT = "t.state = 'open' AND t.ground AND t.step = 'next'"  # h0_actions(); H0's waiting tasks are on Waiting
 STEP_ORDER = """CASE WHEN t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2
   WHEN t.step = 'someday' THEN 3 ELSE 4 END"""
 
@@ -506,11 +505,6 @@ def next_actions(c, today):
     """Next actions that count today: next_list() minus repeats not yet due."""
     return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_NEXT}
         ORDER BY {NEXT_ORDER}""", (today.isoformat(),)).fetchall()
-
-
-def h0_actions(c):
-    """Every H0 next action, repeats not yet due included, in Next's order."""
-    return c.execute(f"{TASK_SELECT} WHERE {H0_NEXT} ORDER BY {NEXT_ORDER}").fetchall()
 
 
 def inbox_tasks(c):

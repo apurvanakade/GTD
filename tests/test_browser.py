@@ -1270,6 +1270,31 @@ def test_horizons_walk_and_link_in_place(page, live, conn):
     line.locator("input[name=title]").press("Enter")
     sync_api.expect(page.locator(".tree .kids").get_by_role("link", name="⚠ Order cabinets")).to_be_visible()
     assert page.url.endswith("?level=goal")
+    # Its task fields show only while it makes an action.
+    line.locator("input[name=title]").fill("Measure")
+    sync_api.expect(line.locator("select[name=kind]")).to_be_visible()
+    sync_api.expect(line.locator("input[name=recur]")).to_be_hidden()
+    line.locator("select[name=kind]").select_option("action")
+    sync_api.expect(line.locator("input[name=recur]")).to_be_visible()
+    sync_api.expect(line.locator("input[name=category]")).to_be_visible()
+
+
+@pytest.mark.parametrize("level", ["goal", "area"])
+def test_horizons_drag_reorders_goals_and_areas(page, live, conn, level):
+    if level == "goal":
+        db.add_horizon(conn, "goal", "Run a half")  # a second goal; new ones go on top
+    page.goto(live + f"/horizons?level={level}")
+    titles = lambda: page.locator(".tree > li .head .title").all_inner_texts()
+    before = titles()
+    assert len(before) == 2
+    first, second = (page.locator(".tree > li", has=page.locator(".head", has_text=t.removeprefix("⚠ "))) for t in before)
+    with page.expect_response(lambda r: r.url.endswith(f"/horizons/order/{level}")) as saved:
+        second.locator(".grip").drag_to(first, target_position={"x": 5, "y": 2})
+    assert saved.value.status == 204
+    assert titles() == before[::-1]
+    assert ["⚠ " * bool(x["warning"]) + x["h"]["title"] for x in db.horizon_tree(conn)[level + "s"]] == before[::-1]
+    page.reload()
+    assert titles() == before[::-1]
 
 
 def test_remind_box_previews_how_it_reads(page, live):

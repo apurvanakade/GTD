@@ -14,6 +14,11 @@ import recur
 from app import HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
 
+def h0_next(conn):
+    """Every open H0 next action, repeats not yet due included."""
+    return [t for t in db.tasks_with_step(conn, "next") if t["ground"]]
+
+
 OUT_OF_RANGE = ("in 99999999999 days", "in 99999 weeks", "in 999999 years", "in " + "9" * 5000 + " days", "9999-12-31", "12/31/9999")
 
 # --- recur -----------------------------------------------------------------
@@ -215,7 +220,7 @@ def test_tasks_need_a_project_or_h0(client, conn):
     item = db.add_task(conn, "inbox item")
     client.post(f"/tasks/{item}", data={"title": "inbox item", "project_id": "h0"})
     assert db.get_task(conn, item)["ground"] and db.get_task(conn, item)["step"] == "next"
-    assert [t["id"] for t in db.h0_actions(conn)] == [item]
+    assert [t["id"] for t in h0_next(conn)] == [item]
     assert "inbox item" in client.get("/horizons?level=ground").data.decode()  # H0 tasks
     assert f'href="/projects/{pid}"' in client.get("/horizons?level=projects").data.decode()  # H1 projects
 
@@ -264,7 +269,7 @@ def test_h0_tasks_are_next_or_waiting(client, conn):
     assert (parcel["ground"], parcel["step"]) == (1, "waiting")
     nxt = client.get("/next").get_data(as_text=True)
     assert ">later<" in nxt and ">parcel<" not in nxt
-    assert len(db.h0_actions(conn)) == 4 and db.counts(conn, TODAY)["waiting"] == 2
+    assert len(h0_next(conn)) == 4 and db.counts(conn, TODAY)["waiting"] == 2
     assert ">parcel<" in client.get("/waiting").get_data(as_text=True)
 
 
@@ -651,7 +656,7 @@ def test_calendar_add(client, conn):
     client.post("/calendar", data={"title": "loose", "due_date": "2027-04-02"})
     assert [x["title"] for x in db.inbox_tasks(conn)] == ["loose"]
     client.post("/calendar", data={"title": "bins", "due_date": "2027-04-02", "recur": "weekly", "project_id": "h0"})
-    assert [x["title"] for x in db.h0_actions(conn)] == ["bins"]
+    assert [x["title"] for x in h0_next(conn)] == ["bins"]
 
 
 def test_horizons(client, conn):
@@ -684,7 +689,13 @@ def test_horizons_page_is_laid_out_like_the_review(client, conn):
     """The levels down the left (H5 … H0), each counting what wants attention; one card on the right, ‹ › to its
     neighbours; `?level=` picks it, else the first with something to do."""
     seed(conn)
-    get = lambda q="": client.get("/horizons" + q).get_data(as_text=True)
+    get = lambda q="": client.get("/horizons" + q, follow_redirects=True).get_data(as_text=True)
+    # A bare or unknown ?level= redirects to the card it shows, so every action on it returns there (back()).
+    for q in ("", "?level=bogus"):
+        r = client.get("/horizons" + q)
+        assert r.status_code == 302 and r.headers["Location"] == "/horizons?level=purpose", q
+    r = client.get("/horizons?horizon=3")  # an overlay asked for keeps its place
+    assert r.status_code == 302 and r.headers["Location"] == "/horizons?horizon=3&level=purpose"
     steps = lambda page: re.findall(r'<a href="/horizons\?level=(\w+)"[^>]*><span class="lv">(H\d)</span>(\w+)(?:<span class="n">(\d+)</span>)?</a>', page)
     # Purpose and vision empty (1 each); Work has no vision line; the goal lacks an outcome, Work a standard and Home
     # one too; Waiting proj serves nothing (Someday proj doesn't count); call mum, bins and parcel from Ann are loose.
@@ -859,7 +870,7 @@ def test_complete_twice_is_harmless(client, conn):
     tid = db.add_task(conn, "bins", step="next", ground=1, recur="weekly", due_date="2026-10-22")
     client.post(f"/tasks/{tid}/complete")
     client.post(f"/tasks/{tid}/complete")  # e.g. a double click
-    assert len(db.h0_actions(conn)) == 1  # only one new instance
+    assert len(h0_next(conn)) == 1  # only one new instance
 
 
 def test_projects_create_and_status(client, conn):
@@ -2841,6 +2852,10 @@ def test_horizons_add_under_a_goal_or_area(client, conn):
     a = next(t for t in db.horizon_tree(conn)["tasks"] if t["title"] == "Measure the wall")
     assert a["horizon_id"] == goal and a["step"] == "next"
     assert db.get_task(conn, a["id"])["ground"] and db.get_task(conn, a["id"])["contexts"] == "home"
+    # It's a task add line: every task add form's fields, posted as on any other.
+    add(goal, kind="action", title="Buy paint", category="Decor", notes="white", due_date="2027-01-05", context="home")
+    t = db.get_task(conn, next(t["id"] for t in db.horizon_tree(conn)["tasks"] if t["title"] == "Decor: Buy paint"))
+    assert (t["category"], t["notes"], t["due_date"], t["contexts"]) == ("Decor", "white", "2027-01-05", "home")
     add(home, kind="goal", title="Garden in bloom")
     g = next(g for g in db.horizons(conn)["goal"] if g["title"] == "Garden in bloom")
     assert g["area_id"] == home
@@ -2852,6 +2867,11 @@ def test_horizons_add_under_a_goal_or_area(client, conn):
     assert len(db.horizon_tree(conn)["projects"]) == before
     card = client.get("/horizons?level=goal").get_data(as_text=True)
     assert f'action="/horizons/{goal}/add"' in card and "Order cabinets" in card and "Measure the wall" in card
+    under = re.search(rf'<form method="post" action="/horizons/{goal}/add".*?</form>', card, re.S).group(0)
+    for field in ('name="category"', 'name="notes"', 'name="due_date"', 'name="recur"', 'name="remind_at"',
+                  'name="context"', 'class="hint marks"'):
+        assert field in under, field
+    assert re.search(r'<div class="where">\s*<label>Kind <select name="kind">', under)  # the kind is its where column
     assert f'action="/horizons/{home}/add"' in client.get("/horizons?level=area").get_data(as_text=True)
     serve = lambda **f: client.post("/horizons/serve", data=f, headers={"X-Requested-With": "fetch"})
     assert serve(kind="project", id=ids["waiting"], horizon=home).status_code == 204
@@ -3183,7 +3203,7 @@ def test_h0_tasks_can_be_someday(client, conn):
     t = db.add_task(conn, "learn Italian", ground=1, step="someday", today=TODAY)
     assert (db.get_task(conn, t)["step"], db.get_task(conn, t)["due_date"]) == ("someday", None)  # not dated: no tickler
     # Not on H0 or in its count; on Someday and in its count.
-    assert t not in [x["id"] for x in db.h0_actions(conn)] and db.counts(conn, TODAY)["someday"] == 1
+    assert t not in [x["id"] for x in h0_next(conn)] and db.counts(conn, TODAY)["someday"] == 1
     html = client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
     assert "<option selected>someday</option>" in html and ">Tickler <" in html.replace("\n", "")
     # Becoming someday drops a date already come (it would be back in the Inbox at once), keeps one to come.

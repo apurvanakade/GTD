@@ -1398,14 +1398,16 @@ def horizon_todo(tree):
 
 @app.route("/horizons")
 def horizons_view():
-    """Steps down the left (H5 … H0, each with what wants attention counted), one card on the right: `?level=`, else
-    the first with something to do, else purpose."""
+    """Steps down the left (H5 … H0, each with what wants attention counted), one card on the right: `?level=`. A bare
+    or unknown one redirects to the first with something to do, else purpose, so the URL (and so the Referer every
+    action on the card returns to, `back()`) always names the card: fixing its last ⚠ doesn't jump to another."""
     c = conn()
     tree = db.horizon_tree(c)
     todo = horizon_todo(tree)
     step = request.args.get("level")
     if step not in HORIZON_KEYS:
         step = next((key for key in HORIZON_KEYS if todo[key]), "purpose")
+        return redirect(url_for("horizons_view", **{**request.args, "level": step}))
     return render_template("horizons.html", balance_words=BALANCE, steps=HORIZON_STEPS, keys=HORIZON_KEYS, step=step,
                            tree=tree, todo=todo, adds=HORIZON_ADDS)
 
@@ -1492,7 +1494,7 @@ def horizon_view(id):
 
 @app.post("/horizons/<int:id>/link")
 def horizon_link(id):
-    """Hang a project (under a goal or area), or a goal or H0 task (under an area), here: `kind` and `add` (its id),
+    """Hang a project or H0 task (under a goal or area), or a goal (under an area), here: `kind` and `add` (its id),
     from the goal's or area's page; `remove` unlinks one from here. A child has one parent, so linking moves it."""
     c = conn()
     h = db.get_horizon(c, id) or abort(404)

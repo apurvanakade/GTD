@@ -127,10 +127,12 @@
     {%- for t in x.tasks %}<li class="action"><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>{% if t.step == 'waiting' %} <span class="meta">waiting</span>{% endif %}</li>{% endfor %}
   </ul>{% endif %}
 {%- endmacro %}
-{#- A goal's or area's own add line: a new project, action (an H0 next action) or, under an area, goal, linked here. #}
+{#- A goal's or area's own add line: a new project, action (an H0 next action) or, under an area, goal, linked here.
+    A task add line (`task=True`), its kind select the `where` column; the task-only fields show only while the kind is
+    action (style.css). #}
 {% macro add_under(h, kinds) %}
-  {% call add_form(url_for('horizon_add', id=h.id), 'Add a ' ~ kinds|join(' or ') ~ '…' if kinds|length == 2 else 'Add a goal, project or action…', cls='under') %}
-  <select name="kind" aria-label="Kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+  {% call add_form(url_for('horizon_add', id=h.id), 'Add a ' ~ kinds|join(' or ') ~ '…' if kinds|length == 2 else 'Add a goal, project or action…', cls='under', task=True) %}
+  <label>Kind <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></label>
   {% endcall %}
 {%- endmacro %}
 {#- The Projects and Actions cards' select: the goal or area a project or action serves, saved on pick. #}
