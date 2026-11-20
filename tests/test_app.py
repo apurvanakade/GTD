@@ -677,7 +677,7 @@ ADD_LINE = re.compile(r'<form[^>]*class="add')
 def horizon_card(html):
     """The one Horizons card shown: its key and its HTML, less its guide (whose prose names areas and projects)."""
     m = re.search(r'<li id="(\w+)" class="step on">(.*)</li>\s*</ol>', html, re.S)
-    return m and m.group(1), m and re.sub(r'<div class="guide">.*?</div>', "", m.group(2), flags=re.S)
+    return m and m.group(1), m and re.sub(r'<dialog class="guide-dialog".*?</dialog>', "", m.group(2), flags=re.S)
 
 
 def test_horizons_show_one_level_at_a_time(client, conn):
@@ -709,6 +709,11 @@ def test_horizons_show_one_level_at_a_time(client, conn):
     area = client.get("/horizons?level=area").get_data(as_text=True)
     assert '<input type="hidden" name="level" value="area">' in area and ">Home<" in horizon_card(area)[1]
     assert not ADD_LINE.search(client.get("/horizons?level=ground").get_data(as_text=True))
+    # Each level's guide hides in a dialog behind a ? beside its heading: one each on the cards, two on purpose & vision.
+    for page, keys in ((top, ["purpose", "vision"]), (goal, ["goal"]), (area, ["area"])):
+        assert re.findall(r"getElementById\('guide-(\w+)'\)\.showModal\(\)", page) == keys
+        assert re.findall(r'<dialog class="guide-dialog" id="guide-(\w+)">', page) == keys
+        assert "Do this" not in horizon_card(page)[1]
     purpose, vision = (db.horizons(conn)[level][0]["id"] for level in ("purpose", "vision"))
     assert top.index(f'data-autosave="/autosave/horizons/{purpose}"') < top.index(f'data-autosave="/autosave/horizons/{vision}"')  # one card, H5 above H4
 

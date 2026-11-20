@@ -1254,6 +1254,13 @@ def test_horizons_map(page, live, conn):
     page.wait_for_function(f"document.querySelector('svg.graph > g').getAttribute('transform') !== {zoomed!r}")
     assert re.search(r"scale\(([\d.]+)\)", view())[1] == re.search(r"scale\(([\d.]+)\)", zoomed)[1]
     page.goto(live + "/horizons?level=purpose")
+    guide = page.locator("#guide-vision")
+    sync_api.expect(guide).to_be_hidden()  # the guide waits behind its ?
+    page.get_by_role("button", name="How to work H4 · Vision (3–5 years)").click()
+    sync_api.expect(guide).to_be_visible()
+    sync_api.expect(guide.get_by_text("Do this")).to_be_visible()
+    page.keyboard.press("Escape")
+    sync_api.expect(guide).to_be_hidden()
     box = page.locator(".visions textarea").nth(1)  # Work
     box.fill("Teaching what I love")
     with page.expect_response("**/vision"):
