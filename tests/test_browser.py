@@ -129,14 +129,14 @@ def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
 def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
     page.goto(live + "/tasks/2?embed=overlay")
     page.get_by_role("button", name="Done and open project").click()
-    page.wait_for_url("**/projects?project=1")  # Projects, with its overlay
+    page.wait_for_url("**/projects/active?project=1")  # Projects, with its overlay
     frame = page.frame_locator("dialog.overlay iframe")
     assert frame.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
     assert db.get_task(conn, 2)["state"] == "done"
 
 
 def test_plus_inbox_dialog_captures(page, live, conn):
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     page.click(".add-inbox")
     assert page.locator(".capture-dialog").evaluate("d => d.open")
     page.fill(".capture-dialog input[name=title]", "from the dialog")
@@ -226,7 +226,7 @@ def test_the_bookmarklet_popup_stays_open_to_show_a_warning(page, live, conn):
 
 
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     page.keyboard.press("f")
     assert page.evaluate("document.activeElement.name") == "q"
     page.locator("body").click(position={"x": 5, "y": 5})
@@ -477,7 +477,7 @@ def test_slash_on_a_task_list_focuses_its_add_box(page, live):
 
 
 def test_project_row_arrow_folds_out_its_steps(page, live):
-    for url, project, step in (("/projects", "Kitchen", "lay tiles"), ("/projects/someday?tickled=1", "Someday proj", "dream step")):
+    for url, project, step in (("/projects/active", "Kitchen", "lay tiles"), ("/projects/someday?tickled=1", "Someday proj", "dream step")):
         page.goto(live + url)
         r = row(page, project)
         link = r.get_by_role("link", name=step, exact=True)
@@ -491,7 +491,7 @@ def test_project_row_arrow_folds_out_its_steps(page, live):
 
 def test_closing_a_changed_step_keeps_the_folded_out_steps(page, live, conn):
     """The reload that shows the change goes back to the same view: what was folded out stays, for that reload only."""
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     peeks = page.locator("button.peek")
     row(page, "Kitchen").locator("button.peek").click()
     row(page, "Kitchen").get_by_role("link", name="lay tiles", exact=True).click()
@@ -516,7 +516,7 @@ def test_closing_a_changed_step_keeps_the_folded_out_steps(page, live, conn):
 
 
 def test_expand_all_folds_out_every_project(page, live):
-    for url in ("/projects", "/projects/someday?tickled=1"):
+    for url in ("/projects/active", "/projects/someday?tickled=1"):
         page.goto(live + url)
         steps, toggle = page.locator("ul.steps"), page.locator("button.peek-all")
         assert toggle.inner_text() == "Expand all" and not any(s.is_visible() for s in steps.all())
@@ -675,7 +675,7 @@ def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
     page.keyboard.press("n")  # ignored while the overlay is open
     page.keyboard.press("Escape")
     assert not page.locator(".help-dialog").evaluate("d => d.open")
-    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("s", "/someday"), ("p", "/projects"),
+    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("s", "/someday"), ("p", "/projects/active"),
                       ("Shift+W", "/projects/waiting"), ("Shift+S", "/projects/someday"), ("n", "/next")):
         with page.expect_navigation():
             page.keyboard.press(key)
@@ -1066,11 +1066,11 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     assert db.get_task(conn, 5)["title"] == "vacuum all" and row(page, "vacuum all").count() == 1
     # /tasks/2, a step: Projects, its project's overlay, the step's over it. Closing each drops its part of the URL.
     page.goto(live + "/tasks/2")
-    assert page.url == live + "/projects?project=1&task=2" and task_overlay(page) == "buy tiles"
+    assert page.url == live + "/projects/active?project=1&task=2" and task_overlay(page) == "buy tiles"
     assert page.locator("dialog.overlay").count() == 2
     page.keyboard.press("Escape")
     page.wait_for_function("document.querySelectorAll('dialog.overlay').length === 1")
-    assert page.url == live + "/projects?project=1"
+    assert page.url == live + "/projects/active?project=1"
     # A step opened from its project's overlay stacks over it; its ↗ goes back down to the project, not a second copy.
     project = page.frame_locator("dialog.overlay iframe")
     project.locator("li.task", has_text="lay tiles").locator(".title").click()
@@ -1086,7 +1086,7 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.wait_for_function("document.querySelector('dialog.overlay iframe')?.src.includes('/projects/1?')")
     assert page.locator("dialog.overlay").count() == 1 and page.url == live + "/next"
     page.keyboard.press("Control+ArrowUp")  # at once, before its page is in: waits for it
-    page.wait_for_url(live + "/projects")
+    page.wait_for_url(live + "/projects/active")
     assert page.locator("dialog.overlay").count() == 0
     # ✕ abandons and stays, as ✓ does: the overlay shows it abandoned, with Revive; closing reloads the page under it.
     page.goto(live + "/next")
@@ -1117,7 +1117,7 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.keyboard.press("Escape")
     page.wait_for_selector("dialog.overlay", state="detached")
     # Esc on an open popover (Outcome reached) closes only the popover; the next Esc closes the overlay.
-    page.goto(live + "/projects?project=1")
+    page.goto(live + "/projects/active?project=1")
     page.wait_for_selector("dialog.overlay[open]")
     frame = page.frame_locator("dialog.overlay iframe")
     frame.get_by_role("button", name="Outcome reached").click()
@@ -1128,7 +1128,7 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.keyboard.press("Escape")
     page.wait_for_selector("dialog.overlay", state="detached")
     # Closed while a tick-off is still on its way, it waits for it, then reloads the page under it.
-    page.goto(live + "/projects?project=1")
+    page.goto(live + "/projects/active?project=1")
     page.wait_for_selector("dialog.overlay[open]")
     held = []
     page.route("**/tasks/2/complete", lambda r: held.append(r))
@@ -1175,18 +1175,18 @@ def test_clicking_anywhere_on_a_row_opens_it(page, live):
     page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)  # blank space right of the title
     assert task_overlay(page) == "buy tiles" and page.url == live + "/next"
     page.keyboard.press("Escape")
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     r = row(page, "Kitchen")
     box = r.bounding_box()
     page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
     page.wait_for_selector("dialog.overlay[open]")  # a project opens in its overlay too
-    assert page.url == live + "/projects"
+    assert page.url == live + "/projects/active"
 
 
 def test_clicking_a_rows_button_does_not_open_it(page, live):
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     row(page, "Kitchen").locator("button.peek").click()
-    assert page.url == live + "/projects"
+    assert page.url == live + "/projects/active"
 
 
 def test_horizons_map(page, live, conn):
@@ -1611,7 +1611,7 @@ def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
     expect(nxt).to_be_disabled()
     dialog.get_by_role("button", name="Close").click()
     # A project has no arrows; a step opened over its project's overlay walks the project's steps.
-    page.goto(live + "/projects?project=1")
+    page.goto(live + "/projects/active?project=1")
     dialog.get_by_role("button", name="Close").wait_for()
     assert dialog.locator(".walk:visible").count() == 0
     page.frame_locator("dialog.overlay iframe").locator("main li.task .name a.title").first.click()
@@ -1619,7 +1619,7 @@ def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
     expect(dialog.last.get_by_role("button", name="Next")).to_be_enabled()
     # Opened by URL, as a reminder's tap does: the same list, and the URL stops naming it once it's moved on.
     first = db.project_tasks(conn, 1)[0]["id"]
-    page.goto(live + f"/projects?project=1&task={first}")
+    page.goto(live + f"/projects/active?project=1&task={first}")
     dialog.last.get_by_role("button", name="Next").click()
     page.wait_for_url(lambda u: f"task={first}" not in u and "project=1" in u)
 
@@ -1804,7 +1804,7 @@ def test_at_offers_contexts_and_the_task_page_picks_them(page, live, conn):
     title.dispatch_event("input")
     assert offer.count() == 0  # typed in full
     # In the capture dialog, over its top layer, right under the box; Esc leaves what's typed, in the open dialog.
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     page.keyboard.press("/")
     page.keyboard.press("Tab")  # from the category box to the title
     page.keyboard.type("buy @")
@@ -1899,7 +1899,7 @@ def test_the_category_box_offers_categories(page, live, conn):
     assert page.locator("main li.task .title", has_text="Discrete Math: grade hw").count() == 1
     # Capture starts in the category box; Tab goes on to the title. A new one is offered from then on (the dialog
     # adds in the background, no reload).
-    page.goto(live + "/projects")
+    page.goto(live + "/projects/active")
     page.keyboard.press("/")
     page.keyboard.type("prob stats")  # stored, and offered from then on, title-cased
     page.keyboard.press("Tab")

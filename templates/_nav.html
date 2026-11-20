@@ -18,7 +18,7 @@
   </span>
   <span class="group">
     <small class="caption">Projects</small>
-    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep == 'projects_view' and status == 'active' }}" data-status="active">Active{{ badge(counts.flagged.active, 'need a next action or outcome', 'warn') }}</a>
+    <a href="{{ url_for('projects_view', status='active') }}" class="{{ 'on' if ep == 'projects_view' and status == 'active' }}" data-status="active">Active{{ badge(counts.flagged.active, 'need a next action or outcome', 'warn') }}</a>
     <a href="{{ url_for('projects_view', status='waiting') }}" class="{{ 'on' if ep == 'projects_view' and status == 'waiting' }}" data-status="waiting">Waiting{{ badge(counts.flagged.waiting, 'need a desired outcome', 'warn') }}</a>
     <a href="{{ url_for('projects_view', status='someday') }}" class="{{ 'on' if ep == 'projects_view' and status == 'someday' }}" data-status="someday">Someday</a>
   </span>

@@ -165,7 +165,7 @@
       <li class="empty">No active projects.</li>
       {% endfor %}
     </ul>
-    <p><a class="button" href="{{ url_for('projects_view') }}">Projects →</a></p>
+    <p><a class="button" href="{{ url_for('projects_view', status='active') }}">Projects →</a></p>
     {% else %}
     <span class="count">{{ ground|length }}</span>
     <ul class="tasks">{% for t in ground %}{{ row(t, project=False) }}{% else %}<li class="empty">Nothing at ground level.</li>{% endfor %}</ul>
