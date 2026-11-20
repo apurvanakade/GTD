@@ -593,8 +593,9 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
   const listUnder = e => e.target.closest?.('ul[data-reorder]');
-  // Only the grip starts a drag, so titles stay links; a row ticked off in place stays put.
-  document.addEventListener('pointerdown', e => { if (listUnder(e)) { const g = e.target.closest('li:not(.gone) > .grip'); if (g) g.closest('li').draggable = true; } });
+  // Only the grip starts a drag, so titles stay links; a row ticked off in place stays put. It's the row's own child,
+  // or in its `.head` (Horizons' goals and areas, `ul.tree`).
+  document.addEventListener('pointerdown', e => { if (listUnder(e)) { const g = e.target.closest('li:not(.gone) > .grip, li:not(.gone) > .head > .grip'); if (g) g.closest('li').draggable = true; } });
   document.addEventListener('pointerup', e => listUnder(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
   document.addEventListener('dragstart', e => {
     const list = listUnder(e), li = list && e.target.closest('li[draggable]');
