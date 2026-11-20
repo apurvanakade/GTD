@@ -15,15 +15,13 @@
 .k-waiting { --k: #d97706; } .k-someday { --k: #9333ea; } .k-inbox { --k: #e11d48; }
 /* External calendars' events (GTD_CALENDARS), by feed: read-only, so no tint, only the stripe. */
 .x-0 { --k: #0d9488; } .x-1 { --k: #65a30d; } .x-2 { --k: #64748b; }
-/* Next folds into due bands; dates and ↻ show on hover, except an overdue date. */
+/* Done folds into bands. */
 .band { margin-top: 14px; }
 .band > summary { font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; cursor: pointer; padding: 4px 0; list-style: none; }
 .band > summary::-webkit-details-marker { display: none; }
 .band > summary::before { content: "▸"; display: inline-block; width: 1.2em; }
 .band[open] > summary::before { content: "▾"; }  /* the glyph, not a rotation: a rotated ▸ sits off the text line */
 .band > summary b { font-weight: 600; font-size: var(--fs-xs); background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
-.tasks.soon .task:not(.overdue) :is(.date, .recur) { opacity: 0; }
-.tasks.soon .task:hover :is(.date, .recur), .tasks.soon .task:focus-within :is(.date, .recur) { opacity: 1; }
 
 * { box-sizing: border-box; }
 body {
@@ -390,8 +388,8 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .task, .context-list li, .suggest a { transition: background-color .22s ease-out; }
 .task:hover, .context-list li:hover, .suggest a:is(.on, :hover) { transition-duration: .09s; }
 .task.open .steps > li:hover { transition-duration: .3s, .3s, .09s; }  /* fast in, as a row's tint; the open slide keeps its own */
-.task :is(.grip, .date, .recur, .step, .set-step button), .context-list li .grip { transition: opacity .2s ease-out; }
-.task:is(:hover, :focus-within) :is(.grip, .date, .recur, .step, .set-step button), .context-list li:hover .grip { transition-duration: .1s; }
+.task :is(.grip, .step, .set-step button), .context-list li .grip { transition: opacity .2s ease-out; }
+.task:is(:hover, :focus-within) :is(.grip, .step, .set-step button), .context-list li:hover .grip { transition-duration: .1s; }
 .done button, .task .start button { transition: background-color .15s, border-color .15s, color .15s; }
 .task .to-inbox button { transition: opacity .2s ease-out, background-color .15s, border-color .15s, color .15s; }  /* ↩ fades as the rest, and colors as ▶ */
 .task:is(:hover, :focus-within) .to-inbox button { transition-duration: .1s, .15s, .15s, .15s; }
@@ -408,6 +406,10 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .task .remind { font-size: var(--fs-xs); filter: grayscale(1); opacity: .7; }  /* no new color: emoji yellow would mean something */
 .task form { margin: 0; }
 .task.overdue .date, .date.overdue { color: var(--danger); font-weight: 600; }
+/* The Agenda's Overdue and Today headings, as Done's band captions. */
+.agenda-head { margin: 14px 0 4px; font-size: var(--fs-s); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.agenda-head.overdue { color: var(--danger); }
+.agenda-head b { font-weight: 600; font-size: var(--fs-xs); background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 .task.flagged .title { color: var(--warn); }
 /* A press that misses the grip would otherwise sweep a selection across the rows. */
 li.task { user-select: none; }
@@ -760,7 +762,6 @@ textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line
      wraps below, right-aligned. Empty cells and hover-only controls (no hover here) take no room. */
   .tasks > li.task > :is(.title, .name) { flex: 1 1 calc(100% - 6rem); }
   .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step), .task .to-inbox { display: none; }
-  .tasks.soon .task:not(.overdue) :is(.date, .recur) { display: none; }  /* hover-only, and there's no hover here */
   .task :is(.proj, .ctx) { white-space: normal; }  /* a long project name wraps rather than widening the page */
   .tasks > li.task { justify-content: flex-end; }
   .task > .balance { flex-basis: 100%; max-width: none; margin: 0; }

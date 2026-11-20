@@ -194,7 +194,7 @@ LIST = "CASE WHEN t.state != 'open' OR t.step = 'later' THEN NULL ELSE coalesce(
 # Every task list's order: as dragged, new arrivals on top; tasks never placed (from before lists had an order) after
 # those, in the list's old order.
 LISTED = "lp.position IS NULL, lp.position"
-# Next's order (and the lists drawn from it): as dragged; unplaced ones soonest due first, undated ones last.
+# Next's order (and Horizons' ground card, dated ones too): as dragged; unplaced ones soonest due first, undated last.
 NEXT_ORDER = f"{LISTED}, t.due_date IS NULL, t.due_date, t.created_at DESC, t.id DESC"
 PLAIN_ORDER = f"{LISTED}, t.created_at DESC, t.id DESC"  # Inbox's and Someday's
 WAITING_ORDER = f"{LISTED}, NOT t.ground, t.created_at DESC, t.id DESC"  # unplaced ones H0's first
@@ -202,12 +202,12 @@ LIST_ORDER = {"inbox": PLAIN_ORDER, "next": NEXT_ORDER, "waiting": WAITING_ORDER
 
 # An H0 someday task: a single someday / maybe item. Its due date is its tickler: out of sight until then.
 MAYBE = "t.state = 'open' AND t.step = 'someday'"
-# Next Actions: H0's and active projects' next actions; recurring tasks count from their due day.
+# Next actions: H0's and active projects'. Next lists only the undated ones, what can be done now; a dated one (every
+# repeat) is a calendar item, on the Calendar on its day and in the Agenda from then on (Allen's hard landscape).
 ACTIVE = "t.project_id IN (SELECT id FROM projects WHERE status = 'active')"
 NEXT = f"t.state = 'open' AND t.step = 'next' AND (t.ground OR {ACTIVE})"
-READY = "(t.recur IS NULL OR t.due_date IS NULL OR t.due_date <= ?)"
-VISIBLE_NEXT = f"{NEXT} AND {READY}"
-DUE_NEXT = f"{NEXT} AND t.due_date <= ?"  # the nav count: due today or overdue only
+NEXT_LIST = f"{NEXT} AND t.due_date IS NULL"
+AGENDA = "t.state = 'open' AND t.due_date <= ?"  # the Agenda and the Calendar's nav dot: due today or overdue
 STEP_ORDER = """CASE WHEN t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2
   WHEN t.step = 'someday' THEN 3 ELSE 4 END"""
 
@@ -501,12 +501,6 @@ def tasks_with_step(c, step):
     return c.execute(f"{TASK_SELECT} WHERE t.state = 'open' AND t.step = ? ORDER BY {WAITING_ORDER}", (step,)).fetchall()
 
 
-def next_actions(c, today):
-    """Next actions that count today: next_list() minus repeats not yet due."""
-    return c.execute(f"""{TASK_SELECT} WHERE {VISIBLE_NEXT}
-        ORDER BY {NEXT_ORDER}""", (today.isoformat(),)).fetchall()
-
-
 def inbox_tasks(c):
     return c.execute(f"{TASK_SELECT} WHERE {INBOX} ORDER BY {PLAIN_ORDER}").fetchall()
 
@@ -519,9 +513,8 @@ def inbox_list(c, today):
 
 
 def next_list(c):
-    """The Next tab: every next action, H0's and active projects', repeats not yet due included, in its order (the
-    page splits it into due bands)."""
-    return c.execute(f"{TASK_SELECT} WHERE {NEXT} ORDER BY {NEXT_ORDER}").fetchall()
+    """The Next tab: the undated next actions, H0's and active projects', in its order. Dated ones are the calendar's."""
+    return c.execute(f"{TASK_SELECT} WHERE {NEXT_LIST} ORDER BY {NEXT_ORDER}").fetchall()
 
 
 def overdue(c, today):
@@ -546,8 +539,8 @@ def counts(c, today):
     one = lambda sql, *a: c.execute(sql, a).fetchone()[0]
     return {
         "inbox": one(f"SELECT count(*) FROM tasks t WHERE {INBOX}") + one(f"SELECT count(*) FROM tasks t WHERE {TICKLED}", today.isoformat()),
-        "next": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT}", today.isoformat()),
-        "next_overdue": one(f"SELECT count(*) FROM tasks t WHERE {DUE_NEXT} AND t.due_date < ?", today.isoformat(), today.isoformat()),
+        "agenda": one(f"SELECT count(*) FROM tasks t WHERE {AGENDA}", today.isoformat()),
+        "overdue": one(f"SELECT count(*) FROM tasks t WHERE {AGENDA} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'"),
         "someday": one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
         # Per project tab: the projects lacking a next action or a desired outcome (someday ones never are).
@@ -917,7 +910,7 @@ def stalled_projects(c):
 
 def agenda(c, today):
     """Every open task due today or before, wherever it is (inbox, any step, any project), oldest due first."""
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.due_date <= ?
+    return c.execute(f"""{TASK_SELECT} WHERE {AGENDA}
         ORDER BY t.due_date, t.created_at DESC, t.id DESC""", (today.isoformat(),)).fetchall()
 
 

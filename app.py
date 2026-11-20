@@ -305,6 +305,14 @@ def orphaned(project_id, ground, say=None):
     return False
 
 
+def on_calendar(before, after):
+    """A next action that just got a date (or a dated task just made one) leaves Next for the calendar: say where it
+    went, so it doesn't seem lost. Next lists only the undated ones (db.NEXT_LIST)."""
+    if after["state"] == "open" and after["step"] == "next" and after["due_date"] and not after["inbox"] \
+            and not (before["step"] == "next" and before["due_date"]):
+        flash(f"Dated, so it's on the calendar, not Next: {date.fromisoformat(after['due_date']).strftime('%a %b %-d')}.")
+
+
 def back(default="next_view", **args):
     """Stay on the page the form was on: nothing jumps elsewhere unless you follow a link or "Save & exit"."""
     return redirect(request.referrer or url_for(default, **args))
@@ -376,14 +384,21 @@ def task_move():
     """The drop panel on every task list: move the dropped open tasks (one row, or several shift-selected, in page
     order) to a task tab (H0's Next, Waiting or Someday: that step), a project (a new one too) or Reference, all or
     none. Into a project a task lands as a later step, since the project picks its next; a waiting task stays
-    waiting. Dropped where it already is, nothing changes. Called by fetch, which updates the page itself."""
+    waiting. Dropped where it already is, nothing changes. Called by fetch, which updates the page itself: 204, or
+    the flashes (on_calendar()) as JSON for it to toast. A page that redraws itself instead posts `reload`: always
+    204, and the redrawn page shows them."""
     c = conn()
+
+    def moved():
+        flashes = [] if request.form.get("reload") else get_flashed_messages()
+        return {"flashes": flashes} if flashes else ("", 204)
+
     tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
     if not tasks or not all(t and t["state"] == "open" for t in tasks):  # e.g. a stale tab: finished since
         abort(400)
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
         db.task_to_reference(c, [t["id"] for t in tasks], now())
-        return "", 204
+        return moved()
     h0_step = H0_TARGETS.get(request.form.get("project_id"))  # a task tab: that H0 step
     with db.transaction(c):
         fields = {"project_id": None, "ground": 1} if h0_step else \
@@ -397,7 +412,8 @@ def task_move():
             # Into a project: a later step, unless it's waiting.
             step = h0_step or ("waiting" if t["step"] == "waiting" else "later")
             db.update_task(c, t["id"], today=today(), **fields, step=step)
-    return "", 204
+            on_calendar(t, db.get_task(c, t["id"]))
+    return moved()
 
 
 H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the drop panel's task tabs: H0, that step
@@ -405,7 +421,7 @@ H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the d
 
 @app.post("/tasks/order")
 def tasks_order():
-    """A task list's drag-and-drop (Inbox, a band of Next, Waiting, Someday) sends its task ids in their new order."""
+    """A task list's drag-and-drop (Inbox, Next, Waiting, Someday) sends its task ids in their new order."""
     db.reorder_tasks(conn(), form_ids())
     return ("", 204) if fetched() else back()
 
@@ -516,26 +532,6 @@ def add_next_action():
     orphaned(pid, fields.get("ground"), say="it")
     stay_in_view(fields)
     db.add_task(conn(), fields.pop("title"), today=today(), **fields)
-
-
-def soon(due):
-    """How soon an ISO due date is: overdue, today, week (≤7 days), month (≤30), later; '' when undated."""
-    if not due:
-        return ""
-    days = (date.fromisoformat(due) - today()).days
-    return "overdue" if days < 0 else "today" if days == 0 else "week" if days <= 7 else "month" if days <= 30 else "later"
-
-
-# Next folds into these bands: (key, label, open by default, the soon() keys in it); undated tasks are "No date".
-BANDS = [("now", "Now", True, ("overdue", "today")), ("week", "This week", False, ("week",)),
-         ("later", "Later", False, ("month", "later")), ("nodate", "No date", False, ("",))]
-
-
-@app.template_filter()
-def bands(tasks):
-    """The tasks split into BANDS, as (key, label, open, tasks), leaving out empty bands."""
-    out = [(key, label, is_open, [t for t in tasks if soon(t["due_date"]) in keys]) for key, label, is_open, keys in BANDS]
-    return [b for b in out if b[3]]
 
 
 @app.route("/waiting")
@@ -692,7 +688,7 @@ def review():
     return render_template("review.html", projects=db.projects_to_review(c),
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
-                           nexts=db.next_actions(c, today()), waiting=db.tasks_with_step(c, "waiting"),
+                           nexts=db.next_list(c), waiting=db.tasks_with_step(c, "waiting"),
                            checklists=db.checklists(c), unseen=unseen, scratchpad=db.scratchpad(c),
                            phases=REVIEW_PHASES, names=REVIEW_NAMES, steps=REVIEW_STEPS, step=step,
                            checked=checked, past=past)
@@ -816,6 +812,7 @@ def task_view(id):
         if not t["inbox"] and t["state"] == "open":
             orphaned(project_id, ground, say="this")
         db.update_task(c, id, today=today(), **fields)
+        on_calendar(t, db.get_task(c, id))
         if fetched():  # a field saved in the background: its messages, and how the boxes read (app.js shows them, so
             saved = db.get_task(c, id)  # words like "3pm" aren't read again, later, by the next post of this form)
             shown = {"due_date": saved["due_date"], "remind_at": local_minute(saved["remind_at"]), "category": saved["category"]}
@@ -1129,6 +1126,13 @@ def calendar_view():
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", ("2weeks" if span == 2 else "week") if week else "month", max_age=365 * 86400, samesite="Lax")
     return resp
+
+
+@app.template_filter()
+def agenda_split(tasks):
+    """The Agenda's two lists: (Overdue, due before today), (Today, due today)."""
+    day = today().isoformat()
+    return [("Overdue", [t for t in tasks if t["due_date"] < day]), ("Today", [t for t in tasks if t["due_date"] == day])]
 
 
 def agenda_view():
