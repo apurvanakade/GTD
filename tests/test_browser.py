@@ -463,7 +463,7 @@ def test_drag_reorders_someday_projects(page, live, conn):
     titles = lambda: page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts()  # not the someday items
     assert titles() == ["Another dream", "Someday proj"]
     with page.expect_response(lambda r: r.url.endswith("/order/someday")) as saved:
-        row(page, "Someday proj").locator(".grip").drag_to(row(page, "Another dream"), target_position={"x": 40, "y": 4})
+        row(page, "Someday proj").locator(":scope > .grip").drag_to(row(page, "Another dream"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
     assert [p["title"] for p in db.projects(conn, "someday")] == ["Someday proj", "Another dream"]
     page.reload()
@@ -915,9 +915,10 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
         panel.locator('[data-project="waiting"] a').click()
     assert page.url == live + "/waiting"
     with page.expect_navigation():  # a project group's heading goes to its project tab
-        panel.locator("h3 a", has_text="Someday").click()
-    assert page.url == live + "/projects/someday"
-    page.go_back()  # project tabs and Reference have no panel
+        panel.locator("h3 a", has_text="Active").click()
+    assert page.url == live + "/projects/active"
+    panel.wait_for(state="visible")  # the project tabs have it too, for their steps
+    page.go_back()  # Reference has none
     with page.expect_navigation():
         panel.locator('[data-project="reference"] a').click()
     assert page.url == live + "/reference"
@@ -953,6 +954,26 @@ def test_dragging_between_h0_and_a_project_on_next(page, live, conn):
     assert (t["project_id"], t["step"], t["ground"]) == (None, "next", 1)
 
 
+def test_dragging_a_project_cards_step_files_it(page, live, conn):
+    """On a project tab a folded-out step's ⠿ drags it to the drop panel; the page redraws (the project's next action
+    may change), its fold-outs still open. The project's own order isn't touched."""
+    page.goto(live + "/projects/active")
+    order = [p["id"] for p in db.projects(conn, "active")]
+    page.locator(".peek-all").click()
+    step = page.locator('.steps > li[data-id="3"]')  # "lay tiles", in Kitchen
+    with page.expect_navigation():
+        drag_to_panel(page, step, '[data-project="2"]')
+    t = db.get_task(conn, 3)
+    assert (t["project_id"], t["step"]) == (2, "later")
+    sync_api.expect(page.locator('li.task[data-id="2"] .steps > li[data-id="3"]')).to_be_visible()
+    assert [p["id"] for p in db.projects(conn, "active")] == order
+    with page.expect_navigation():  # shift-clicked steps go together, from any project
+        page.locator('.steps > li[data-id="2"]').click(modifiers=["Shift"])  # "buy tiles"
+        page.locator('.steps > li[data-id="3"]').click(modifiers=["Shift"])
+        drag_to_panel(page, page.locator('.steps > li[data-id="3"]'), '[data-project="someday"]')
+    assert [(db.get_task(conn, i)["ground"], db.get_task(conn, i)["step"]) for i in (2, 3)] == [(1, "someday")] * 2
+
+
 def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
     page.goto(live + "/waiting")
     drag_to_panel(page, row(page, "quote from Bob"), '[data-project="2"]')
@@ -967,7 +988,7 @@ def test_waiting_projects_and_tasks_have_their_own_tabs(page, live, conn):
     page.goto(live + "/projects/waiting")
     assert page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts() == ["Visa", "Waiting proj"]
     with page.expect_response(lambda r: r.url.endswith("/order/waiting")) as saved:
-        row(page, "Waiting proj").locator(".grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
+        row(page, "Waiting proj").locator(":scope > .grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
     assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj", "Visa"]
     page.goto(live + "/next")
@@ -1923,13 +1944,13 @@ def test_dragging_a_project_onto_a_nav_tab_moves_it(page, live, conn):
     page.goto(live + "/projects/someday?tickled=1")
     tab = lambda s: page.locator(f'nav a[data-status="{s}"]')
     with page.expect_response(lambda r: r.url.endswith(f"/projects/{pid}/move")) as saved:
-        row(page, "Another dream").locator(".grip").drag_to(tab("active"))
+        row(page, "Another dream").locator(":scope > .grip").drag_to(tab("active"))
     assert saved.value.status == 204
     page.wait_for_function(f"!document.querySelector('ul[data-reorder] > li.task[data-id=\"{pid}\"]')")
     assert db.get_project(conn, pid)["status"] == "active"
     assert db.projects(conn, "active")[0]["id"] == pid  # on top of its new list
     assert [p["title"] for p in db.projects(conn, "someday")] == ["Someday proj"]  # the rest kept their order
-    row(page, "Someday proj").locator(".grip").drag_to(tab("someday"))  # its own tab: nothing happens
+    row(page, "Someday proj").locator(":scope > .grip").drag_to(tab("someday"))  # its own tab: nothing happens
     assert db.projects(conn, "someday")[0]["title"] == "Someday proj"
     assert row(page, "Someday proj").count() == 1
 

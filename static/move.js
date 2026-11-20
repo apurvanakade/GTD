@@ -1,4 +1,4 @@
-// The drop panel on every task list (move_panel() in _task.html): it slides in while an open row is dragged, or
+// The drop panel on every task list and project tab, for its cards' steps (move_panel() in _task.html): it slides in while an open row is dragged, or
 // stays while pinned by the header's File to button; dropping the row on a task tab (Next, Waiting, Someday: H0), a project (or
 // Reference, "＋ New…") moves the task there (/tasks/move). A row's ⠿ grip drags it (app.js), so the same drag
 // reorders its list or moves it out. Shift-click selects rows (Esc clears); dragging
@@ -14,14 +14,17 @@
   pin?.setAttribute('aria-pressed', root.classList.contains('pinned-panel'));
   pin?.addEventListener('click', () => pinned(!root.classList.contains('pinned-panel')));
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
-  // Open rows only: they have a tick-off button. Done and abandoned rows stay put.
-  const movable = li => li?.matches('main ul.tasks > li.task[data-id]') && li.querySelector(':scope > form.done');
-  const selected = () => [...document.querySelectorAll('main li.task.selected')].filter(movable);
-  const unselect = () => document.querySelectorAll('main li.task.selected').forEach(li => li.classList.remove('selected'));
+  // Open rows only: they have a tick-off button. Done and abandoned rows stay put. A project card's folded-out steps
+  // (the project tabs) are all open.
+  const ROW = 'li.task, .task .steps > li';
+  const movable = li => li?.matches('main ul.tasks > li.task[data-id]') && li.querySelector(':scope > form.done')
+    || li?.matches('main ul.tasks > li.task > ul.steps > li[data-id]');
+  const selected = () => [...document.querySelectorAll('main li.selected')].filter(movable);
+  const unselect = () => document.querySelectorAll('main li.selected').forEach(li => li.classList.remove('selected'));
   // Shift-click toggles a row, its title too (instead of opening it); no text gets selected on the way.
-  document.addEventListener('mousedown', e => { if (e.shiftKey && movable(e.target.closest('li.task'))) e.preventDefault(); });
+  document.addEventListener('mousedown', e => { if (e.shiftKey && movable(e.target.closest(ROW))) e.preventDefault(); });
   document.addEventListener('click', e => {
-    const li = e.target.closest('li.task');
+    const li = e.target.closest(ROW);
     if (!e.shiftKey || !movable(li) || e.target.closest('button, input, select, textarea')) return;
     e.preventDefault();
     li.classList.toggle('selected');
@@ -38,7 +41,7 @@
     const form = new URLSearchParams(data);
     rows.forEach(li => form.append('id', li.dataset.id));
     if (!await post(panel.dataset.move, form)) return;
-    if ('reload' in panel.dataset || data.project_id === panel.dataset.stays) return location.reload();
+    if ('reload' in panel.dataset || data.project_id === panel.dataset.stays) return keepPeeks(), location.reload();  // a project tab's fold-outs stay open
     for (const li of rows) {
       const n = li.closest('details.band')?.querySelector('summary b');
       if (n) n.textContent = Math.max(0, n.textContent - 1);
@@ -47,7 +50,7 @@
     refreshNav();
   };
   document.addEventListener('dragstart', e => {
-    const li = e.target.closest?.('li.task[draggable]');  // by its grip only (app.js), not a title link's own drag
+    const li = e.target.closest?.('li[draggable]');  // by its grip only (app.js), not a title link's own drag
     if (!movable(li)) return;
     dragged = li.classList.contains('selected') ? selected() : [li];
     dragged.forEach(r => r.classList.add('dragging'));

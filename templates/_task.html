@@ -66,12 +66,13 @@
 {% endfor %}
 {% endmacro %}
 
-{# A project row's ▸ and the open steps it folds out (static/app.js toggles them), read-only: a title opens its task. #}
+{# A project row's ▸ and the open steps it folds out (static/app.js toggles them): a title opens its task, and its ⠿
+   drags it to the drop panel (move.js), as a task list's row. #}
 {% macro peek_button() %}<button type="button" class="peek" aria-expanded="false" title="Show steps" aria-label="Show steps">▸</button>{% endmacro %}
 {% macro peek_steps(steps) %}
 <ul class="steps">
   {% for t in steps %}
-  <li{% if t.step == 'next' %} class="next"{% endif %}><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
+  <li{% if t.step == 'next' %} class="next"{% endif %} data-id="{{ t.id }}"><span class="grip" title="Drag to file it" aria-hidden="true">⠿</span><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
     <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
   {% else %}
   <li class="empty">No open steps.</li>

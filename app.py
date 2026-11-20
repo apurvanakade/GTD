@@ -880,6 +880,7 @@ def projects_view(status):
     projects, toggle = (hide_tickled if status == "someday" else lambda ps: (ps, {}))(db.projects(c, status))
     show = status == "active" and request.args.get("done") == "1"
     return render_template("projects.html", status=status, projects=projects, steps=db.open_steps(c, status),
+                           project_groups=db.project_groups(c),
                            show_done=show, toggle_url=toggle_url(show),
                            done_projects=[p for s in db.CLOSED for p in db.closed_projects(c, s)] if show else [],
                            **toggle)

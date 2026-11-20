@@ -303,7 +303,7 @@ def test_every_tab_lists_one_kind(client, conn):
     assert ">learn Italian<" in html and f'href="/projects/{sp}"' not in html and 'name="kind"' not in html
     assert "peek-all" not in html
     for status, pid, other in (("waiting", wp, "Boat"), ("someday", sp, "Visa")):
-        html = client.get(f"/projects/{status}").get_data(as_text=True)
+        html = client.get(f"/projects/{status}").get_data(as_text=True).split('class="drop-panel"')[0]  # the panel lists every project
         assert f'href="/projects/{pid}"' in html and f'href="/projects/{wp + sp - pid}"' not in html, status
         assert ">parcel<" not in html, status
         assert f'data-reorder="/projects/order/{status}"' in html and "peek-all" in html, status
@@ -1266,7 +1266,7 @@ def test_project_lists_carry_each_projects_open_steps(client, conn):
     db.add_task(conn, "plan beds", step="later", project_id=pid)
     conn.commit()
     steps = re.search(r'<ul class="steps">(.*?)</ul>', client.get("/projects/active").data.decode(), re.S).group(1)
-    assert re.search(r'<li class="next"><a [^>]*>dig</a>.*<li><a [^>]*>plan beds</a>', steps, re.S)
+    assert re.search(r'<li class="next"[^>]*>(<span class="grip".*?</span>)?<a [^>]*>dig</a>.*<li[^>]*>(<span class="grip".*?</span>)?<a [^>]*>plan beds</a>', steps, re.S)
 
 
 def test_timer_week_totals_have_bars(client, conn):
@@ -2005,9 +2005,11 @@ def test_dragging_moves_any_open_task_between_projects(client, conn):
 
 def test_every_task_list_has_the_drop_panel(client, conn):
     """The panel follows the nav: the task tabs (Next, Waiting, Someday), the project tabs' projects under their
-    headings, then Reference. Where the page's tasks already are isn't offered."""
+    headings, then Reference. Where the page's tasks already are isn't offered. The project tabs have it too, for
+    their cards' folded-out steps, each with a grip."""
     ids = seed(conn)
-    for url, current in (("/inbox", None), ("/next", None), ("/waiting", "waiting"), ("/someday?tickled=1", "someday")):
+    for url, current in (("/inbox", None), ("/next", None), ("/waiting", "waiting"), ("/someday?tickled=1", "someday"),
+                         ("/projects/active", None), ("/projects/waiting", None), ("/projects/someday?tickled=1", None)):
         html = client.get(url).get_data(as_text=True)
         assert 'class="drop-panel"' in html and 'class="pin-panel"' in html and ">File to<" in html, url
         panel = html.split('class="drop-panel"')[1].split("</aside>")[0]
@@ -2016,6 +2018,10 @@ def test_every_task_list_has_the_drop_panel(client, conn):
                     for t in [new, *(str(p["id"]) for p in db.projects(conn, s))]]
         assert targets == [t for t in ["h0", "waiting", "someday", *projects, "reference"] if t != current], url
         assert re.findall(r"<h3>(?:<a [^>]*>)?([\w /()]+)(?:</a>)?</h3>", panel) == ["Tasks (no project)", "Active", "Waiting", "Someday"], url
+        if url.startswith("/projects/"):
+            status = url.split("/")[2].split("?")[0]
+            steps = sorted(str(t["id"]) for ts in db.open_steps(conn, status).values() for t in ts)
+            assert steps and sorted(re.findall(r'<li[^>]* data-id="(\d+)"><span class="grip"', html)) == steps, url
 
 
 def test_inbox_lists_projects_as_drop_targets_and_has_no_tick_boxes(client, conn):

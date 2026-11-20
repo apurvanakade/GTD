@@ -591,7 +591,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   document.addEventListener('pointerup', e => listUnder(e)?.querySelectorAll('li[draggable]').forEach(li => li.removeAttribute('draggable')));
   document.addEventListener('dragstart', e => {
     const list = listUnder(e), li = list && e.target.closest('li[draggable]');
-    if (!li) return;
+    if (li?.parentElement !== list) return;  // a project card's folded-out step only moves out (move.js)
     const picked = li.classList.contains('selected') ? [...document.querySelectorAll('main li.task.selected')] : [li];
     if (picked.some(r => r.parentElement !== list)) return;  // a selection across lists only moves out (move.js)
     dragged = picked;

@@ -456,6 +456,11 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps li:not(.empty) { cursor: pointer; }  /* a click anywhere on a step opens it (static/app.js) */
 .task .steps a { color: var(--fg); flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .task .steps .meta { display: flex; gap: 8px; }
+/* A step's ⠿ drags it to the drop panel, as a task row's: in the projects' ⠿ column, lit on its own row only. */
+.task .steps .grip { flex: none; width: 1.2em; margin-left: calc(-1.2em - 10px); text-align: center; opacity: .5; }
+.task .steps > li:hover .grip { opacity: 1; }
+.task.open .steps > li.dragging { opacity: .4; }
+.task .steps > li.selected, .task .steps > li.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .task .check { color: var(--muted); width: 1.2em; text-align: center; }
 /* Buttons inside a row are compact, so every row is the same height. */
 .task .start button, .task .timing button, .task .set-step button, .task .row-btn button, .task .to-inbox button {
