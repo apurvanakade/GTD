@@ -23,12 +23,37 @@
 .band[open] > summary::before { content: "▾"; }  /* the glyph, not a rotation: a rotated ▸ sits off the text line */
 .band > summary b { font-weight: 600; font-size: var(--fs-xs); background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
 /* Someday, the longest page: its bands flow into columns as width allows (one under ~46rem, so beside the pinned panel
-   or on a phone), each band whole in one; rows and captions sit tighter; H0, true of every row, isn't repeated. */
-.someday-bands { columns: 2 22rem; column-gap: 28px; margin-top: 4px; }
-.someday-bands .band { break-inside: avoid; margin: 0 0 10px; }
-.someday-bands .band > summary { padding: 2px 0; }
+   or on a phone), each band whole in one; H0, true of every row, isn't repeated. A band folds as a project row's steps
+   do: its caption is a row (▸, the category, its count) with the hover tint, its ideas smaller under it and indented a
+   step past the category's text; the fold slides open and shut, the rows dropping in one after another. */
+.someday-bands { --fold: 1.2rem; columns: 2 22rem; column-gap: 28px; margin-top: 4px; interpolate-size: allow-keywords; }
+.someday-bands .band { break-inside: avoid; margin: 0 0 4px; }
+.someday-bands .band > summary {
+  display: flex; align-items: baseline; gap: 8px; padding: 4px 6px; border-radius: 6px;
+  font-size: var(--fs-m); font-weight: normal; color: var(--fg); text-transform: none; letter-spacing: normal;
+  transition: background-color .22s ease-out;
+}
+.someday-bands .band > summary:hover { background: color-mix(in srgb, var(--soft) 60%, transparent); transition-duration: .09s; }
+.someday-bands .band > summary::before { flex: none; width: var(--fold); text-align: center; color: var(--muted); }
+.someday-bands .band > summary b { margin: 0; padding: 0; background: none; color: var(--muted); font-size: var(--fs-s); font-weight: normal; }
+.someday-bands .tasks { padding: 0 0 0 calc(2 * var(--fold) + 8px); font-size: var(--fs-s); }  /* a step in from the category, so the rows read as its */
 .someday-bands .task { padding-block: 2px; }
 .someday-bands :is(.proj, form.done, form.start, form.timing) { display: none; }  /* nor tick-off or timer: an idea isn't an action */
+.someday-bands .task .grip { flex: none; width: var(--fold); margin-left: calc(-1 * var(--fold) - 8px); text-align: center; }
+.someday-bands .band::details-content {
+  block-size: 0; opacity: 0; overflow: clip; overflow-clip-margin: 6px;
+  transition: block-size .2s ease-in, opacity .2s ease-in, content-visibility .2s allow-discrete;
+}
+.someday-bands .band[open]::details-content { block-size: auto; opacity: 1; transition-duration: .32s; transition-timing-function: cubic-bezier(.2, .7, .2, 1); }
+.someday-bands .band .task { opacity: 0; translate: 0 -6px; transition: opacity .15s ease-in, translate .15s ease-in, background-color .22s ease-out; }
+.someday-bands .band[open] .task {
+  opacity: 1; translate: 0; transition: opacity .3s ease-out, translate .3s cubic-bezier(.2, .7, .2, 1), background-color .22s ease-out;
+  transition-delay: calc(min(sibling-index() - 1, 8) * 30ms), calc(min(sibling-index() - 1, 8) * 30ms), 0s;
+}
+.someday-bands .band[open] .task:hover { transition-duration: .3s, .3s, .09s; }  /* fast in, as a row's tint; the drop-in keeps its own */
+.someday-bands .band[open] .task.dragging { opacity: .4; }
+@starting-style { .someday-bands .band[open] .task { opacity: 0; translate: 0 -6px; } }
+.bands-restored .someday-bands .band::details-content, .bands-restored .someday-bands .band .task { transition: none; }  /* as loaded: already open, not opening */
 .someday-bands .meta > :empty { display: none; }  /* ideas rarely have a date or repeat: no empty slots squeezing titles */
 
 * { box-sizing: border-box; }
@@ -807,6 +832,7 @@ textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line
   /* A row: grip and ✓ (or ▸), then the title across the line, leaving room for ▶ alone; a date, a button or a slider
      wraps below, right-aligned. Empty cells and hover-only controls (no hover here) take no room. */
   .tasks > li.task > :is(.title, .name) { flex: 1 1 calc(100% - 6rem); }
+  .someday-bands .tasks > li.task > .name { flex-basis: calc(100% - 2rem); }  /* no ✓ or ▶ to leave room for: room for the band's indent */
   .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step), .task :is(.to-inbox, .file-to) { display: none; }
   .task :is(.proj, .ctx) { white-space: normal; }  /* a long project name wraps rather than widening the page */
   .tasks > li.task { justify-content: flex-end; }
