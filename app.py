@@ -127,7 +127,7 @@ def new_project_made(title, status):
 
 @app.after_request
 def projects_changed(r):
-    """The page's project lists (project_select(), project_targets()) are stale once a project is made in the
+    """The page's project lists (project_select(), project_targets(), file_menu()) are stale once a project is made in the
     background: the header has refreshProjects() in static/app.js redraw them all."""
     if g.get("projects_changed"):
         r.headers["X-Projects-Changed"] = "1"
@@ -417,6 +417,13 @@ def task_move():
 
 
 H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the drop panel's task tabs: H0, that step
+
+
+@app.get("/tasks/file-to")
+def file_to():
+    """The File to menu a task row's → opens (file_menu() in _task.html, static/app.js): the drop panel's places, filed
+    to through task_move()."""
+    return render_template("file_menu.html", project_groups=db.project_groups(conn()))
 
 
 @app.post("/tasks/order")

@@ -873,6 +873,108 @@ def test_escape_cancels_naming_a_new_project(page, live, conn):
     assert db.get_task(conn, 1)["inbox"] and row(page, "inbox item").count() == 1
 
 
+def open_file_menu(page, li):
+    li.hover()
+    li.locator("button.file-to").click()
+    menu = page.locator(".file-menu")
+    expect(menu).to_be_visible()
+    return menu
+
+
+def test_a_rows_arrow_files_it_from_the_file_to_menu(page, live, conn):
+    page.goto(live + "/inbox")
+    expect(row(page, "inbox item").locator("button.file-to")).to_have_css("opacity", "0")  # on hover only, as ↩
+    menu = open_file_menu(page, row(page, "inbox item"))
+    assert page.evaluate("document.activeElement.className") == "file-filter"
+    assert menu.locator("h3").all_inner_texts() == ["TASKS (NO PROJECT)", "ACTIVE", "WAITING", "SOMEDAY"]
+    menu.locator(".file-target", has_text="Kitchen").click()
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")  # in place, no reload
+    expect(menu).to_be_hidden()
+    assert page.url == live + "/inbox"
+    t = db.get_task(conn, 1)
+    assert (t["project_id"], t["step"]) == (1, "later")  # as a drop on the project does
+
+
+def test_the_file_to_menu_filters_as_you_type_and_marks_where_the_task_is(page, live, conn):
+    """Waiting redraws after a filing (a waiting step stays waiting, so on the page)."""
+    page.goto(live + "/waiting")
+    bob = row(page, "quote from Bob")
+    menu = open_file_menu(page, bob)
+    expect(menu.locator(".file-target.current")).to_have_text("Kitchen")  # its project: already there
+    expect(menu.locator(".file-target.current")).to_be_disabled()
+    page.keyboard.type("someday p")
+    expect(menu.locator(".file-target:visible")).to_have_text(["Someday proj"])
+    expect(menu.locator(".file-target.on")).to_have_text("Someday proj")
+    assert menu.locator("h3:visible").all_inner_texts() == ["SOMEDAY"]
+    page.keyboard.press("Enter")
+    expect(bob.locator(".proj")).to_have_text("Someday proj")
+    t = db.get_task(conn, 4)
+    assert (t["project_id"], t["step"]) == (4, "waiting")
+    # Esc closes it, as does a second click on its →.
+    menu = open_file_menu(page, bob)
+    expect(menu.locator(".file-target.current")).to_have_text("Someday proj")
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    menu = open_file_menu(page, bob)
+    bob.locator("button.file-to").click()
+    expect(menu).to_be_hidden()
+
+
+def test_the_file_to_menu_makes_a_new_project(page, live, conn):
+    page.goto(live + "/inbox")
+    menu = open_file_menu(page, row(page, "inbox item"))
+    page.keyboard.type("Garden")  # no match, and "＋ New project…" hides while filtering
+    expect(menu.locator(".file-target:visible")).to_have_count(0)
+    menu.locator(".file-filter").fill("")
+    menu.locator('[data-project="__new__waiting"]').click()
+    name = menu.locator(".naming .new-name")
+    expect(name).to_be_focused()
+    page.keyboard.type("Garden")
+    page.keyboard.press("Enter")
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
+    assert (p["title"], p["status"]) == ("Garden", "waiting")
+    menu = open_file_menu(page, row(page, "legacy orphan"))  # the next menu lists it
+    expect(menu.locator(".file-target", has_text="Garden")).to_have_count(1)
+
+
+def test_the_file_to_menu_lists_a_project_made_on_the_drop_panel(page, live, conn):
+    """The menu's cached list follows refreshProjects(), as the page's other project lists do."""
+    page.goto(live + "/inbox")
+    menu = open_file_menu(page, row(page, "legacy orphan"))  # fetched and cached before the project exists
+    expect(menu.locator(".file-target", has_text="Dragged")).to_have_count(0)
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__someday"]')
+    page.locator(".drop-panel .naming input[name=new_project]").wait_for(state="visible")
+    page.keyboard.type("Dragged")
+    page.keyboard.press("Enter")
+    page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
+    page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
+    expect(page.locator(".drop-panel .target", has_text="Dragged")).to_have_count(1)  # refreshProjects() has run
+    menu = open_file_menu(page, row(page, "legacy orphan"))
+    expect(menu.locator(".file-target", has_text="Dragged")).to_have_count(1)
+
+
+def test_the_file_to_menu_on_a_page_without_a_drop_panel_and_a_folded_out_step(page, live, conn):
+    """The Agenda keeps a filed row (still due), so the page redraws; a project tab's folded-out step has one too."""
+    page.goto(live + "/calendar?view=agenda")
+    menu = open_file_menu(page, row(page, "buy tiles"))
+    expect(menu.locator(".file-target.current")).to_have_text("Kitchen")
+    menu.locator(".file-target", has_text="Waiting proj").click()
+    expect(row(page, "buy tiles").locator(".proj")).to_have_text("Waiting proj")
+    assert db.get_task(conn, 2)["project_id"] == 3
+    page.goto(live + "/projects/active")
+    page.locator('li[data-id="1"] > button.peek').click()
+    step = page.locator('.steps > li[data-id="3"]')  # "lay tiles"
+    step.hover()
+    step.locator("button.file-to").click()
+    page.locator('.file-menu .file-target[data-project="someday"]').click()
+    page.wait_for_function("!document.querySelector('.steps > li[data-id=\"3\"]')")
+    t = db.get_task(conn, 3)
+    assert (t["project_id"], t["ground"], t["step"]) == (None, 1, "someday")
+
+
 def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     page.goto(live + "/inbox")
     panel = page.locator(".drop-panel")
