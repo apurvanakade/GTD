@@ -43,11 +43,17 @@ async function refreshProjects() {
   if (!document.querySelector('nav')) return;  // in a frame: no nav
   let last = scrollY;
   // Shown throughout a project drag, since its tabs are drop targets (below).
-  const show = on => document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
+  // --nav-h: the shown nav's height, so a sticky panel below it (Review's step list) can stick under it.
+  const navH = () => document.querySelector('nav')?.offsetHeight ?? 0;  // looked up each time: refreshNav() replaces it
+  const show = on => {
+    document.documentElement.style.setProperty('--nav-h', navH() + 'px');
+    document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
+  };
+  show(true);
   addEventListener('scroll', () => {
     const y = Math.max(0, Math.min(scrollY, document.documentElement.scrollHeight - innerHeight));
     if (Math.abs(y - last) < 4) return;
-    show(y < last || y <= (document.querySelector('nav')?.offsetHeight ?? 0));  // looked up each time: refreshNav() replaces it
+    show(y < last || y <= navH());
     last = y;
   }, {passive: true});
   addEventListener('mousemove', e => { if (e.clientY < 40) show(true); });
@@ -68,9 +74,9 @@ document.addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
   if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
-  // ← → follow the page's own previous/next links (Review's steps).
+  // ← → follow the page's own previous/next links (the review step's footer).
   const rel = {ArrowLeft: 'prev', ArrowRight: 'next'}[e.key];
-  const step = rel && document.querySelector(`header.page a[rel=${rel}]`);
+  const step = rel && document.querySelector(`main a[rel=${rel}]`);
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
