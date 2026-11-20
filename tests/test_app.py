@@ -1964,6 +1964,32 @@ def test_autosave_ignores_a_blank_title_and_a_missing_record(client, conn):
     assert client.post("/autosave/reference/999", data={"notes": "x", "base_notes": ""}).status_code == 404
 
 
+def test_review_scratchpad(client, conn):
+    """One pad on both loose-ends steps (only the shown card's): autosaved, kept until cleared; Clear keeps the text
+    for Undo, which puts it back above anything typed since; the review's end drops what Undo would bring back."""
+    assert 'name="notes"' not in step_card(client.get("/review?step=horizons").get_data(as_text=True), "x")[1]
+    for step in ("collect", "sweep"):
+        assert 'data-autosave="/autosave/scratchpad/1"' in step_card(client.get(f"/review?step={step}").get_data(as_text=True), "x")[1]
+    assert client.post("/autosave/scratchpad/1", data={"notes": "dentist\nshed\n", "base_notes": ""}).status_code == 200
+    assert client.get("/autosave/scratchpad/1").json == {"notes": "dentist\nshed"}
+    assert client.post("/autosave/scratchpad/1", data={"notes": "x", "base_notes": "stale"}).status_code == 409
+    assert client.post("/autosave/scratchpad/2", data={"notes": "x", "base_notes": ""}).status_code == 404
+    assert ">dentist\nshed</textarea>" in client.get("/review?step=sweep").get_data(as_text=True)
+    assert "Undo clear" not in client.get("/review?step=sweep").get_data(as_text=True)
+    r = client.post("/review/scratchpad/clear", headers={"Referer": "/review?step=sweep"})
+    assert r.location.endswith("/review?step=sweep")
+    assert tuple(db.scratchpad(conn)) == ("", "dentist\nshed")
+    client.post("/review/scratchpad/clear")  # clearing an empty pad keeps what Undo would bring back
+    assert "Undo clear" in client.get("/review?step=sweep").get_data(as_text=True)
+    db.update_scratchpad(conn, 1, "bike")
+    client.post("/review/scratchpad/undo")
+    assert tuple(db.scratchpad(conn)) == ("dentist\nshed\nbike", "")
+    client.post("/review/scratchpad/clear")
+    for step in REVIEW_STEPS:
+        client.post(f"/review/{step}")
+    assert tuple(db.scratchpad(conn)) == ("", "")
+
+
 def test_project_page_hides_completed_by_default(client, conn):
     pid = db.add_project(conn, "P")
     t = db.add_task(conn, "Finished step", step="next", project_id=pid)

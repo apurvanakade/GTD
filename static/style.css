@@ -492,6 +492,11 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .deck > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
 .deck h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
 .deck h2 + .hint { margin: 2px 0 0; font-size: var(--fs-s); }
+/* The loose-ends scratchpad: the notes editor, then Clear / Undo clear and the save status under it, on the left. */
+.scratchpad { margin-top: 4px; }
+.pad-foot { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+.pad-foot button { padding: 0 6px; font-size: var(--fs-s); line-height: 1.5; border-radius: 5px; }
+.pad-foot .autosave { margin: 0 0 0 4px; min-height: 0; }
 .review h2 + .hint { max-width: 65ch; margin-bottom: 12px; }
 .review > li > h2 { margin-top: 14px; }
 /* Review: the steps by name down the left, the shown step's card on the right. */

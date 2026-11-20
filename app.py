@@ -706,7 +706,7 @@ def review():
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=db.next_actions(c, today()), waiting=db.tasks_with_step(c, "waiting"),
-                           checklists=db.checklists(c), unseen=unseen,
+                           checklists=db.checklists(c), unseen=unseen, scratchpad=db.scratchpad(c),
                            phases=REVIEW_PHASES, names=REVIEW_NAMES, steps=REVIEW_STEPS, step=step,
                            checked=checked, past=past, weeks=weeks)
 
@@ -732,6 +732,19 @@ def ago(utc):
         return "never"
     days = (today() - date.fromisoformat(local_date(utc))).days
     return "today" if days <= 0 else f"{days}d ago" if days < 14 else f"{days // 7}w ago" if days < 60 else f"{days // 30}mo ago"
+
+
+@app.post("/review/scratchpad/clear")
+def scratchpad_clear():
+    """Empty the review's scratchpad; Undo brings the text back."""
+    db.clear_scratchpad(conn())
+    return back("review")
+
+
+@app.post("/review/scratchpad/undo")
+def scratchpad_undo():
+    db.undo_clear_scratchpad(conn())
+    return back("review")
 
 
 @app.post("/review/reset")
@@ -1476,15 +1489,17 @@ def horizon_delete(id):
 
 # --- autosave --------------------------------------------------------------
 
-@app.route("/autosave/<any(tasks, projects, horizons, reference):kind>/<int:id>", methods=["GET", "POST"])
+@app.route("/autosave/<any(tasks, projects, horizons, reference, scratchpad):kind>/<int:id>", methods=["GET", "POST"])
 def autosave(kind, id):
-    """A record page's title and notes save themselves (static/autosave.js). Each change comes with the text the
-    page last saw (`base_<field>`); 409 with the current text when someone else changed it since."""
+    """A record page's title and notes save themselves (static/autosave.js); the review's scratchpad has only notes.
+    Each change comes with the text the page last saw (`base_<field>`); 409 with the current text when someone else
+    changed it since."""
     c = conn()
-    row = c.execute(f"SELECT title, notes FROM {kind} WHERE id = ?", (id,)).fetchone() or abort(404)
+    names = db.text_fields(kind)
+    row = c.execute(f"SELECT {', '.join(names)} FROM {kind} WHERE id = ?", (id,)).fetchone() or abort(404)
     if request.method == "GET":
-        return {k: row[k] for k in ("title", "notes")}
-    fields = {k: request.form[k].replace("\r\n", "\n").strip() for k in ("title", "notes") if k in request.form}
+        return dict(row)
+    fields = {k: request.form[k].replace("\r\n", "\n").strip() for k in names if k in request.form}
     if not fields.get("title", True):
         fields.pop("title")  # a title can't be blank; keep the old one until there's a new one
     theirs = db.save_text(c, kind, id, fields, {k: request.form.get("base_" + k) for k in fields})
