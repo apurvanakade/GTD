@@ -1891,6 +1891,30 @@ def contexts_row(page, name):
     return page.locator(f".context-list li:has(input[name=context_name][value={name}])")
 
 
+def test_the_context_menu_filters_with_the_list_in_view(page, live):
+    page.goto(live + "/next")
+    page.evaluate("window.stay = 1")
+    menu = page.locator(".ctx-menu")
+    pick = lambda name: menu.locator(".ctx-pick", has_text="@" + name)
+    page.locator(".ctx-open.idle").click()  # the quiet @ with no filter
+    assert menu.evaluate("m => m.matches(':popover-open')") and not page.locator("dialog[open]").count()
+    pick("morning").click()  # at once, the menu staying open over the thinned list
+    row(page, "Home: sort mail").wait_for(state="detached")
+    assert row(page, "measure wall").count() == 1 and pick("morning").get_attribute("aria-checked") == "true"
+    assert menu.evaluate("m => m.matches(':popover-open')") and page.locator(".ctx-open").text_content() == "@morning"
+    page.keyboard.press("Escape")
+    assert not menu.evaluate("m => m.matches(':popover-open')")
+    page.keyboard.press("@")  # the key opens it too; 0 clears; a digit turns its context on
+    assert menu.evaluate("m => m.matches(':popover-open')")
+    page.keyboard.press("0")
+    row(page, "Home: sort mail").wait_for()
+    assert pick("morning").get_attribute("aria-checked") == "false"
+    page.keyboard.press("Escape")
+    page.keyboard.press("?")  # Site info's ticks follow
+    assert not contexts_row(page, "morning").locator("input[type=checkbox]").is_checked()
+    assert page.evaluate("window.stay") == 1
+
+
 def test_site_info_filters_every_working_list_but_not_the_inbox(page, live, conn):
     page.goto(live + "/calendar?m=2026-10")
     assert page.locator(".ev", has_text="call mum").count() == 1
@@ -1933,7 +1957,7 @@ def test_site_info_filters_every_working_list_but_not_the_inbox(page, live, conn
     page.evaluate("window.stay = 1")
     page.locator(".ctx-filter .ctx-clear").click()  # the header's × clears it, everywhere
     row(page, "quote from Bob").wait_for()
-    assert page.locator(".ctx-open").count() == 0 and page.evaluate("window.stay") == 1
+    assert page.locator(".ctx-open:not(.idle)").count() == 0 and page.evaluate("window.stay") == 1
     # The rows the filter brought back drag like any: to reorder, and out to the drop panel.
     with page.expect_response(lambda r: r.url.endswith("/tasks/order")):
         row(page, "quote from Bob").locator(".grip").drag_to(row(page, "parcel from Ann"), target_position={"x": 40, "y": 2})

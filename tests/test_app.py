@@ -3508,8 +3508,8 @@ def test_context_filter_is_global_but_for_the_working_lists_only(client, conn):
     assert ">measure wall<" in next_html and ">Home: sort mail<" not in next_html
     assert 'class="ctx-filter"' in next_html and "@morning" in next_html
     assert ">parcel from Ann<" not in main("/waiting")
-    assert ">learn Italian<" in main("/someday")
-    assert ">write a book<" not in main("/someday?tickled=1")
+    someday = main("/someday?tickled=1")  # not filtered: someday tasks have no contexts
+    assert ">learn Italian<" in someday and ">write a book<" in someday and 'class="ctx-filter"' not in someday
     cal = main("/calendar?m=2026-10")
     assert ">buy tiles<" in cal and "call mum<" not in cal
     # Several checked: any of them. A deleted context's id means nothing; none left, no filter.
@@ -3525,6 +3525,19 @@ def test_context_filter_is_global_but_for_the_working_lists_only(client, conn):
     assert ">Home: sort mail<" in main("/review?step=nexts")
     assert 'class="ctx-filter"' not in main("/inbox")
     assert 'class="ctx-filter"' not in main("/projects/active")
+    # The chip's quick menu is on the filtered pages only; with no filter the chip is a quiet @.
+    assert 'class="ctx-menu"' in client.get("/next").get_data(as_text=True)
+    assert 'class="ctx-menu"' not in client.get("/inbox").get_data(as_text=True)
+    client.delete_cookie("contexts")
+    assert 'class="ctx-open idle"' in main("/waiting")
+    # Its counts are the page's own tasks in each context, filtered out or not; a task elsewhere doesn't count.
+    db.add_task(conn, "solo inbox", contexts=["solo"])
+    db.add_task(conn, "solo next", ground=1, step="next", contexts=["solo"])
+    count = lambda html: re.search(r'@solo</span><span class="count"[^>]*>(\d*)<', html)[1]
+    assert count(client.get("/next").get_data(as_text=True)) == "1"
+    assert count(client.get("/waiting").get_data(as_text=True)) == ""
+    client.set_cookie("contexts", str(x["errands"]))
+    assert count(client.get("/next").get_data(as_text=True)) == "1"
     # An emptied list says so, rather than claiming it's clear.
     client.set_cookie("contexts", str(x["gone"]))
     html = main("/next")

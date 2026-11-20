@@ -60,10 +60,10 @@
 {# What's left of a list the context filter emptied: a sentence, since the big ✓ would claim the list is clear. #}
 {% macro nothing_here() %}<ul class="tasks"><li class="empty">Nothing in this context.</li></ul>{% endmacro %}
 
-{# The filtered lists' header (the working lists only): what the context filter is showing; a click opens Site info to
-   change it, × clears it (static/app.js). Empty with no filter, but always there: it marks the page as one the filter
-   thins, so a change redraws it. #}
-{% macro context_chip() %}<span class="ctx-filter" data-filtered>{% if context_filter %}<button type="button" class="ctx-open" title="{{ hidden_by_filter }} hidden: change the filter ( ? )">{% for n in context_filter %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</button><button type="button" class="ctx-clear icon" title="Show every context" aria-label="Show every context">×</button>{% endif %}</span>{% endmacro %}
+{# The filtered lists' header (the working lists only): what the context filter is showing, or a quiet @ with none; a
+   click (or the @ key) opens the context menu under it (base.html), × clears it (static/app.js). Always there: it
+   marks the page as one the filter thins, so a change redraws it. #}
+{% macro context_chip() %}<span class="ctx-filter" data-filtered>{% if context_filter %}<button type="button" class="ctx-open" aria-haspopup="menu" title="{{ hidden_by_filter }} hidden: change the filter ( @ )">{% for n in context_filter %}@{{ n }}{{ ' ' if not loop.last }}{% endfor %}</button><button type="button" class="ctx-clear icon" title="Show every context" aria-label="Show every context">×</button>{% elif contexts %}<button type="button" class="ctx-open idle" aria-haspopup="menu" title="Filter by context ( @ )" aria-label="Filter by context">@</button>{% endif %}</span>{% endmacro %}
 
 {# A project row's ▸ and the open steps it folds out (static/app.js toggles them): a title opens its task, and its ⠿
    drags it to the drop panel (move.js), as a task list's row. #}

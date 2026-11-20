@@ -77,10 +77,12 @@ def template_globals():
     embed = request.args.get("embed")
     return {"counts": None if embed else db.counts(conn(), today()), "today": today().isoformat(),
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
-            "capture_line": request.endpoint in CAPTURE_VIEWS, "overlays": [] if embed else opened(),
+            "capture_line": request.endpoint in CAPTURE_VIEWS, "filtered_view": request.endpoint in FILTERED_VIEWS,
+            "overlays": [] if embed else opened(),
             "app_url": GTD_URL or request.host_url.rstrip("/"),
             "contexts": db.contexts(conn()), "categories": db.categories(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
-            "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0)}
+            "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0),
+            "page_counts": db.context_counts(conn(), g.get("page_tasks", ()))}
 
 
 # A record reached by URL opens over its list: ?project=, ?horizon=, ?reference=, ?task= (a project's step over its
@@ -487,9 +489,9 @@ def tasks_order():
 # --- lists -----------------------------------------------------------------
 
 # The context filter: the checkboxes on Site info (static/app.js), kept in the `contexts` cookie as ids joined by "-".
-# It holds across pages but only thins the working lists: Next, Waiting, Someday and the Calendar. Not the Inbox,
-# where everything lands, nor the project pages, the review or the nav's dots.
-FILTERED_VIEWS = ("next_view", "waiting", "someday", "calendar_view")
+# It holds across pages but only thins the working lists: Next, Waiting and the Calendar. Not the Inbox,
+# where everything lands, nor Someday (its tasks have no contexts), the project pages, the review or the nav's dots.
+FILTERED_VIEWS = ("next_view", "waiting", "calendar_view")
 
 
 def chosen_contexts():
@@ -499,7 +501,9 @@ def chosen_contexts():
 
 
 def filtered(tasks):
-    """These tasks minus those in none of the checked contexts; all of them with none checked."""
+    """These tasks minus those in none of the checked contexts; all of them with none checked. Every task the page
+    lists, shown or not, is noted for the context menu's counts (`page_tasks`)."""
+    g.page_tasks = g.get("page_tasks", set()) | {t["id"] for t in tasks}
     chosen = chosen_contexts()
     if not chosen:
         return tasks
@@ -612,7 +616,7 @@ def hide_tickled(rows):
 def someday():
     """H0's someday tasks; what's tickled to a later date is out of sight until then. Someday projects have their
     own tab."""
-    tasks, toggle = hide_tickled(filtered(db.someday_tasks(conn())))
+    tasks, toggle = hide_tickled(db.someday_tasks(conn()))
     return render_template("someday.html", tasks=tasks, groups=someday_groups(tasks),
                            project_groups=db.project_groups(conn()), **toggle)
 

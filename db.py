@@ -580,6 +580,15 @@ def tasks_in_contexts(c, ids):
     return {r[0] for r in c.execute(f"SELECT task_id FROM task_contexts WHERE context_id IN ({marks})", list(ids))}
 
 
+def context_counts(c, task_ids):
+    """How many of these tasks each context has: {context id: count}, a context with none left out."""
+    if not task_ids:
+        return {}
+    marks = ", ".join("?" * len(task_ids))
+    return dict(c.execute(f"SELECT context_id, count(*) FROM task_contexts WHERE task_id IN ({marks}) GROUP BY context_id",
+                          list(task_ids)).fetchall())
+
+
 def get_context(c, id):
     return next((x for x in contexts(c) if x["id"] == id), None)
 
