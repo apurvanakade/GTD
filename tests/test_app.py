@@ -1218,6 +1218,28 @@ def test_filing_a_task_to_reference_from_its_page(client, conn):
     assert r.location == f"/reference/{item['id']}?embed=overlay"
 
 
+def test_reference_item_back_to_the_inbox(client, conn):
+    """↩ on an item (its row, on Reference and Search, and its page) undoes filing a task to Reference: an inbox task with the title, the
+    label's category and the notes, on top of the Inbox; the item goes. From its page, the frame shows the task."""
+    tid = db.add_task(conn, "grade hw", category="discrete math", notes="ch. 3")
+    client.post(f"/tasks/{tid}?embed=overlay", data={"project_id": "reference"})
+    item = [x for x in db.references(conn) if x["title"] == "Discrete Math: grade hw"][0]["id"]
+    assert f'action="/reference/{item}/to-inbox"' in client.get("/reference").get_data(as_text=True)
+    assert f'action="/reference/{item}/to-inbox"' in client.get("/search?q=grade").get_data(as_text=True)  # same row
+    page = client.get(f"/reference/{item}?embed=overlay").get_data(as_text=True)
+    assert f'formaction="/reference/{item}/to-inbox?embed=overlay"' in page
+    r = client.post(f"/reference/{item}/to-inbox?embed=overlay")
+    t = db.inbox_list(conn, TODAY)[0]
+    assert (t["title"], t["category"], t["notes"], t["inbox"]) == ("grade hw", "Discrete Math", "ch. 3", 1)
+    assert r.location == f"/tasks/{t['id']}?embed=overlay" and db.get_reference(conn, item) is None
+    plain = db.add_reference(conn, "router password", notes="hunter2")
+    r = client.post(f"/reference/{plain}/to-inbox", headers={"Referer": "/reference"})
+    assert r.location.endswith("/reference") and db.get_reference(conn, plain) is None
+    t = db.inbox_list(conn, TODAY)[0]
+    assert (t["title"], t["category"], t["notes"]) == ("router password", None, "hunter2")
+    assert client.post(f"/reference/{plain}/to-inbox").status_code == 404
+
+
 def test_new_project_from_task_form(client, conn):
     tid = db.add_task(conn, "ring Bob")
     r = client.post(f"/tasks/{tid}", data={"project_id": "__new__", "new_project": " Garden ", "step": "next"})

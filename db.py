@@ -1171,6 +1171,14 @@ def checklists(c):
 
 
 @atomic
+def reference_to_inbox(c, id, title, category=None):
+    """↩: an item needing action after all becomes an inbox task (title, category, notes) and goes. The task's id."""
+    tid = add_task(c, title, category=category, notes=get_reference(c, id)["notes"])
+    delete_reference(c, id)
+    return tid
+
+
+@atomic
 def delete_reference(c, id):
     c.execute("DELETE FROM reference WHERE id = ?", (id,))
 
