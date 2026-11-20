@@ -119,9 +119,10 @@ def test_a_ticked_row_opens_its_task_and_cant_be_ticked_again(page, live):
     assert page.url == live + "/horizons?level=ground"
 
 
-def test_finishing_a_projects_next_action_stays_on_the_page(page, live):
+def test_finishing_a_projects_next_action_stays_on_the_page(page, live, conn):
+    db.add_task(conn, "order grout", step="next", project_id=1)  # undated: on Next
     page.goto(live + "/next")
-    row(page, "buy tiles").locator("form.done button").click()
+    row(page, "order grout").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
     assert page.url == live + "/next"
 
@@ -186,7 +187,7 @@ def test_plus_inbox_dialog_captures(page, live, conn):
     assert not page.locator(".capture-dialog").evaluate("d => d.open")
     # ⌘/ captures while typing, in an overlay's notes too; the overlay stays open under it.
     page.goto(live + "/next")
-    row(page, "vacuum").locator(".title").click()
+    row(page, "measure wall").locator(".title").click()
     task_overlay(page)
     page.frame_locator("dialog.overlay iframe").locator(".md-editor").click()
     page.keyboard.press("Meta+/")
@@ -655,7 +656,7 @@ def test_dragging_across_rows_or_days_selects_no_text(page, live):
         return page.evaluate("getSelection().toString()")
     page.goto(live + "/next")
     rows = page.locator("main ul.tasks > li.task")
-    assert sweep(rows.nth(0), rows.nth(2)) == ""
+    assert sweep(rows.nth(0), rows.nth(1)) == ""
     page.goto(live + "/calendar?m=2026-10")
     cells = page.locator(".cal td")
     assert sweep(cells.nth(1), cells.nth(10)) == ""
@@ -672,8 +673,7 @@ def test_dragging_a_calendar_task_to_another_day_moves_its_due_date(page, live, 
     assert saved.value.status == 204
     assert target.locator(".ev", has_text="buy tiles").count() == 1  # moved in place, no reload
     assert "overdue" not in ev.get_attribute("class")
-    tid = next(t["id"] for t in db.next_list(conn) if t["title"] == "buy tiles")
-    assert db.get_task(conn, tid)["due_date"] == "2026-10-29"
+    assert db.get_task(conn, 2)["due_date"] == "2026-10-29"
     page.reload()
     assert target.locator(".ev", has_text="buy tiles").count() == 1
 
@@ -737,23 +737,6 @@ def test_notes_editor_undo(page, live, conn):
     page.keyboard.press("ControlOrMeta+z")
     assert ed.text_content() == "abc"
     assert page.locator("textarea[name=notes]").input_value() == "abc"
-
-
-def test_due_bands_fold_and_remember(page, live, conn):
-    db.add_task(conn, "wk", step="next", ground=1, due_date="2026-10-25")
-    page.goto(live + "/next")
-    assert not row(page, "wk").is_visible()  # This week starts folded
-    page.locator("details[data-band=week] summary").click()
-    assert row(page, "wk").is_visible()
-    page.wait_for_function("localStorage.getItem('fold:/next:week') === '1'")
-    page.reload()
-    assert row(page, "wk").is_visible()  # remembered
-
-
-def test_due_bands_remember_only_clicks(page, live, conn):
-    page.goto(live + "/next")
-    page.wait_for_timeout(100)  # any toggle events from parsing have fired
-    assert page.evaluate("Object.keys(localStorage).filter(k => k.includes('/next:'))") == []  # defaults aren't frozen
 
 
 def test_title_and_notes_save_themselves(page, live, conn):
@@ -930,27 +913,28 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
 
 
 def test_dragging_a_next_action_onto_another_project_moves_it(page, live, conn):
+    grout = db.add_task(conn, "order grout", step="next", project_id=1)  # undated: on Next
     page.goto(live + "/next")
-    now = page.locator("details[data-band=now] summary b")
-    before = int(now.text_content())
-    drag_to_panel(page, row(page, "buy tiles"), '[data-project="2"]')
-    page.wait_for_function("!document.querySelector('li.task[data-id=\"2\"]')")
-    assert page.url == live + "/next" and int(now.text_content()) == before - 1
-    assert (db.get_task(conn, 2)["project_id"], db.get_task(conn, 2)["step"]) == (2, "later")  # next stays a conscious choice
+    drag_to_panel(page, row(page, "order grout"), '[data-project="2"]')
+    page.wait_for_function(f"!document.querySelector('li.task[data-id=\"{grout}\"]')")
+    assert page.url == live + "/next"
+    assert (db.get_task(conn, grout)["project_id"], db.get_task(conn, grout)["step"]) == (2, "later")  # next stays a conscious choice
 
 
 def test_dragging_between_h0_and_a_project_on_next(page, live, conn):
     """An H0 task filed in a project leaves Next (a later step); a project's next action dropped on H0 stays on it."""
+    measure = conn.execute("SELECT id FROM tasks WHERE title = ?", ("measure wall",)).fetchone()[0]
+    grout = db.add_task(conn, "order grout", step="next", project_id=1)  # undated: on Next
     page.goto(live + "/next")
     page.locator(".pin-panel").click()
-    drag_to_panel(page, row(page, "vacuum"), '[data-project="1"]')
-    page.wait_for_function("!document.querySelector('li.task[data-id=\"5\"]')")
-    t = db.get_task(conn, 5)
+    drag_to_panel(page, row(page, "measure wall"), '[data-project="1"]')
+    page.wait_for_function(f"!document.querySelector('li.task[data-id=\"{measure}\"]')")
+    t = db.get_task(conn, measure)
     assert (t["project_id"], t["step"], t["ground"]) == (1, "later", 0)
     with page.expect_navigation():  # it stays on Next, now under H0: the page redraws
-        drag_to_panel(page, row(page, "buy tiles"), '[data-project="h0"]')
-    assert row(page, "buy tiles").locator(".proj").inner_text() == "H0"
-    t = db.get_task(conn, 2)
+        drag_to_panel(page, row(page, "order grout"), '[data-project="h0"]')
+    assert row(page, "order grout").locator(".proj").inner_text() == "H0"
+    t = db.get_task(conn, grout)
     assert (t["project_id"], t["step"], t["ground"]) == (None, "next", 1)
 
 
@@ -991,14 +975,15 @@ def test_waiting_projects_and_tasks_have_their_own_tabs(page, live, conn):
         row(page, "Waiting proj").locator(":scope > .grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
     assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj", "Visa"]
+    measure = conn.execute("SELECT id FROM tasks WHERE title = ?", ("measure wall",)).fetchone()[0]
     page.goto(live + "/next")
-    drag_to_panel(page, row(page, "vacuum"), '[data-project="waiting"]')
-    page.wait_for_function("!document.querySelector('li.task[data-id=\"5\"]')")
-    assert (db.get_task(conn, 5)["step"], db.get_task(conn, 5)["ground"]) == ("waiting", 1)
+    drag_to_panel(page, row(page, "measure wall"), '[data-project="waiting"]')
+    page.wait_for_function(f"!document.querySelector('li.task[data-id=\"{measure}\"]')")
+    assert (db.get_task(conn, measure)["step"], db.get_task(conn, measure)["ground"]) == ("waiting", 1)
     page.goto(live + "/waiting")
     assert page.locator("ul[data-reorder] > li.task > a.title").count() == 0  # no project rows here
     assert page.locator("ul[data-reorder] > li.task > .name > a.title").all_inner_texts() == [
-        "vacuum", "parcel from Ann", "quote from Bob"]
+        "measure wall", "parcel from Ann", "quote from Bob"]
     # An H0 waiting task dropped on a project stays waiting.
     drag_to_panel(page, row(page, "parcel from Ann"), '[data-project="2"]')
     page.wait_for_function("document.querySelector('li.task[data-id=\"14\"] .proj')?.textContent === 'Stalled'")
@@ -1039,8 +1024,8 @@ def test_a_failed_tick_off_reloads_instead_of_faking_it(page, live, conn):
     page.goto(live + "/next")
     page.route("**/complete", lambda r: r.fulfill(status=500, body=""))
     with page.expect_navigation():
-        row(page, "buy tiles").locator("form.done button").click()
-    assert row(page, "buy tiles").count() == 1 and db.get_task(conn, 2)["state"] == "open"
+        row(page, "measure wall").locator("form.done button").click()
+    assert row(page, "measure wall").count() == 1 and db.get_task(conn, conn.execute("SELECT id FROM tasks WHERE title = ?", ("measure wall",)).fetchone()[0])["state"] == "open"
     page.errors[:] = [e for e in page.errors if "500" not in e]  # the faked failure itself
 
 
@@ -1056,29 +1041,27 @@ def test_a_failed_calendar_drag_reloads(page, live, conn):
     page.errors[:] = [e for e in page.errors if "500" not in e]  # the faked failure itself
 
 
-def test_tick_off_updates_the_band_count_and_nav_dot(page, live):
-    page.goto(live + "/next")
-    n = int(page.locator("details[data-band=now] summary b").inner_text())
-    badge = page.locator("nav a", has_text="Next").locator(".badge")
-    assert badge.get_attribute("aria-label") == str(n)
+def test_tick_off_updates_the_calendar_dot(page, live):
+    """The Calendar's dot counts what's due today or overdue; ticking one off in the Agenda lowers it in place."""
+    page.goto(live + "/calendar?view=agenda")
+    dot = "(document.querySelector('nav a[href=\"/calendar\"] .badge')?.ariaLabel ?? '0')"  # a zero shows no dot
+    n = int(page.evaluate(dot))
+    assert n == page.locator("main li.task").count() and page.locator("nav a[href='/next'] .badge").count() == 0
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
-    page.wait_for_function(f"document.querySelector('details[data-band=now] summary b').textContent === '{n - 1}'")
-    page.wait_for_function(f"document.querySelector('nav a[href=\"/next\"] .badge')?.ariaLabel === '{n - 1}'")
+    page.wait_for_function(f"{dot} === '{n - 1}'")
     # Two tick-offs whose /nav answers arrive out of order: the later refresh's counts stay.
     stale = []
     page.route("**/nav", lambda r: stale.append((r, r.fetch().text())) if not stale else r.continue_())
-    page.locator("details[data-band=week] summary").click()
-    row(page, "call mum").locator("form.done button").click()  # not due yet: the dot stays n - 1
+    row(page, "quote from Bob").locator("form.done button").click()
     while not stale:
         page.wait_for_timeout(50)
     row(page, "buy tiles").locator("form.done button").click()
-    dot = "(document.querySelector('nav a[href=\"/next\"] .badge')?.ariaLabel ?? '0')"  # a zero shows no dot
-    page.wait_for_function(f"{dot} === '{n - 2}'")
+    page.wait_for_function(f"{dot} === '{n - 3}'")
     route, body = stale[0]
     route.fulfill(body=body, content_type="text/html")
     page.wait_for_timeout(300)
-    assert page.evaluate(dot) == str(n - 2)
+    assert page.evaluate(dot) == str(n - 3)
 
 
 def test_capture_keys_do_nothing_while_help_is_open(page, live):
@@ -1099,21 +1082,23 @@ def task_overlay(page):
 def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     """Closing it is going back: nothing changed, the page stays as it was; changed, it reloads to show it.
     /tasks/<id> opens the task's list with it open."""
+    measure = conn.execute("SELECT id FROM tasks WHERE title = ?", ("measure wall",)).fetchone()[0]
+    grout = db.add_task(conn, "order grout", step="next", project_id=1)  # a project's undated step: on Next
     page.goto(live + "/next")
     page.evaluate("window.mark = 1")  # gone after a reload
-    row(page, "vacuum").locator(".title").click()
-    assert task_overlay(page) == "vacuum" and page.url == live + "/next"
+    row(page, "measure wall").locator(".title").click()
+    assert task_overlay(page) == "measure wall" and page.url == live + "/next"
     frame = page.frame_locator("dialog.overlay iframe")
     frame.locator("input.big").focus()
     page.keyboard.press("Escape")  # in the frame
     page.wait_for_selector("dialog.overlay[open]", state="detached")
     assert page.evaluate("window.mark") == 1
-    row(page, "vacuum").locator(".title").click()
+    row(page, "measure wall").locator(".title").click()
     task_overlay(page)
-    frame.locator("input.big").fill("vacuum all")  # saved on closing, before the page reloads
+    frame.locator("input.big").fill("measure all")  # saved on closing, before the page reloads
     with page.expect_navigation():
         page.locator("dialog.overlay .close").click()
-    assert db.get_task(conn, 5)["title"] == "vacuum all" and row(page, "vacuum all").count() == 1
+    assert db.get_task(conn, measure)["title"] == "measure all" and row(page, "measure all").count() == 1
     # /tasks/2, a step: Projects, its project's overlay, the step's over it. Closing each drops its part of the URL.
     page.goto(live + "/tasks/2")
     assert page.url == live + "/projects/active?project=1&task=2" and task_overlay(page) == "buy tiles"
@@ -1129,7 +1114,7 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.wait_for_function("document.querySelectorAll('dialog.overlay').length === 1")
     # Ctrl+↑: a step's parent is its project (opened in its place), the project's is Projects (all closed).
     page.goto(live + "/next")
-    row(page, "buy tiles").locator(".title").click()
+    row(page, "order grout").locator(".title").click()
     task_overlay(page)
     page.frame_locator("dialog.overlay iframe").locator("input.big").focus()  # typing in a field too
     page.keyboard.press("Control+ArrowUp")
@@ -1140,23 +1125,23 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     assert page.locator("dialog.overlay").count() == 0
     # ✕ abandons and stays, as ✓ does: the overlay shows it abandoned, with Revive; closing reloads the page under it.
     page.goto(live + "/next")
-    row(page, "vacuum all").locator(".title").click()
+    row(page, "measure all").locator(".title").click()
     task_overlay(page)
     frame = page.frame_locator("dialog.overlay iframe")
     frame.get_by_role("button", name="Abandon").click()
     frame.get_by_role("button", name="Revive").wait_for()
-    assert page.locator("dialog.overlay").count() == 1 and db.get_task(conn, 5)["state"] == "abandoned"
+    assert page.locator("dialog.overlay").count() == 1 and db.get_task(conn, measure)["state"] == "abandoned"
     with page.expect_navigation():
         page.keyboard.press("Escape")
-    assert page.url == live + "/next" and row(page, "vacuum all").count() == 0
+    assert page.url == live + "/next" and row(page, "measure all").count() == 0
     # ✕ on a closed task deletes it for good and closes the overlay, back to the page under it (reloaded).
     page.goto(live + "/done")
-    page.locator("li.task", has_text="vacuum all").locator(".title").click()
+    page.locator("li.task", has_text="measure all").locator(".title").click()
     task_overlay(page)
     page.once("dialog", lambda d: d.accept())
     with page.expect_navigation():
         page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Delete for good").click()
-    assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_task(conn, 5) is None
+    assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_task(conn, measure) is None
     # A toast in the frame (an unreadable box's warning) doesn't take Esc: it still closes the overlay.
     page.goto(live + "/next?task=6")  # "bins"
     task_overlay(page)
@@ -1220,10 +1205,10 @@ def test_a_narrow_nav_folds_the_review_tabs_behind_more(page, live):
 
 def test_clicking_anywhere_on_a_row_opens_it(page, live):
     page.goto(live + "/next")
-    r = row(page, "buy tiles")
+    r = row(page, "measure wall")
     box = r.bounding_box()
     page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)  # blank space right of the title
-    assert task_overlay(page) == "buy tiles" and page.url == live + "/next"
+    assert task_overlay(page) == "measure wall" and page.url == live + "/next"
     page.keyboard.press("Escape")
     page.goto(live + "/projects/active")
     r = row(page, "Kitchen")
@@ -1439,7 +1424,7 @@ def test_enter_in_the_title_saves_without_reloading(page, live, conn):
 def test_tick_off_refreshes_the_nav_and_keeps_the_tab_lit(page, live):
     page.goto(live + "/next")
     with page.expect_response(lambda r: r.url.endswith("/nav")):
-        row(page, "buy tiles").locator("form.done button").click()
+        row(page, "measure wall").locator("form.done button").click()
     assert page.locator("nav a.on").get_attribute("href") == "/next"
 
 
@@ -1699,10 +1684,10 @@ def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
     prev.click()  # past the gone one, from where it stood: the item above it
     expect(title).to_have_value("third item")
     expect(nxt).to_be_disabled()
-    # Next: across its bands, the folded ones too, in page order.
+    # Next: its one list, in page order.
     page.goto(live + "/next")
     titles = [a.strip() for a in page.locator("main li.task .name a.title").all_text_contents()]
-    assert len(titles) > 2
+    assert len(titles) >= 2
     page.locator("main li.task .name a.title").first.evaluate("a => a.click()")
     expect(prev).to_be_disabled()
     for t in titles:
@@ -1797,8 +1782,8 @@ def test_site_info_filters_every_working_list_but_not_the_inbox(page, live, conn
     assert not page.locator(".help-dialog").evaluate("d => d.open")
     page.goto(live + "/next")
     assert page.locator(".ctx-open").text_content() == "@morning"
-    assert page.locator("main li.task", has_text="call mum").count() == 0
-    assert row(page, "buy tiles").locator(".ctx").text_content() == "@morning"
+    assert page.locator("main li.task", has_text="sort mail").count() == 0
+    assert row(page, "measure wall").locator(".ctx").text_content() == "@morning"
     page.goto(live + "/someday")
     assert row(page, "learn Italian").count() == 1
     page.goto(live + "/inbox")
@@ -1820,18 +1805,6 @@ def test_site_info_filters_every_working_list_but_not_the_inbox(page, live, conn
     page.keyboard.press("?")
     assert not contexts_row(page, "morning").locator("input[type=checkbox]").is_checked()
     page.keyboard.press("Escape")
-    page.goto(live + "/next")  # a band folded stays folded through a redraw, whose bands save their clicks too
-    band = page.locator("details.band").first
-    band.locator("summary").click()
-    assert not band.evaluate("d => d.open")
-    page.keyboard.press("?")
-    tick("morning").check()
-    page.locator(".ctx-open").wait_for()
-    assert not page.locator("details.band").first.evaluate("d => d.open")
-    page.keyboard.press("Escape")
-    page.locator("details.band").first.locator("summary").click()
-    page.reload()
-    assert page.locator("details.band").first.evaluate("d => d.open")
 
 
 def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):
@@ -1853,14 +1826,14 @@ def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):
     sync_api.expect(box).to_have_value("deep-work")
     with page.expect_navigation():
         page.keyboard.press("Escape")
-    assert row(page, "buy tiles").locator(".ctx").text_content() == "@deep-work"
+    assert row(page, "measure wall").locator(".ctx").text_content() == "@deep-work"
     # Closed while still typing, the name saves as the box is left, and the page redraws once it has.
     page.keyboard.press("?")
     box = page.locator(f'.context-list li[data-id="{ids["morning"]}"] input[name=context_name]')
     box.fill("focus")
     with page.expect_navigation():
         page.keyboard.press("Escape")
-    assert row(page, "buy tiles").locator(".ctx").text_content() == "@focus"
+    assert row(page, "measure wall").locator(".ctx").text_content() == "@focus"
     page.keyboard.press("?")
     box.fill("deep work")
     with page.expect_response(lambda r: r.url.endswith("/rename")):
@@ -1881,7 +1854,7 @@ def test_site_info_renames_deletes_and_reorders_contexts(page, live, conn):
     assert [x["name"] for x in db.contexts(conn)] == ["gone", "errands"]
     with page.expect_navigation():
         page.keyboard.press("Escape")
-    assert row(page, "buy tiles").locator(".ctx").count() == 0
+    assert row(page, "measure wall").locator(".ctx").count() == 0
 
 
 def test_at_offers_contexts_and_the_task_page_picks_them(page, live, conn):

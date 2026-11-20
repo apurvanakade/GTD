@@ -20,8 +20,11 @@
 {% block body %}
 {% call add_form(url_for('calendar_view'), 'Add a dated next action…', task=True, due=today, due_required=True) %}<label>Project {{ project_select() }}</label>{% endcall %}
 {% if agenda is not none %}
-{#- Every open task due today or overdue, from every list, oldest due first. Sorted by date, so no drag. #}
-<div data-filtered>{% if agenda %}<ul class="tasks agenda">{% for t in agenda %}{{ row(t) }}{% endfor %}</ul>
+{#- Every open task due today or overdue, from every list, under two headings: Overdue (oldest first), then Today.
+    Dated next actions live only here and on the calendar, so nothing due is ever out of sight. No drag. #}
+<div data-filtered>{% if agenda %}{% for heading, rows in agenda|agenda_split %}{% if rows %}
+<h2 class="agenda-head{{ ' overdue' if heading == 'Overdue' }}">{{ heading }} <b>{{ rows|length }}</b></h2>
+<ul class="tasks agenda">{% for t in rows %}{{ row(t) }}{% endfor %}</ul>{% endif %}{% endfor %}
 {%- elif context_filter %}{{ nothing_here() }}{% else %}<ul class="tasks"><li class="empty clear">Nothing due.</li></ul>{% endif %}</div>
 {% else %}
 {#- A day number opens this, on that day (the script below). #}

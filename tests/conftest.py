@@ -80,6 +80,9 @@ def seed(c):
     db.add_task(c, "sail", ground=1, step="someday", due_date=TODAY.isoformat())  # tickled: back in the Inbox
     db.add_task(c, "write a book", ground=1, step="someday", due_date="2026-12-01")  # out of sight until then
     db.mark_reviewed(c, italian, NOW - timedelta(days=3), table="task")
+    # Next's own: undated H0 next actions (a dated one is the calendar's), one with a reminder still to come.
+    measure = db.add_task(c, "measure wall", step="next", ground=1)
+    mail = db.add_task(c, "sort mail", step="next", ground=1, remind_at="2026-10-23T13:00:00+00:00")
     # The horizons' links: Home's vision line, the goal serving Home, Kitchen moving the goal, Stalled under Work, vacuum
     # Home's upkeep. Waiting proj, Someday proj and the other H0 actions serve nothing: loose on the map.
     db.set_area_vision(c, area, "A calm house we love")
@@ -89,6 +92,7 @@ def seed(c):
     db.link_task(c, vacuum, area)
     # Contexts: morning on next actions and a someday task, errands on a waiting task too, gone on nothing still open.
     db.set_task_contexts(c, 2, ["morning"])  # "buy tiles"
+    db.set_task_contexts(c, measure, ["morning"])
     db.set_task_contexts(c, italian, ["morning"])
     db.set_task_contexts(c, vacuum, ["morning", "errands"])
     parcel = c.execute("SELECT id FROM tasks WHERE title = 'parcel from Ann'").fetchone()[0]
@@ -97,6 +101,8 @@ def seed(c):
     # Categories: on a repeat (its next instance keeps it), and on a closed task alone (still offered).
     bins = c.execute("SELECT id FROM tasks WHERE title = 'bins'").fetchone()[0]
     db.set_task_category(c, bins, "Home")
+    db.set_task_category(c, mail, "Home")
     db.set_task_category(c, finished, "Discrete Math")
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
-            "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum}
+            "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum,
+            "measure": measure, "mail": mail}

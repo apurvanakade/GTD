@@ -8,11 +8,11 @@
      A project tab's `data-status`: a project row dropped on it takes that status (static/app.js). #}
   <span class="group">
     <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
-    <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar</a>
+    <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar{{ badge(counts.agenda, 'due today or overdue' if counts.overdue else 'due today', 'hot' if counts.overdue) }}</a>
   </span>
   <span class="group">
     <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep == 'inbox' }}">Inbox{{ badge(counts.inbox, 'in the inbox') }}</a>
-    <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next{{ badge(counts.next, 'due today or overdue' if counts.next_overdue else 'due today', 'hot' if counts.next_overdue) }}</a>
+    <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next</a>
     <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{{ badge(counts.waiting, 'waiting') }}</a>
     <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
   </span>

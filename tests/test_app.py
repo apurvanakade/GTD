@@ -71,7 +71,7 @@ def test_recurring_next_step_comes_back_as_later(client, conn):
     """Picking the next action is a conscious decision: a repeating next step's new instance is a later step."""
     pid = db.add_project(conn, "Home")
     tid = db.add_task(conn, "vacuum", step="next", project_id=pid, recur="weekly", due_date="2026-10-22")
-    assert [t["id"] for t in db.next_actions(conn, TODAY)] == [tid]
+    assert [t["id"] for t in db.agenda(conn, TODAY)] == [tid] and db.next_list(conn) == []  # dated: the calendar's
     client.post(f"/tasks/{tid}/complete", headers={"X-Requested-With": "fetch"})
     assert db.next_list(conn) == []
     (new,) = db.project_tasks(conn, pid)
@@ -192,10 +192,10 @@ def test_waiting_and_someday_projects_hide_their_tasks(client, conn):
     db.add_task(conn, "a", step="next", project_id=pid)
     for status, page in (("waiting", "/projects/waiting"), ("someday", "/projects/someday")):
         client.post(f"/projects/{pid}", data={"title": "P", "status": status})
-        assert db.next_actions(conn, TODAY) == [] and db.stalled_projects(conn) == []
+        assert db.next_list(conn) == [] and db.stalled_projects(conn) == []
         assert b"P</a>" in client.get(page).data
     client.post(f"/projects/{pid}", data={"title": "P", "status": "active"})
-    assert [t["title"] for t in db.next_actions(conn, TODAY)] == ["a"]
+    assert [t["title"] for t in db.next_list(conn)] == ["a"]
 
 
 def test_tasks_need_a_project_or_h0(client, conn):
@@ -208,7 +208,9 @@ def test_tasks_need_a_project_or_h0(client, conn):
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": "h0"})
     t = db.get_task(conn, tid)
     assert (t["step"], t["ground"], t["project_id"]) == ("next", 1, None)
-    assert t["title"] in client.get("/next").get_data(as_text=True)
+    assert t["due_date"] == "2026-10-22"  # a repeat is always dated: the calendar's, not Next's
+    assert t["title"] in client.get("/calendar?view=agenda").get_data(as_text=True)
+    assert t["title"] not in client.get("/next").get_data(as_text=True)
     client.post(f"/tasks/{tid}", data={"step": "next", "project_id": str(pid)})
     assert db.get_task(conn, tid)["ground"] == 0  # picking a project clears H0
 
@@ -439,7 +441,7 @@ def test_completed_steps_dont_repeat_their_project_or_step(client, conn):
 
 def test_nav_counts_are_dots(client, conn):
     html = client.get("/inbox").get_data(as_text=True)
-    assert nav_badges(html) == {}  # nothing to count: no dots, not even Next's 0
+    assert nav_badges(html) == {}  # nothing to count: no dots, not even the Calendar's 0
     for i in range(4):
         db.add_task(conn, f"inbox {i}")
     pid = db.add_project(conn, "P")  # stalled
@@ -451,17 +453,9 @@ def test_nav_counts_are_dots(client, conn):
     db.add_project(conn, "Visa", status="waiting")  # no outcome: flagged on its own tab, not a waiting task
     db.add_project(conn, "Boat", status="someday")
     assert nav_badges(client.get("/inbox").get_data(as_text=True)) == {
-        "/next": ("s3 hot", "8 due today or overdue"), "/waiting": ("s1", "1 waiting"),
+        "/calendar": ("s3 hot", "8 due today or overdue"), "/waiting": ("s1", "1 waiting"),
         "/inbox": ("s2", "4 in the inbox"), "/projects/active": ("s1 warn", "2 need a next action or outcome"),
         "/projects/waiting": ("s1 warn", "1 need a desired outcome")}
-
-
-def bands(html):
-    """[(band, open, [titles])] in page order."""
-    out = []
-    for key, attrs, body in re.findall(r'<details class="band" data-band="(\w+)"([^>]*)>(.*?)</details>', html, re.S):
-        out.append((key, "open" in attrs, re.findall(r'class="title"[^>]*>([^<]*)<', body)))
-    return out
 
 
 def test_task_lists_keep_a_dragged_order(client, conn):
@@ -492,32 +486,61 @@ def test_task_lists_keep_a_dragged_order(client, conn):
     n = db.add_task(conn, "n", ground=1, step="next", due_date="2026-10-22")
     db.reorder_tasks(conn, [n, r])
     db.complete_task(conn, r, TODAY)
-    assert titles(db.next_list(conn)) == ["n", "r"]
+    assert titles(db.h0_actions(conn)) == ["n", "r"]
     for t in db.someday_tasks(conn) + [db.get_task(conn, db.add_task(conn, "s", ground=1, step="someday"))]:
         assert t["list_position"] is not None
     html = client.get("/inbox").get_data(as_text=True)
     assert 'data-reorder="/tasks/order"' in html and 'class="grip"' in html
 
 
-def test_next_folds_into_due_bands(client, conn):
-    for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25"),
-                       ("mo", "2026-11-10"), ("lt", "2027-03-01")]:
-        db.add_task(conn, title, step="next", ground=1, due_date=due)
-    html = client.get("/next").get_data(as_text=True)
-    # Within a band, newest first until dragged (each band its own list).
-    assert bands(html) == [("now", True, ["td", "od"]), ("week", False, ["wk"]), ("later", False, ["lt", "mo"])]
-    assert html.count('class="tasks soon" data-reorder="/tasks/order"') == 3
-    ids = {t["title"]: t["id"] for t in db.next_list(conn)}
-    assert client.post("/tasks/order", data={"ids": f"{ids['od']},{ids['td']}"},
-                       headers={"X-Requested-With": "fetch"}).status_code == 204
-    html = client.get("/next").get_data(as_text=True)
-    assert bands(html)[0] == ("now", True, ["od", "td"])
-    assert re.search(r'data-band="week"[^>]*>\s*<summary>This week <b>1</b></summary>', html)
-    assert 'class="legend"' not in html
+def test_next_lists_only_what_can_be_done_now(client, conn):
+    """Next is the undated next actions, one dragged list; a dated one (any date, a repeat, a project's) is the
+    calendar's: on its day, then in the Agenda while overdue (Allen's hard landscape)."""
     pid = db.add_project(conn, "P")
-    db.add_task(conn, "loose end", step="next", project_id=pid)
+    for title, due in [("od", "2026-10-20"), ("td", "2026-10-22"), ("wk", "2026-10-25")]:
+        db.add_task(conn, title, step="next", ground=1, due_date=due)
+    db.add_task(conn, "weekly", step="next", ground=1, recur="weekly", due_date="2026-10-29")
+    db.add_task(conn, "free", step="next", ground=1)
+    db.add_task(conn, "step", step="next", project_id=pid)
+    db.add_task(conn, "dated step", step="next", project_id=db.add_project(conn, "Q"), due_date="2026-11-02")
     html = client.get("/next").get_data(as_text=True)
-    assert bands(html)[-1] == ("nodate", False, ["loose end"])  # empty bands aren't shown (no No date above)
+    assert re.findall(r'class="title"[^>]*>([^<]*)<', html) == ["step", "free"]  # newest first until dragged
+    assert '<details class="band"' not in html and html.count('data-reorder="/tasks/order"') == 1
+    assert [t["title"] for t in db.next_list(conn)] == ["step", "free"]
+    assert db.stalled_projects(conn) == []  # a dated next action is still its project's next
+    month = client.get("/calendar?m=2026-10").get_data(as_text=True)
+    assert all(t in month for t in ("od", "td", "wk", "weekly"))
+    assert "dated step" in client.get("/calendar?m=2026-11").get_data(as_text=True)
+
+
+def test_agenda_splits_overdue_from_today(client, conn):
+    """The Agenda keeps everything due in sight: Overdue (oldest first), then Today, each counted."""
+    for title, due in [("today one", "2026-10-22"), ("late", "2026-10-21"), ("oldest", "2026-10-02"),
+                       ("soon", "2026-10-23")]:
+        db.add_task(conn, title, step="next", ground=1, due_date=due)
+    html = client.get("/calendar?view=agenda").get_data(as_text=True)
+    assert re.findall(r'<h2 class="agenda-head[^"]*">(\w+) <b>(\d+)</b>', html) == [("Overdue", "2"), ("Today", "1")]
+    assert html.index(">Overdue") < html.index(">oldest<") < html.index(">late<") < html.index(">Today") \
+        < html.index(">today one<")
+    assert ">soon<" not in html
+    (today_one,) = [t for t in db.agenda(conn, TODAY) if t["title"] == "today one"]
+    db.complete_task(conn, today_one["id"], TODAY)
+    html = client.get("/calendar?view=agenda").get_data(as_text=True)
+    assert ">Today <b>" not in html and ">Overdue <b>2</b>" in html  # an empty heading isn't shown
+
+
+def test_dating_a_next_action_says_it_went_to_the_calendar(client, conn):
+    tid = db.add_task(conn, "call bank", step="next", ground=1)
+    r = client.post(f"/tasks/{tid}", data={"due_date": "fri"}, headers={"X-Requested-With": "fetch"})
+    assert any("on the calendar, not Next: Fri Oct 23" in f for f in r.get_json()["flashes"])
+    assert ">call bank<" not in client.get("/next").get_data(as_text=True)
+    r = client.post(f"/tasks/{tid}", data={"due_date": "sat"}, headers={"X-Requested-With": "fetch"})
+    assert not any("calendar" in f for f in r.get_json()["flashes"])  # already dated: nothing new to say
+    client.post(f"/tasks/{tid}", data={"due_date": ""}, headers={"X-Requested-With": "fetch"})
+    assert ">call bank<" in client.get("/next").get_data(as_text=True)  # undated again: back on Next
+    item = db.add_task(conn, "dentist", due_date="2026-10-30")  # an inbox item, dropped on Next
+    client.post("/tasks/move", data={"id": item, "project_id": "h0"}, headers={"X-Requested-With": "fetch"})
+    assert "on the calendar, not Next: Fri Oct 30" in client.get("/inbox").get_data(as_text=True)
 
 
 ICS = """BEGIN:VCALENDAR
@@ -814,7 +837,7 @@ def test_delete_empty_project_only(client, conn):
     assert db.get_project(conn, empty) is None and r.headers["Location"] == "/projects/active"
 
 
-def test_review_next_actions_list_all(client, conn):
+def test_review_next_actions_are_nexts(client, conn):
     pid = db.add_project(conn, "Trip")
     db.add_task(conn, "book flights", step="next", project_id=pid, due_date="2026-12-01")
     db.add_task(conn, "pack bags", step="later", project_id=pid)
@@ -823,8 +846,8 @@ def test_review_next_actions_list_all(client, conn):
     db.add_task(conn, "pay deposit", step="next", project_id=db.add_project(conn, "Deposit"), due_date="2026-10-21")
     db.add_task(conn, "water plants", step="next", ground=1, recur="weekly", due_date="2026-10-25")  # repeat not yet due
     nexts = card(client.get("/review").get_data(as_text=True), "nexts")
-    assert all(t in nexts for t in ("renew visa", "pay deposit", "call hotel", "book flights"))
-    assert "pack bags" not in nexts and "water plants" not in nexts
+    assert "renew visa" in nexts  # Next's list: the undated ones; the dated are Look ahead's and Overdue's
+    assert not any(t in nexts for t in ("pay deposit", "call hotel", "book flights", "pack bags", "water plants"))
     db.add_task(conn, "reply from Ann", step="waiting", ground=1, due_date="2026-10-30")
     db.add_project(conn, "Permit", status="waiting")
     waiting = card(client.get("/review").get_data(as_text=True), "waiting")
@@ -1396,7 +1419,7 @@ def test_due_date_box_has_a_calendar_picker(client, conn):
     assert 'name="due_date"' in html and 'class="pick"' in html and 'type="date" class="picker"' in html
 
 
-def test_next_tab_lists_every_next_action_in_due_bands(client, conn):
+def test_next_tab_lists_the_undated_next_actions(client, conn):
     pid, sid = db.add_project(conn, "P"), db.add_project(conn, "S", status="someday")
     db.add_task(conn, "undated", step="next", project_id=pid)
     db.add_task(conn, "weekly far", step="next", recur="weekly", due_date="2026-11-30", project_id=db.add_project(conn, "Q"))
@@ -1405,10 +1428,11 @@ def test_next_tab_lists_every_next_action_in_due_bands(client, conn):
     db.add_task(conn, "ground", step="next", ground=1)  # H0: a next action with no project
     db.add_task(conn, "ground soon", step="next", ground=1, due_date="2026-10-22")
     html = client.get("/next").get_data(as_text=True)
-    assert "Upcoming" not in html and "someday step" not in html
-    assert html.index("ground soon") < html.index("overdue one") < html.index("weekly far") < html.index("undated")
+    assert "someday step" not in html and ">undated<" in html
+    assert not any(t in html for t in ("ground soon", "overdue one", "weekly far"))  # dated: the calendar's
     assert ">ground<" in html and 'title="Ground level' in html  # H0's tag where a project's would be
-    assert db.counts(conn, TODAY)["next"] == 2  # due today or overdue: not undated, not a far repeat
+    counts = db.counts(conn, TODAY)
+    assert (counts["agenda"], counts["overdue"]) == (2, 1)  # due today or overdue: not undated, not a far repeat
 
 
 @pytest.mark.parametrize("page", ["/inbox", "/next", "/waiting", "/someday"])
@@ -2408,9 +2432,9 @@ def test_repeat_preview_reads_the_rule_and_the_next_date(client):  # today is Th
 
 
 def test_rows_show_a_bell_for_a_reminder_still_to_come(client, conn):
-    seed(conn)
+    ids = seed(conn)
     html = client.get("/next").get_data(as_text=True)
-    bell = re.search(r'<li class="task[^>]*data-id="7".*?</li>', html, re.S).group(0)  # "call mum"
+    bell = re.search(r'<li class="task[^>]*data-id="%d".*?</li>' % ids["mail"], html, re.S).group(0)
     assert '<span class="remind" title="Reminder 2026-10-23' in bell and "🔔" in bell
     sent = re.search(r'<li class="task[^>]*data-id="4".*?</li>', client.get("/waiting").get_data(as_text=True),
                      re.S).group(0)  # "quote from Bob": already sent
@@ -2828,6 +2852,7 @@ def title_of(g, id):
 
 def test_task_rows_show_their_project(client, conn):
     ids = seed(conn)
+    db.add_task(conn, "grout", step="next", project_id=ids["active"])  # undated: on Next
     page = client.get("/next").get_data(as_text=True)
     assert f'<a class="proj" href="/projects/{ids["active"]}">Kitchen</a>' in page
 
@@ -2901,7 +2926,7 @@ def test_a_routes_writes_commit_together(client, conn, monkeypatch):
 
 def test_a_task_finished_late_isnt_shown_as_overdue(client, conn):
     tid = db.add_task(conn, "late", ground=1, step="next", due_date="2026-10-01")
-    assert 'class="task overdue" data-id="%d"' % tid in client.get("/next").get_data(as_text=True)
+    assert 'class="task overdue" data-id="%d"' % tid in client.get("/calendar?view=agenda").get_data(as_text=True)
     db.complete_task(conn, tid, TODAY)
     assert 'class="task overdue"' not in client.get("/done").get_data(as_text=True)
 
@@ -2989,7 +3014,7 @@ def test_h0_tasks_need_no_date(client, conn):
     db.abandon_task(conn, dated)
     db.revive_task(conn, dated)
     assert db.get_task(conn, dated)["due_date"] is None
-    assert "No date" in client.get("/next").get_data(as_text=True)
+    assert ">dated<" in client.get("/next").get_data(as_text=True)  # undated again: on Next
 
 
 def test_several_tasks_move_together(client, conn):
@@ -3353,7 +3378,7 @@ def test_context_filter_is_global_but_for_the_working_lists_only(client, conn):
     main = lambda url: client.get(url).get_data(as_text=True).split("<main>")[1]  # the timer's pill names "call mum" too
     client.set_cookie("contexts", str(x["morning"]))
     next_html = main("/next")
-    assert ">buy tiles<" in next_html and ">call mum<" not in next_html
+    assert ">measure wall<" in next_html and ">Home: sort mail<" not in next_html
     assert 'class="ctx-filter"' in next_html and "@morning" in next_html
     assert ">parcel from Ann<" not in main("/waiting")
     assert ">learn Italian<" in main("/someday")
@@ -3365,12 +3390,12 @@ def test_context_filter_is_global_but_for_the_working_lists_only(client, conn):
     html = main("/waiting")
     assert ">parcel from Ann<" in html and ">quote from Bob<" not in html
     client.set_cookie("contexts", "999")
-    assert ">call mum<" in main("/next")
+    assert ">Home: sort mail<" in main("/next")
     # Not on the inbox (where everything lands), the project pages, the review or Done; their counts are the whole truth.
     client.set_cookie("contexts", str(x["errands"]))
     assert ">inbox item<" in main("/inbox")
     assert ">lay tiles<" in main(f"/projects/{ids['active']}?embed=overlay")
-    assert ">call mum<" in main("/review?step=nexts")
+    assert ">Home: sort mail<" in main("/review?step=nexts")
     assert 'class="ctx-filter"' not in main("/inbox")
     assert 'class="ctx-filter"' not in main("/projects/active")
     # An emptied list says so, rather than claiming it's clear.
@@ -3451,7 +3476,7 @@ def test_a_task_category(client, conn):
     found by search."""
     seed(conn)
     page = client.get("/next").get_data(as_text=True)
-    assert ">Home: bins</a>" in page
+    assert ">Home: sort mail</a>" in page
     offered = json.loads(re.search(r'data-categories="([^"]*)"', page).group(1).replace("&#34;", '"'))
     assert set(offered) == {"Home", "Discrete Math"}  # "Discrete Math" is on a done task only
     assert 'name="category"' in page  # the capture line's box
@@ -3482,7 +3507,7 @@ def test_a_task_category(client, conn):
     assert not client.post(f"/tasks/{t['id']}?embed=overlay", data={"due_date": "fri"}, headers={"X-Requested-With": "fetch"}) \
         .get_json()["saved"].get("category")  # not posted: left alone
     # A repeat's next instance keeps it; search and suggestions find it by its category.
-    bins = next(x for x in db.next_list(conn) if x["title"] == "bins")
+    bins = next(x for x in db.h0_actions(conn) if x["title"] == "bins")
     new = db.complete_task(conn, bins["id"], TODAY)
     assert db.get_task(conn, new)["label"] == "Home: bins"
     assert [x["label"] for x in db.search(conn, "home bins")["tasks"]] == ["Home: bins"]
