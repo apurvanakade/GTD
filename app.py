@@ -676,6 +676,7 @@ REVIEW_PHASES = (
 REVIEW_NAMES = {key: name for _, steps in REVIEW_PHASES for key, name in steps}
 REVIEW_STEPS = tuple(REVIEW_NAMES)
 
+
 @app.template_filter()
 def local_date(utc):
     """The local date of a SQLite datetime('now') stamp, which is UTC: a task finished at 9pm is done today."""
