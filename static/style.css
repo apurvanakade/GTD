@@ -204,9 +204,9 @@ header.page [data-filtered]:empty { display: none; }
 .overlay { width: min(1000px, calc(100vw - 64px)); padding: 16px 24px 20px; }
 /* Every record's overlay (app.js): its page in a frame, sized to fit up to the window (then it scrolls inside, so a
    project's drop panel stays in view), × in the title line's room (body.embed below). */
-.overlay .close { position: absolute; top: 16px; right: 20px; z-index: 1; }
+.overlay .close { position: absolute; top: 16px; right: 40px; z-index: 1; }  /* clear of the frame's scrollbar (the padding's 24px + ~16px) */
 .overlay:focus { outline: none; }  /* focus starts on the overlay itself (app.js), not ×, which would show a ring on a page just loaded */
-.overlay .walk { position: absolute; top: 16px; right: 56px; z-index: 1; }  /* ‹ ›: the list it was opened from */
+.overlay .walk { position: absolute; top: 16px; right: 76px; z-index: 1; }  /* ‹ ›: the list it was opened from */
 .overlay iframe { display: block; width: 100%; height: 12rem; max-height: calc(100vh - 6rem); border: 0; }
 /* Its fields quiet, as on a project page: no box until pointed at or typed in. */
 body.embed { padding: 0; max-width: none; }
@@ -363,7 +363,7 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
 .project textarea, .edit textarea, .project .md-editor, .edit .md-editor { margin-top: 6px; }
-.autosave { margin: 4px 0 0; min-height: 1.2em; font-size: var(--fs-s); }
+.autosave { margin: 2px 0 0; min-height: calc(1.5em + 2px); font-size: var(--fs-s); }  /* the notes toolbar's box (.md-tools: margin, line-height 1.5, 1px borders), which takes its place: so the toolbar never hangs below a page ending here (an overlay's frame would scroll) */
 .autosave button { padding: 0 2px; font-size: inherit; text-decoration: underline; }
 .project textarea, .project .md-editor { background: transparent; border-color: transparent; }
 .project textarea:focus, .project .md-editor:focus { border-color: var(--line); }

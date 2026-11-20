@@ -618,6 +618,22 @@ def reference_view(id):
     return render_template("reference_item.html", r=r, up=url_for("reference"))
 
 
+@app.post("/reference/<int:id>/to-inbox")
+def reference_to_inbox(id):
+    """↩: needs action after all, so back to the inbox as a task, the reverse of filing one to Reference: a title's
+    `Category: ` lead (a filed task's label) is its category again. From its page the frame shows the task, to clarify."""
+    c = conn()
+    r = db.get_reference(c, id) or abort(404)
+    title, category = r["title"], None
+    if m := CATEGORY_LEAD.match(title):
+        category, title = m.groups()
+    tid = db.reference_to_inbox(c, id, title, category)
+    flash(f"In the inbox: {db.get_task(c, tid)['label']}")
+    if request.args.get("embed"):
+        return redirect(url_for("task_view", id=tid, embed=request.args["embed"]))
+    return back("reference")
+
+
 @app.post("/reference/<int:id>/delete")
 def reference_delete(id):
     db.delete_reference(conn(), id)
