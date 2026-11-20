@@ -4,6 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A small, single-user GTD web app (Flask + Jinja + stdlib `sqlite3`). It replaced Mindwtr, which had
 grown too complicated. Keep it simple: prefer the plain GTD workflow over options and settings.
+Minimal means a clean, uncluttered look, not few features: a useful feature is welcome if its page stays clean
+(few visible controls, no explanatory text, no second path to the same thing). The weekly Review page is the model.
 The phone is only for capture; everything else is done on a desktop, so features need no touch or phone adaptation.
 The one exception: on a phone every page must stay readable. A `max-width: 600px` block at the end of `static/style.css`
 gives every list row's title its own line (controls wrap below it; hover-only dates and ↻ are left out), puts the task page's fields one per line, and turns the calendar into a list of days;
