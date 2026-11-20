@@ -13,7 +13,7 @@ from werkzeug.serving import make_server
 
 import db
 from app import app, local_input
-from conftest import NOW, seed
+from conftest import NOW, TODAY, seed
 
 pytestmark = pytest.mark.browser
 sync_api = pytest.importorskip("playwright.sync_api")
@@ -2068,6 +2068,50 @@ def test_dragging_a_project_onto_a_nav_tab_moves_it(page, live, conn):
     row(page, "Someday proj").locator(":scope > .grip").drag_to(tab("someday"))  # its own tab: nothing happens
     assert db.projects(conn, "someday")[0]["title"] == "Someday proj"
     assert row(page, "Someday proj").count() == 1
+    row(page, "Someday proj").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="waiting"]'))  # a task tab
+    assert db.get_project(conn, 4)["status"] == "someday" and row(page, "Someday proj").count() == 1
+    with page.expect_response(lambda r: r.url.endswith("/projects/4/move")):  # Done closes it
+        row(page, "Someday proj").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="done"]'))
+    page.wait_for_function("!document.querySelector('ul[data-reorder] > li.task[data-id=\"4\"]')")
+    assert db.get_project(conn, 4)["status"] == "done"
+
+
+def test_dragging_a_task_onto_a_nav_tab_moves_it(page, live, conn):
+    """A task row dropped on a nav tab goes where it means (Someday: H0 someday) and leaves its list in place; the
+    list's order isn't saved. Its own tab is no target."""
+    page.goto(live + "/inbox")
+    order = [t["id"] for t in db.inbox_list(conn, TODAY)]
+    with page.expect_response(lambda r: r.url.endswith("/tasks/to/someday")) as saved:
+        row(page, "inbox item").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="someday"]'))
+    assert saved.value.status == 204
+    page.wait_for_function("![...document.querySelectorAll('li.task a.title')].some(a => a.textContent === 'inbox item')")
+    t = db.someday_tasks(conn)[0]
+    assert (t["title"], t["ground"], t["step"]) == ("inbox item", 1, "someday")
+    assert [t["id"] for t in db.inbox_list(conn, TODAY)] == [i for i in order if i != t["id"]]
+    row(page, "legacy orphan").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="inbox"]'))
+    assert row(page, "legacy orphan").count() == 1  # its own tab takes nothing
+    row(page, "legacy orphan").locator(":scope > .grip").drag_to(page.locator('nav a[data-status="someday"]'))
+    assert row(page, "legacy orphan").count() == 1  # nor a project tab
+    # A project's step dropped on Waiting stays in its project, waiting.
+    page.goto(live + "/next")
+    tid = conn.execute("SELECT id FROM tasks WHERE title = 'measure wall'").fetchone()[0]
+    db.update_task(conn, tid, project_id=1, ground=0, step="next")
+    page.reload()
+    with page.expect_response(lambda r: r.url.endswith("/tasks/to/waiting")):
+        row(page, "measure wall").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="waiting"]'))
+    page.wait_for_function(f"!document.querySelector('li.task[data-id=\"{tid}\"]')")
+    t = db.get_task(conn, tid)
+    assert (t["project_id"], t["step"]) == (1, "waiting")
+
+
+def test_dragging_a_step_onto_another_project_row_moves_it(page, live, conn):
+    page.goto(live + "/projects/active")
+    page.locator(".peek-all").click()
+    with page.expect_navigation():
+        page.locator('.steps > li[data-id="3"] > .grip').drag_to(page.locator('main ul[data-status] > li.task[data-id="2"] > .title'))
+    t = db.get_task(conn, 3)
+    assert (t["project_id"], t["step"]) == (2, "later")
+    sync_api.expect(page.locator('li.task[data-id="2"] .steps > li[data-id="3"]')).to_be_visible()
 
 
 def test_the_category_box_offers_categories(page, live, conn):

@@ -426,6 +426,57 @@ def file_to():
     return render_template("file_menu.html", project_groups=db.project_groups(conn()))
 
 
+@app.post("/tasks/to/<any(timer, inbox, next, waiting, someday, done, reference):tab>")
+def task_to_tab(tab):
+    """Open task rows dropped on a nav tab (static/app.js), all or none, as that tab means it: Timer times it (one
+    task), Inbox sends it back to be clarified (↩), Next and Waiting make it that step, in its project if it has
+    one, else H0; Someday makes it an H0 someday task (a tickled one undated, back to sleep), Done completes it,
+    Reference files it there. Fetch only: 204, or the flashes as JSON; with `reload` always 204, the flashes waiting
+    for the redrawn page."""
+    c = conn()
+    tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
+    if not tasks or not all(t and t["state"] == "open" for t in tasks) or (tab == "timer" and len(tasks) > 1):
+        abort(400)
+    with db.transaction(c):
+        if tab == "timer":
+            db.timer_start(c, tasks[0]["id"], now())
+        elif tab == "done":
+            for t in tasks:
+                db.complete_task(c, t["id"], today(), now())
+        elif tab == "reference":
+            db.task_to_reference(c, [t["id"] for t in tasks], now())
+        elif tab == "inbox":
+            sent = [db.send_to_inbox(c, t["id"]) for t in reversed(tasks) if not t["inbox"]]
+            if sent:
+                flash(f"Back in the inbox, cleared to {'its' if len(sent) == 1 else 'their'} title and notes.")
+        else:
+            for t in reversed(tasks):  # each arrives on top: the last first keeps the page's order
+                to_step(c, t, tab)
+    flashes = [] if request.form.get("reload") else get_flashed_messages()
+    return {"flashes": flashes} if flashes else ("", 204)
+
+
+def to_step(c, t, step):
+    """A task dropped on Next, Waiting or Someday: a project's step stays in its project as that step (a project has
+    no someday step: it becomes an H0 one); anything else becomes an H0 task of that step."""
+    if t["project_id"] and step != "someday":
+        if t["step"] == step:
+            return
+        db.update_task(c, t["id"], today=today(), step=step)
+        p = db.get_project(c, t["project_id"])
+        if step == "next" and p["status"] != "active":
+            flash(f"A next action of {p['title']}, which is {p['status']}, so it isn't on Next.")
+    else:
+        tickled = t["step"] == "someday" and t["due_date"] and t["due_date"] <= today().isoformat()
+        if t["ground"] and t["step"] == step and not tickled:
+            return
+        fields = {"project_id": None, "ground": 1, "step": step}
+        if tickled:  # not yet: back to sleep, with no date to wake it
+            fields["due_date"] = None
+        db.update_task(c, t["id"], today=today(), **fields)
+    on_calendar(t, db.get_task(c, t["id"]))
+
+
 @app.post("/tasks/order")
 def tasks_order():
     """A task list's drag-and-drop (Inbox, Next, Waiting, Someday) sends its task ids in their new order."""
@@ -937,13 +988,16 @@ def projects_order(status):
 
 @app.post("/projects/<int:id>/move")
 def project_move(id):
-    """A project row dropped on a nav tab (Active, Waiting, Someday projects) takes that status; open projects only."""
+    """A project row dropped on a nav tab (a project tab, Waiting, Someday: that status; Done: closed as done, its open
+    steps with it, as its page's status select does); open projects only."""
     c = conn()
     p = db.get_project(c, id) or abort(404)
     status = request.form.get("status")
-    if status not in PROJECT_STATUSES or p["status"] not in PROJECT_STATUSES:
+    if status not in (*PROJECT_STATUSES, "done") or p["status"] not in PROJECT_STATUSES:
         abort(400)
-    if status != p["status"]:
+    if status == "done":
+        db.close_project(c, id, "done", now=now())
+    elif status != p["status"]:
         db.update_project(c, id, status=status)
     return ("", 204) if fetched() else back("projects_view", status="active")
 

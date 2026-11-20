@@ -5,16 +5,18 @@
   {% set ep = request.endpoint %}
   {% set status = (request.view_args or {}).get('status') %}
   {# Three groups: working minute by minute, lists of tasks, lists of projects; each tab lists one kind.
-     A project tab's `data-status`: a project row dropped on it takes that status (static/app.js). #}
+     Drop targets (static/app.js): `data-drop`, the tab a dragged task goes to (/tasks/to/<tab>); a project tab's
+     `data-status`, or Done's `data-project-status`, the status a dragged project row takes. Task rows go only to
+     task tabs, project rows only to project tabs; Done, listing both, takes both. #}
   <span class="group">
-    <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}">Timer</a>
+    <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}" data-drop="timer">Timer</a>
     <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar{{ badge(counts.agenda, 'due today or overdue' if counts.overdue else 'due today', 'hot' if counts.overdue) }}</a>
   </span>
   <span class="group">
-    <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep == 'inbox' }}">Inbox{{ badge(counts.inbox, 'in the inbox') }}</a>
-    <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}">Next</a>
-    <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}">Waiting{{ badge(counts.waiting, 'waiting') }}</a>
-    <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}">Someday</a>
+    <a href="{{ url_for('inbox') }}" class="{{ 'on' if ep == 'inbox' }}" data-drop="inbox">Inbox{{ badge(counts.inbox, 'in the inbox') }}</a>
+    <a href="{{ url_for('next_view') }}" class="{{ 'on' if ep == 'next_view' }}" data-drop="next">Next</a>
+    <a href="{{ url_for('waiting') }}" class="{{ 'on' if ep == 'waiting' }}" data-drop="waiting">Waiting{{ badge(counts.waiting, 'waiting') }}</a>
+    <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}" data-drop="someday">Someday</a>
   </span>
   <span class="group">
     <small class="caption">Projects</small>
@@ -28,8 +30,8 @@
   <span class="aux" id="nav-more" popover>
     <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
     <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
-    <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}">Done</a>
-    <a href="{{ url_for('reference') }}" class="{{ 'on' if ep in ('reference', 'reference_view') }}">Reference</a>
+    <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}" data-drop="done" data-project-status="done">Done</a>
+    <a href="{{ url_for('reference') }}" class="{{ 'on' if ep in ('reference', 'reference_view') }}" data-drop="reference">Reference</a>
   </span>
   <button type="button" class="theme-toggle icon" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
 </nav>
