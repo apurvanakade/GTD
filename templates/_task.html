@@ -36,6 +36,16 @@
 </li>
 {% endmacro %}
 
+{# A Reference item's row (Reference, Search): its title opens the item, then its notes' first line; ↩ on hover sends it
+   back to the inbox as a task (app.reference_to_inbox()), staying on the page. #}
+{% macro reference_row(r) %}
+<li class="task">
+  <a class="title" href="{{ url_for('reference_view', id=r.id) }}">{{ r.title }}</a>
+  {% if r.notes %}<span class="meta">{{ r.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}
+  <form method="post" action="{{ url_for('reference_to_inbox', id=r.id) }}" class="to-inbox"><button title="Needs action: back to the inbox as a task" aria-label="Send to inbox">↩</button></form>
+</li>
+{% endmacro %}
+
 {# A done or abandoned project's row (Done, Projects' completed): ✓ or ✕ as a task row has, its date and Revive. #}
 {% macro closed_project(p) %}
 <li class="task"><span class="check" title="{{ 'Done' if p.status == 'done' else 'Abandoned' }}" aria-hidden="true">{{ '✓' if p.status == 'done' else '✕' }}</span><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>

@@ -1219,12 +1219,13 @@ def test_filing_a_task_to_reference_from_its_page(client, conn):
 
 
 def test_reference_item_back_to_the_inbox(client, conn):
-    """↩ on an item (its row and its page) undoes filing a task to Reference: an inbox task with the title, the
+    """↩ on an item (its row, on Reference and Search, and its page) undoes filing a task to Reference: an inbox task with the title, the
     label's category and the notes, on top of the Inbox; the item goes. From its page, the frame shows the task."""
     tid = db.add_task(conn, "grade hw", category="discrete math", notes="ch. 3")
     client.post(f"/tasks/{tid}?embed=overlay", data={"project_id": "reference"})
     item = [x for x in db.references(conn) if x["title"] == "Discrete Math: grade hw"][0]["id"]
     assert f'action="/reference/{item}/to-inbox"' in client.get("/reference").get_data(as_text=True)
+    assert f'action="/reference/{item}/to-inbox"' in client.get("/search?q=grade").get_data(as_text=True)  # same row
     page = client.get(f"/reference/{item}?embed=overlay").get_data(as_text=True)
     assert f'formaction="/reference/{item}/to-inbox?embed=overlay"' in page
     r = client.post(f"/reference/{item}/to-inbox?embed=overlay")

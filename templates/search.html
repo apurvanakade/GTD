@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import row with context %}
+{% from "_task.html" import row, reference_row with context %}
 {% block title %}Search{% endblock %}
 {% block heading %}<h1>Search{% if q %} <small>“{{ q }}”</small>{% endif %}</h1>{% endblock %}
 {% block body %}
@@ -38,7 +38,7 @@
 <h2>Reference</h2>
 <ul class="tasks">
   {% for x in r.references %}
-  <li class="task"><a class="title" href="{{ url_for('reference_view', id=x.id) }}">{{ x.title }}</a>{% if x.notes %}<span class="meta">{{ x.notes.splitlines()[0]|truncate(70) }}</span>{% endif %}</li>
+  {{ reference_row(x) }}
   {% endfor %}
 </ul>
 {% endif %}
