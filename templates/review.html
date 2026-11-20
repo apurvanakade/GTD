@@ -44,9 +44,10 @@
     <li><a href="{{ url_for('review', step=key) }}"{% if key in checked or key == step %} class="{{ ['done' if key in checked, 'on' if key == step]|select|join(' ') }}"{% endif %}{% if key == step %} aria-current="step"{% endif %}>{{ name }}{% if todo.get(key) %}<span class="n">{{ todo[key] }}</span>{% endif %}</a></li>
   {%- endfor %}</ol>
   {% endfor %}
-  <h3>Past reviews</h3>
-  <p class="streak">{% for monday, done in weeks %}<i class="wk{{ ' hit' if done }}" title="{{ done|long_date if done else 'Week of ' ~ monday.isoformat()|long_date }}"></i>{% endfor %}</p>
-  {% if not past %}<p class="empty">No weekly reviews yet.</p>{% endif %}
+  <h3>Last review</h3>
+  {%- if past %}
+  <p class="last-review">{{ past[0]|short_date }} · {{ past[0]|days_ago }}</p>
+  {%- else %}<p class="empty">No weekly reviews yet.</p>{% endif %}
 </aside>
 <div>
 <ol class="deck review">

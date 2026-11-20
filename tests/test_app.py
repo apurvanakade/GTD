@@ -1684,7 +1684,7 @@ def test_review_is_a_checklist_you_finish(client, conn):
     html = r.get_data(as_text=True)
     assert "Weekly review completed on Thu 22 Oct 2026." in html
     assert db.reviews(conn) == ["2026-10-22"] and db.review_checked(conn) == set()  # fresh for next week
-    assert "Past reviews" in html and "Thu 22 Oct 2026" in html.split("Past reviews", 1)[1]
+    assert "Thu Oct 22 · today" in html.split("Last review", 1)[1]
     assert client.post("/review/bogus").status_code == 404
 
 
@@ -1734,14 +1734,14 @@ def test_review_prev_next_links(client, conn):
     assert 'rel="next"' not in last and 'href="/review?step=collect" rel="prev"' in last
 
 
-def test_review_past_reviews_as_a_streak(client, conn):
-    for days in (7, 21):
+def test_review_shows_only_the_last_review(client, conn):
+    # TODAY is Thu 22 Oct 2026; an older year's date carries its year.
+    db.complete_review(conn, TODAY - timedelta(days=400))
+    assert '<p class="last-review">Wed Sep 17 2025 · 13mo ago</p>' in client.get("/review").get_data(as_text=True)
+    for days in (21, 3):
         db.complete_review(conn, TODAY - timedelta(days=days))
-    html = client.get("/review").get_data(as_text=True).split("Past reviews", 1)[1]
-    weeks = re.findall(r'<i class="wk( hit)?"', html)
-    assert len(weeks) == 26
-    assert [bool(h) for h in weeks][-4:] == [True, False, True, False]  # oldest first; this week not done yet
-    assert 'title="Thu 15 Oct 2026"' in html and 'title="Thu 1 Oct 2026"' in html
+    html = client.get("/review").get_data(as_text=True).split("Last review", 1)[1].split("</aside>")[0]
+    assert '<p class="last-review">Mon Oct 19 · 3d ago</p>' in html and html.count("<p") == 1  # the earlier ones not listed
 
 
 def test_actions_stay_on_the_page_they_were_made_on(client, conn):
