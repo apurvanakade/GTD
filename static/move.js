@@ -2,7 +2,8 @@
 // stays while pinned by the header's File to button; dropping the row on a task tab (Next, Waiting, Someday: H0), a project (or
 // Reference, "＋ New…") moves the task there (/tasks/move). A row's ⠿ grip drags it (app.js), so the same drag
 // reorders its list or moves it out. Shift-click selects rows (Esc clears); dragging
-// a selected row moves them all.
+// a selected row moves them all. On a project tab, a folded-out step dropped on another project's row moves there too.
+// (The nav's tabs take dragged rows as well: app.js.)
 (() => {
   const panel = document.querySelector('.drop-panel'), root = document.documentElement, body = document.body, pin = document.querySelector('.pin-panel');
   let dragged = null, naming = null;  // dragged: the rows on the move; naming: {rows, target} while a new project's name is typed
@@ -14,12 +15,10 @@
   pin?.setAttribute('aria-pressed', root.classList.contains('pinned-panel'));
   pin?.addEventListener('click', () => pinned(!root.classList.contains('pinned-panel')));
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
-  // Open rows only: they have a tick-off button. Done and abandoned rows stay put. A project card's folded-out steps
-  // (the project tabs) are all open.
+  // Open rows only (movableTask() in app.js, loaded after this, so called only once the page is in). A project
+  // card's folded-out steps (the project tabs) are all open.
   const ROW = 'li.task, .task .steps > li';
-  const movable = li => li?.matches('main ul.tasks > li.task[data-id]') && li.querySelector(':scope > form.done')
-    || li?.matches('main ul.tasks > li.task > ul.steps > li[data-id]');
-  const selected = () => [...document.querySelectorAll('main li.selected')].filter(movable);
+  const movable = li => movableTask(li);
   const unselect = () => document.querySelectorAll('main li.selected').forEach(li => li.classList.remove('selected'));
   // Shift-click toggles a row, its title too (instead of opening it); no text gets selected on the way.
   document.addEventListener('mousedown', e => { if (e.shiftKey && movable(e.target.closest(ROW))) e.preventDefault(); });
@@ -39,13 +38,31 @@
   document.addEventListener('dragstart', e => {
     const li = e.target.closest?.('li[draggable]');  // by its grip only (app.js), not a title link's own drag
     if (!movable(li)) return;
-    dragged = li.classList.contains('selected') ? selected() : [li];
+    dragged = draggedTasks(li);
     dragged.forEach(r => r.classList.add('dragging'));
     e.dataTransfer.effectAllowed = 'move';
     body.classList.add('dragging-tasks');
   });
+  // On a project tab, folded-out steps dropped on another project's row join that project, as on its name in the panel.
+  const cardOf = e => {
+    const card = dragged && e.target.closest?.('main ul[data-status] > li.task[data-id]');
+    return card && dragged.every(r => r.matches('.steps > li')) && !dragged.every(r => card.contains(r)) ? card : null;
+  };
+  const uncard = keep => document.querySelectorAll('main ul[data-status] > li.over').forEach(c => c !== keep && c.classList.remove('over'));
+  document.addEventListener('dragover', e => {
+    const card = cardOf(e);
+    uncard(card);
+    if (card) { e.preventDefault(); card.classList.add('over'); }
+  });
+  document.addEventListener('drop', e => {
+    const card = cardOf(e);
+    if (!card) return;
+    e.preventDefault();
+    move(dragged, {project_id: card.dataset.id});
+  });
   document.addEventListener('dragend', () => {
     panel.querySelectorAll('.over').forEach(t => t.classList.remove('over'));
+    uncard();
     dragged?.forEach(r => { r.classList.remove('dragging'); r.removeAttribute('draggable'); });  // app.js's dragend skips a step
     dragged = null;
     if (!naming) close();

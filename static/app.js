@@ -160,12 +160,12 @@ async function fileTasks(url, rows, data) {
 (() => {
   if (!document.querySelector('nav')) return;  // in a frame: no nav
   let last = scrollY;
-  // Shown throughout a project drag, since its tabs are drop targets (below).
+  // Shown throughout a drag, since its tabs are drop targets (below).
   // --nav-h: the shown nav's height, so a sticky panel below it (Review's step list) can stick under it.
   const navH = () => document.querySelector('nav')?.offsetHeight ?? 0;  // looked up each time: refreshNav() replaces it
   const show = on => {
     document.documentElement.style.setProperty('--nav-h', navH() + 'px');
-    document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-projects'));
+    document.body.classList.toggle('nav-hidden', !on && !document.body.classList.contains('dragging-nav'));
   };
   show(true);
   addEventListener('scroll', () => {
@@ -697,16 +697,12 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
 // Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
 // on the project tabs (active, waiting, someday); the new order is saved in the background. Shift-selected rows (move.js) go as a
 // block, if they're all in this list. Delegated, since a context filter redraws the lists (applyFilter above).
-// A project row dropped on another project tab in the nav (`nav a[data-status]`) takes that status (/projects/<id>/move) and leaves.
+// Rows dropped on the drop panel (move.js) or a nav tab (below) leave instead.
 (() => {
   let dragged = null, from = null, before = null, out = false;  // dragged: the rows on the move, in page order
-  // Dropped on the drop panel (move.js), the rows leave: the list's order isn't saved, and stays as it was.
+  // Dropped on the drop panel or the nav, the rows leave: the list's order isn't saved, and stays as it was. A drop
+  // fires only where a dragover was taken, so any drop there was taken.
   document.querySelector('.drop-panel')?.addEventListener('drop', () => { out = true; });
-  const tabOf = e => {  // another project tab, while project rows are dragged
-    const a = dragged && from.dataset.status && e.target.closest?.('nav a[data-status]');
-    return a && a.dataset.status !== from.dataset.status ? a : null;
-  };
-  const unmark = () => document.querySelectorAll('nav a.over').forEach(a => a.classList.remove('over'));
   // Only a list's own rows count, not the steps a project row folds out.
   const rows = list => [...list.children].filter(li => li.dataset.id);
   const listUnder = e => e.target.closest?.('ul[data-reorder]');
@@ -725,12 +721,8 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     out = false;
     dragged.forEach(r => r.classList.add('dragging'));
     e.dataTransfer.effectAllowed = 'move';
-    if (list.dataset.status) document.body.classList.add('dragging-projects'), document.body.classList.remove('nav-hidden');
   });
   document.addEventListener('dragover', e => {
-    const tab = tabOf(e);
-    unmark();
-    if (tab) { e.preventDefault(); tab.classList.add('over'); return; }
     const list = listUnder(e);
     if (!dragged || !list || list !== from) return;
     // A project's next actions are pinned on top: they reorder among themselves, its other steps below them; a
@@ -745,21 +737,10 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     if (e.clientY < r.top + r.height / 2) over.before(...dragged); else over.after(...dragged);
   });
   document.addEventListener('drop', e => {
-    if (listUnder(e)) e.preventDefault();
-    const tab = tabOf(e);
-    if (!tab) return;
-    e.preventDefault();
-    out = true;  // the list keeps its order; the rows leave once saved
-    const rows = dragged, status = tab.dataset.status;
-    (async () => {
-      for (const li of rows) if (!await post(`/projects/${li.dataset.id}/move`, new URLSearchParams({status}))) return;
-      rows.forEach(li => li.remove());
-      refreshNav();
-    })();
+    if (e.target.closest?.('nav')) out = true;
+    else if (listUnder(e)) e.preventDefault();
   });
   document.addEventListener('dragend', () => {
-    unmark();
-    document.body.classList.remove('dragging-projects');
     if (!dragged) return;
     const list = from, ids = rows(list).map(li => li.dataset.id);
     dragged.forEach(r => { r.classList.remove('dragging'); r.removeAttribute('draggable'); });
@@ -767,6 +748,81 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
     else if (ids.join() !== before.map(li => li.dataset.id).join()) post(list.dataset.reorder, new URLSearchParams({ids: ids.join(',')}));
     dragged = from = before = null;
   });
+})();
+// What can be dragged out of its list (move.js's drop panel, the nav): an open task row (it has a tick-off button)
+// or a project card's folded-out step; a selected one takes every selected one with it (shift-click, move.js).
+function movableTask(li) {
+  return li?.matches('main ul.tasks > li.task[data-id]') && !!li.querySelector(':scope > form.done')
+    || !!li?.matches('main ul.tasks > li.task > ul.steps > li[data-id]');
+}
+function draggedTasks(li) {
+  return li.classList.contains('selected') ? [...document.querySelectorAll('main li.selected')].filter(movableTask) : [li];
+}
+// Drop on a nav tab, and the dragged rows go where the tab means. Tasks (any task list's rows, a project tab's
+// folded-out steps, a calendar task) go to its `data-drop` (/tasks/to/<tab>, task_to_tab() in app.py): Timer times
+// it, Inbox sends it back, Next and Waiting make it that step (in its project, if any), Someday an H0 someday task,
+// Done completes it, Reference files it there. A project row (the project tabs) takes the tab's project status
+// (/projects/<id>/move): a project tab's `data-status`, or Done's `data-project-status` (Done lists both kinds). The
+// page's own tab takes nothing. Throughout the drag the nav shows (body.dragging-nav) and the tab under the pointer
+// lights.
+(() => {
+  if (!document.querySelector('nav')) return;  // in a frame
+  const body = document.body;
+  let drag = null;  // {rows, status}: status, a project row's, the one tab it can't be dropped on; none for tasks
+  const unmark = () => document.querySelectorAll('nav a.over').forEach(a => a.classList.remove('over'));
+  const target = e => {
+    const a = drag && e.target.closest?.('nav a');
+    if (!a || a.classList.contains('on')) return null;
+    if (drag.status) {
+      const status = a.dataset.status || a.dataset.projectStatus;
+      return status && status !== drag.status ? {a, status} : null;
+    }
+    const tab = a.dataset.drop;
+    return tab && !(tab === 'timer' && drag.rows.length > 1) ? {a, tab} : null;
+  };
+  document.addEventListener('dragstart', e => {
+    const el = e.target.closest?.('li[draggable], a.ev[data-id]');
+    if (!el) return;
+    if (el.matches('main ul[data-status] > li')) drag = {rows: [el], status: el.parentElement.dataset.status};
+    else if (el.matches('.cal a.ev')) drag = {rows: [el]};
+    else if (movableTask(el)) drag = {rows: draggedTasks(el)};
+    else return;
+    body.classList.add('dragging-nav');
+    body.classList.remove('nav-hidden');
+  });
+  document.addEventListener('dragover', e => {
+    if (!drag) return;
+    const t = target(e);
+    unmark();
+    if (t) { e.preventDefault(); t.a.classList.add('over'); }
+  });
+  document.addEventListener('drop', e => {
+    const t = target(e);
+    if (!t) return;
+    e.preventDefault();
+    (t.status ? projectsTo : tasksTo)(drag.rows, t.status || t.tab);
+  });
+  document.addEventListener('dragend', () => { unmark(); body.classList.remove('dragging-nav'); drag = null; });
+  const projectsTo = async (rows, status) => {
+    for (const li of rows) if (!await post(`/projects/${li.dataset.id}/move`, new URLSearchParams({status}))) return;
+    rows.forEach(li => li.remove());
+    refreshNav();
+  };
+  // A task list's rows leave it in place, its flashes toasted. Anything else redraws the page, the flashes waiting
+  // for it: a project tab's steps (their project's ⚠ may change; the fold-outs stay open), the calendar's tasks
+  // (they may stay, recolored), the timer (its pill).
+  const tasksTo = async (rows, tab) => {
+    const inPlace = tab !== 'timer' && rows.every(li => li.matches('main ul.tasks > li.task'));
+    const form = new URLSearchParams();
+    rows.forEach(li => form.append('id', li.dataset.id));
+    if (!inPlace) form.set('reload', '1');
+    const r = await post(`/tasks/to/${tab}`, form);
+    if (!r) return;
+    if (!inPlace) return keepPeeks(), location.reload();
+    rows.forEach(li => li.remove());
+    refreshNav();
+    if (r.status !== 204) try { toast((await r.json()).flashes); } catch {}
+  };
 })();
 // Search suggests fuzzy title matches as you type; Enter or a click opens the highlighted one.
 // With no suggestions, Enter falls back to the full-text results page.

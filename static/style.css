@@ -446,6 +446,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .review > li > p:has(> .button) { margin: 4px 0 0; }
 .review > li > p > .button { margin-left: -10px; font-size: var(--fs-m); }
 .task.selected, .task.selected:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }  /* shift-clicked, to drag together */
+.task.over { background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }  /* a project row a step is dragged over (move.js) */
 .task.gone { text-decoration: line-through; }
 .task.gone > :not(.row-btn) { opacity: .35; }  /* Revive stays clear: it undoes the tick */
 .done button {

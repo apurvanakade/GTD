@@ -918,12 +918,12 @@ def test_projects_create_and_status(client, conn):
         client.post("/projects", data={"title": title, "status": status})
     made = {p["title"]: p["status"] for s in ("active", "waiting", "someday") for p in db.projects(conn, s)}
     assert (made["boat"], made["visa"], made["odd"]) == ("someday", "waiting", "active")
-    # Dropped on a nav tab: the open status it names, in the background; a closed project or another status is refused.
+    # Dropped on a nav tab: the open status it names (Done: test_a_project_dropped_on_done_closes_it), in the background; a closed project or another status is refused.
     move = lambda id, status: client.post(f"/projects/{id}/move", data={"status": status}, headers={"X-Requested-With": "fetch"})
     boat, first = db.projects(conn, "someday")[0]["id"], db.projects(conn)[0]["id"]
     assert move(boat, "waiting").status_code == 204
     assert db.projects(conn, "waiting")[0]["title"] == "boat"  # on top of its new list
-    assert (move(pid, "active").status_code, move(first, "done").status_code) == (400, 400)
+    assert (move(pid, "active").status_code, move(first, "abandoned").status_code) == (400, 400)
     assert db.get_project(conn, pid)["status"] == "done"
     assert move(999, "active").status_code == 404
     assert client.get("/projects/999?embed=overlay").status_code == 404
@@ -2101,6 +2101,50 @@ def test_dragging_moves_any_open_task_between_projects(client, conn):
     # A project step not worth doing is kept as reference.
     assert move(wait, "reference") == 204 and db.get_task(conn, wait) is None
     assert [r["title"] for r in db.references(conn)] == ["a waiting"]
+
+
+def test_a_task_dropped_on_a_nav_tab_goes_where_it_means(client, conn):
+    """/tasks/to/<tab>, the nav's drop targets: Next and Waiting keep a step in its project, Someday is always H0's,
+    Inbox sends it back, Done completes, Timer times one task, Reference files it. All or none."""
+    p = db.add_project(conn, "P")
+    sd = db.add_project(conn, "Dream", status="someday")
+    later = db.add_task(conn, "a later", project_id=p, step="later")
+    dream = db.add_task(conn, "a dream step", project_id=sd, step="later")
+    item = db.add_task(conn, "an item")
+    to = lambda tab, *ids, **extra: client.post(f"/tasks/to/{tab}", data={"id": [str(i) for i in ids], **extra}, headers=FETCH)
+    where = lambda id: (lambda t: (t["project_id"], t["ground"], t["step"]))(db.get_task(conn, id))
+    assert to("next", later).status_code == 204 and where(later) == (p, 0, "next")  # its project's next action
+    assert db.project_tasks(conn, p)[0]["id"] == later
+    assert to("waiting", later).status_code == 204 and where(later) == (p, 0, "waiting")
+    r = to("next", dream)  # a someday project's step: next there, but not on Next, which it says
+    assert where(dream) == (sd, 0, "next") and "Dream, which is someday" in r.get_json()["flashes"][0]
+    assert to("next", dream, reload="1").status_code == 204  # already next: nothing, and a redraw waits for flashes
+    assert to("waiting", item).status_code == 204 and where(item) == (None, 1, "waiting")  # no project: H0
+    assert to("someday", later).status_code == 204 and where(later) == (None, 1, "someday")  # someday is H0's only
+    # A tickled someday task (back in the Inbox) dropped on Someday goes back to sleep, undated.
+    db.update_task(conn, later, due_date="2026-10-20")
+    assert to("someday", later).status_code == 204
+    assert where(later) == (None, 1, "someday") and db.get_task(conn, later)["due_date"] is None
+    db.update_task(conn, item, due_date="2026-10-25", recur="weekly")
+    assert to("inbox", item).get_json()["flashes"] == ["Back in the inbox, cleared to its title and notes."]
+    t = db.get_task(conn, item)
+    assert t["inbox"] and not t["due_date"] and not t["recur"]
+    assert to("timer", item, later).status_code == 400  # one task at a time
+    assert to("timer", item).status_code == 204 and db.timer_running(conn)["task_id"] == item
+    assert to("done", item, later).status_code == 204
+    assert [db.get_task(conn, i)["state"] for i in (item, later)] == ["done", "done"]
+    assert to("next", item).status_code == 400  # closed: nothing moves
+    assert to("reference", dream).status_code == 204 and db.get_task(conn, dream) is None
+    assert [r["title"] for r in db.references(conn)] == ["a dream step"]
+    assert client.post("/tasks/to/calendar", data={"id": later}, headers=FETCH).status_code == 404
+
+
+def test_a_project_dropped_on_done_closes_it(client, conn):
+    p = db.add_project(conn, "P")
+    step = db.add_task(conn, "s", project_id=p, step="next")
+    assert client.post(f"/projects/{p}/move", data={"status": "done"}, headers=FETCH).status_code == 204
+    assert db.get_project(conn, p)["status"] == "done" and db.get_task(conn, step)["state"] == "done"
+    assert client.post(f"/projects/{p}/move", data={"status": "active"}, headers=FETCH).status_code == 400  # closed
 
 
 def test_every_task_list_has_the_drop_panel(client, conn):
