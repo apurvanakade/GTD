@@ -312,9 +312,9 @@ def orphaned(project_id, ground, say=None):
     return False
 
 
-def back(default="next_view"):
+def back(default="next_view", **args):
     """Stay on the page the form was on: nothing jumps elsewhere unless you follow a link or "Save & exit"."""
-    return redirect(request.referrer or url_for(default))
+    return redirect(request.referrer or url_for(default, **args))
 
 
 @app.route("/nav")
@@ -872,8 +872,7 @@ def to_inbox(id):
 
 # --- projects --------------------------------------------------------------
 
-@app.route("/projects", defaults={"status": "active"})
-@app.route("/projects/<any(waiting, someday):status>")
+@app.route("/projects/<any(active, waiting, someday):status>")
 def projects_view(status):
     """A project tab: the active, waiting or someday projects. Active offers the closed ones (?done=1); someday
     hides what's tickled to a later date (?tickled=1 shows it)."""
@@ -904,7 +903,7 @@ def project_move(id):
         abort(400)
     if status != p["status"]:
         db.update_project(c, id, status=status)
-    return ("", 204) if fetched() else back("projects_view")
+    return ("", 204) if fetched() else back("projects_view", status="active")
 
 
 def add_project_from_form(status="active"):
@@ -918,7 +917,7 @@ def project_create():
     """A project tab's add line: a project of that tab's status (the hidden `status`)."""
     status = request.form.get("status")
     add_project_from_form(status if status in PROJECT_STATUSES else "active")
-    return back("projects_view")
+    return back("projects_view", status="active")
 
 
 PROJECT_STATUSES = ("active", "waiting", "someday")  # what the status select sets; done or abandoned closes it
@@ -1000,7 +999,7 @@ def project_delete(id):
     p = db.get_project(c, id) or abort(404)
     if db.delete_project(c, id):
         flash(f"Deleted “{p['title']}”.")
-        return redirect(url_for("projects_view"))
+        return redirect(url_for("projects_view", status="active"))
     flash("Only a project that never had tasks can be deleted: mark it done or abandoned instead.")
     return back()
 
