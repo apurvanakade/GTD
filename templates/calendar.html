@@ -48,7 +48,7 @@
       <span class="ev ext x-{{ e.cal % 3 }}" title="{{ e.name }} · {{ e.tip }}">{% if e.time %}<b>{{ e.time }}</b> {% endif %}{{ e.title }}</span>
       {% endfor %}
       {% for t in by_day.get(iso, []) %}
-      {% set kind = 'inbox' if t.inbox else 'someday' if t.project_status == 'someday' or t.step == 'someday'
+      {% set kind = 'inbox' if t.inbox else 'someday' if t.step == 'someday'
                     else 'waiting' if 'waiting' in (t.step, t.project_status) else t.step %}
       <a href="{{ url_for('task_view', id=t.id) }}" title="{{ t.title }}{% for n in (t.contexts or '').split() %} @{{ n }}{% endfor %}" draggable="true" data-id="{{ t.id }}" data-due="{{ url_for('task_due', id=t.id) }}"
          class="ev k-{{ kind }}{% if iso < today %} overdue{% endif %}">{% if t.recur %}↻ {% endif %}{{ t.label }}</a>

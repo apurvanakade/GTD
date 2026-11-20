@@ -51,7 +51,7 @@
 {# A done or abandoned project's row (Done, Projects' completed): ✓ or ✕ as a task row has, its date and Revive. #}
 {% macro closed_project(p) %}
 <li class="task"><span class="check" title="{{ 'Done' if p.status == 'done' else 'Abandoned' }}" aria-hidden="true">{{ '✓' if p.status == 'done' else '✕' }}</span><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>
-  <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to someday / maybe, with its steps">Revive</button></form></li>
+  <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to Active, with its steps">Revive</button></form></li>
 {% endmacro %}
 
 {# A task list (Inbox, Waiting, Someday), dragged by ⠿ to reorder (/tasks/order) or onto the drop panel. #}
@@ -80,19 +80,13 @@
 {% endmacro %}
 
 {# Type a date in words, or click 📅 for the browser's picker. static/app.js copies the pick into the text box.
-   type='datetime-local' picks a time too (the Remind box). submit=True: a change saves the form (a tickler box). #}
-{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…', name='due_date', label='Due date', type='date', submit=False, required=False) %}
+   type='datetime-local' picks a time too (the Remind box). #}
+{% macro date_input(value='', placeholder='tomorrow, sat, oct 30…', name='due_date', label='Due date', type='date', required=False) %}
 <span class="date-field">
-  <input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="{{ label }}"{% if submit %} data-submit{% endif %}{% if required %} required{% endif %}>
+  <input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="{{ label }}"{% if required %} required{% endif %}>
   <button type="button" class="pick" aria-label="Pick a {{ 'date and time' if type == 'datetime-local' else 'date' }}">📅</button>
   <input type="{{ type }}" class="picker" tabindex="-1" aria-hidden="true">
 </span>
-{% endmacro %}
-
-{# A someday project's tickler date: out of sight (even in the weekly review) until then, active from that day.
-   Saves when changed; the hint shows how it reads. #}
-{% macro tickler(value) %}
-<label class="tickler" title="Tickler: out of sight until this date, then active">⏳{{ date_input(value, 'tickler…', name='tickle_on', label='Tickler', submit=True) }}<span class="hint when" data-parse="due"></span></label>
 {% endmacro %}
 
 {# A task's contexts: one click each, saved in the background (static/app.js); a new one is named in the box. A form
@@ -129,8 +123,8 @@
 {% set task_targets = [('h0', 'Next'), ('waiting', 'Waiting'), ('someday', 'Someday')] %}
 
 {# The one project list (db.project_groups(): the open projects, one group per project tab), as the task dropdown here
-   and as the drop panel in project_targets(). Each group starts with "＋ New project…" (value __new__, __new__waiting,
-   __new__someday: a project of that status),
+   and as the drop panel in project_targets(). Each group starts with "＋ New project…" (value __new__ or
+   __new__waiting: a project of that status),
    which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
    task of a done or abandoned project, which no list offers) keeps its project selectable, so saving the task leaves it there.
    Both mark their list `data-projects` (its kind), so refreshProjects() in static/app.js redraws every one of them
@@ -201,30 +195,16 @@
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}
 
-{# The review's new ideas: a single item (an H0 someday task) or a someday project. #}
-{% macro someday_kind_select() %}
-<select name="kind" aria-label="Kind" title="A single item, or a project">
-  <option value="">single item</option>
-  <option value="project">project</option>
-</select>
-{% endmacro %}
-
 {# A project as a card (the project tabs): ⠿ to drag, ▸ folds out its open steps, ⚠ when it lacks a next action
-   or a desired outcome (the tooltip says which; else it's the outcome).
-   A someday one shows when the weekly review last looked at it, and offers Activate. #}
+   or a desired outcome (the tooltip says which; else it's the outcome). #}
 {% macro project_card(p, steps) %}
 <li class="task{{ ' flagged' if p.warning }}" data-id="{{ p.id }}"{% if p.warning or p.outcome %} title="{{ p.warning or p.outcome }}"{% endif %}>
-  {% if p.status in ('active', 'waiting', 'someday') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
+  {% if p.status in ('active', 'waiting') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {{ peek_button() }}
   <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.warning %}⚠ {% endif %}{{ p.title }}</a>
-  {% if p.status == 'someday' %}{{ until(p.tickle_on) }}<span class="reviewed" title="Last reviewed">{{ p.reviewed_at|ago }}</span>{% endif %}
-  {% if p.status == 'someday' %}<form method="post" action="{{ url_for('project_view', id=p.id) }}" class="row-btn"><button name="status" value="active">Activate</button></form>{% endif %}
   {{ peek_steps(steps.get(p.id, [])) }}
 </li>
 {% endmacro %}
-
-{# A tickler date still to come: faint, like the last review. #}
-{% macro until(tickle_on) %}{% if tickle_on and tickle_on > today %}<span class="until" title="Out of sight until then">until {{ tickle_on }}</span>{% endif %}{% endmacro %}
 
 {# The project tabs: one list of tight project rows, dragged to reorder, or onto another project tab in the nav to
    change status (static/app.js). #}

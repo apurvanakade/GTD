@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import add_form, someday_kind_select with context %}
+{% from "_task.html" import add_form with context %}
 {% block title %}Weekly review{% endblock %}
 {# The steps are listed by name down the left under their section captions (ticked ones filled, what's left to do
    counted); the chosen step's card is on the right. It ends in Done (tick it and go on to the next step still to do)
@@ -35,7 +35,7 @@
 {% block actions %}{% if checked %}<form method="post" action="{{ url_for('review_reset') }}"><button title="Start over (untick every step)" aria-label="Start over">↺</button></form>{% endif %}{% endblock %}
 {% block body %}
 {#- New ideas: the page's add line, first on the page, as on Horizons. #}
-{% if step == 'creative' %}{% call add_form(url_for('someday_add'), 'Someday I might…') %}{{ someday_kind_select() }}{% endcall %}{% endif %}
+{% if step == 'creative' %}{{ add_form(url_for('someday_add'), 'Someday I might…') }}{% endif %}
 <div class="review-page">
 <aside class="review-steps">
   {% for phase, rows in phases %}
@@ -91,16 +91,12 @@
   {% endcall %}
   {#- Ideas #}
   {% call card('someday', 'Read each idea. Commit to what\'s ready, drop what no longer appeals, set a tickler for later, then mark it reviewed (✓).') %}
-    {#- H0 someday tasks, then someday projects, as their tabs; each never reviewed first, then the longest ago;
-        tickled to later out of sight (db.someday_to_review()). #}
-    {% for kind, heading, url in [('task', 'Tasks', url_for('someday')), ('project', 'Projects', url_for('projects_view', status='someday'))] %}
-    {% set rows = someday|selectattr('kind', 'eq', kind)|list %}
-    {% if rows %}<h3>{{ heading }}</h3>
-    <ul class="plain review-list">{% for x in rows %}<li>
-      <form method="post" action="{{ url_for('project_reviewed' if x.kind == 'project' else 'task_reviewed', id=x.id) }}"><button class="icon" title="Mark reviewed" aria-label="Mark reviewed">✓</button></form>
-      <a href="{{ someday_url(x) }}">{{ x.label }}</a> <span class="date" title="Last reviewed">{{ x.reviewed_at|ago }}</span></li>{% endfor %}</ul>
-    <p><a class="button" href="{{ url }}">Someday {{ heading|lower }} →</a></p>{% endif %}
-    {% endfor %}
+    {#- H0 someday tasks, never reviewed first, then the longest ago; tickled to later out of sight
+        (db.someday_to_review()). #}
+    {% if someday %}<ul class="plain review-list">{% for x in someday %}<li>
+      <form method="post" action="{{ url_for('task_reviewed', id=x.id) }}"><button class="icon" title="Mark reviewed" aria-label="Mark reviewed">✓</button></form>
+      <a href="{{ url_for('task_view', id=x.id) }}">{{ x.label }}</a> <span class="date" title="Last reviewed">{{ x.reviewed_at|ago }}</span></li>{% endfor %}</ul>
+    <p><a class="button" href="{{ url_for('someday') }}">Someday →</a></p>{% endif %}
   {% endcall %}
   {% call card('creative', 'Think big: new projects, things to learn, places to go. Park each idea above; nothing is committed yet.') %}{% endcall %}
   {% call card('horizons', 'Read your purpose, vision, goals and areas. Does any lack a project, or does a project serve none of them? Capture what you find.') %}

@@ -294,8 +294,8 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
     down = null;
   });
 })();
-// A field marked data-submit (the project page's status and tickler date)
-// saves its form as soon as it's changed; a text box waits while its 📅 picker is open. A form[data-background]
+// A field marked data-submit (the project page's status and outcome)
+// saves its form as soon as it's changed. A form[data-background]
 // (the Vision card's area lines) saves in the background instead, as it's left (a textarea: Enter is a new line).
 document.addEventListener('submit', e => {
   if (!('background' in e.target.dataset)) return;
@@ -309,7 +309,7 @@ let fieldsSaved = Promise.resolve();  // the latest such background save; autosa
 document.addEventListener('change', e => {
   const el = e.target, f = el.form;
   if (!f) return;
-  if (el.matches('[data-submit]') && !el.closest('.date-field.picking')) return f.requestSubmit();
+  if (el.matches('[data-submit]')) return f.requestSubmit();
   if ('background' in f.dataset) return post(f.action, new FormData(f));  // form[data-background]: saved in place
   if (!('saveOnChange' in f.dataset) || !el.name || ['title', 'notes'].includes(el.name)) return;
   if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
@@ -759,7 +759,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
 // Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
-// on the project tabs (active, waiting, someday); the new order is saved in the background. Shift-selected rows (move.js) go as a
+// on the project tabs (active, waiting); the new order is saved in the background. Shift-selected rows (move.js) go as a
 // block, if they're all in this list. Delegated, since a context filter redraws the lists (applyFilter above).
 // Rows dropped on the drop panel (move.js) or a nav tab (below) leave instead.
 (() => {

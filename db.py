@@ -12,7 +12,7 @@ import recur
 # On the server GTD_DB points to /var/lib/apps/gtd/gtd.db; locally `GTD dev` points it to dev.db.
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
-# Someday and waiting are project statuses; an abandoned project is given up (on Done, revivable). A task has a state
+# Waiting is a project status; an abandoned project is given up (on Done, revivable). A task has a state
 # (open, done, or abandoned: deleted but revivable) and, inside a project or H0, a step: an active project has at least
 # one "next" step, each chosen, its other open steps are "waiting" or "later"; an H0 task (ground level) is "next", "waiting" or
 # "someday" (a single someday / maybe item). Inbox items (neither a project nor H0) have no step.
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'someday', 'done', 'abandoned')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'done', 'abandoned')),
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
@@ -97,13 +97,7 @@ CREATE TABLE IF NOT EXISTS task_reviews (
   task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
   reviewed_at TEXT NOT NULL
 );
--- A someday project's tickler date (a local date): out of sight until then, then active. A table of its
--- own, like project_reviews. An H0 someday task's tickler is its due date.
-CREATE TABLE IF NOT EXISTS project_tickles (
-  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-  tickle_on TEXT NOT NULL
-);
--- A project's desired outcome: what done looks like. A table of its own, like project_tickles.
+-- A project's desired outcome: what done looks like. A table of its own, like project_reviews.
 CREATE TABLE IF NOT EXISTS project_outcomes (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   outcome TEXT NOT NULL
@@ -361,12 +355,12 @@ def _reorder_list(c, which, moved):
 
 def _reopen_project(c, id):
     """A done or abandoned project with an open task (a step revived) isn't closed any more: it comes back as
-    someday, like a revived project."""
+    active, like a revived project."""
     p = c.execute("""SELECT id FROM projects WHERE status IN ('done', 'abandoned')
         AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,)).fetchone()
     if p:
-        c.execute("UPDATE projects SET status = 'someday', completed_at = NULL, position = ? WHERE id = ?",
-                  (_top(c, "projects", "status = ?", "someday"), p["id"]))
+        c.execute("UPDATE projects SET status = 'active', completed_at = NULL, position = ? WHERE id = ?",
+                  (_top(c, "projects", "status = ?", "active"), p["id"]))
 
 
 def _fit_step(fields, current=None, today=None):
@@ -393,7 +387,7 @@ def _fit_step(fields, current=None, today=None):
         if moved and fields.get("step") in (None, "someday"):  # its next isn't this project's
             fields["step"] = "waiting" if current["step"] == "waiting" else "later"
         fields["ground"] = 0
-    if fields.get("step") == "someday":  # H0's only: a project's someday is the project's status
+    if fields.get("step") == "someday":  # H0's only
         fields["step"] = "later"
     if not fields.get("step") and not (current and current["step"]):
         fields["step"] = "later"
@@ -543,7 +537,7 @@ def counts(c, today):
         "overdue": one(f"SELECT count(*) FROM tasks t WHERE {AGENDA} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'"),
         "someday": one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
-        # Per project tab: the projects lacking a next action or a desired outcome (someday ones never are).
+        # Per project tab: the projects lacking a next action or a desired outcome.
         "flagged": {s: one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL AND status = ?", s)
                     for s in ("active", "waiting")},
     }
@@ -734,8 +728,6 @@ def update_project(c, id, **fields):
                   " position = CASE WHEN status = ? THEN position"
                   " ELSE (SELECT coalesce(min(position), 0) - 1 FROM projects WHERE status = ?) END WHERE id = ?",
                   (fields["status"], fields["status"], fields["status"], id))
-        if fields["status"] != "someday":  # a tickler date is for someday projects only
-            set_project_tickle(c, id, None)
     _update(c, "projects", PROJECT_FIELDS, id, fields)
 
 
@@ -771,19 +763,19 @@ def close_project(c, id, status, steps=None, now=None):
     c.execute("UPDATE tasks SET state = ?, completed_at = ? WHERE project_id = ? AND state = 'open'",
               (steps or status, stamp, id))
     c.execute("UPDATE projects SET status = ?, completed_at = ?, position = NULL WHERE id = ?", (status, stamp, id))
-    set_project_tickle(c, id, None)
 
 
 @atomic
 def revive_project(c, id):
-    """A done or abandoned project comes back as someday, with the steps closed along with it as later steps."""
+    """A done or abandoned project comes back as active, with the steps closed along with it as later steps (so
+    stalled, until a next action is picked)."""
     p = get_project(c, id)
     if not p or p["status"] not in CLOSED:
         return
     c.execute("""UPDATE tasks SET state = 'open', step = 'later', completed_at = NULL
         WHERE project_id = ? AND state IN ('done', 'abandoned') AND completed_at = ?""", (id, p["completed_at"]))
-    c.execute("""UPDATE projects SET status = 'someday', completed_at = NULL, position = ?
-        WHERE id = ?""", (_top(c, "projects", "status = ?", "someday"), id))
+    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL, position = ?
+        WHERE id = ?""", (_top(c, "projects", "status = ?", "active"), id))
 
 
 def closed_projects(c, status, limit=100, since=None):
@@ -792,11 +784,10 @@ def closed_projects(c, status, limit=100, since=None):
         ORDER BY completed_at DESC, id DESC LIMIT ?""", (status, stamp(since), limit)).fetchall()
 
 
-REVIEWED = """(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at,
-  (SELECT k.tickle_on FROM project_tickles k WHERE k.project_id = p.id) AS tickle_on"""
+REVIEWED = "(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at"
 
 
-# A project with its last review, tickler date and desired outcome; `stalled` (active with no next action); `vague`
+# A project with its last review and desired outcome; `stalled` (active with no next action); `vague`
 # (active or waiting, i.e. committed, with no desired outcome); and `warning`, why it shows ⚠ (either or both), else NULL.
 PROJECT_SELECT = f"""SELECT *, CASE WHEN stalled AND vague THEN 'No next action, no desired outcome'
     WHEN stalled THEN 'No next action' WHEN vague THEN 'No desired outcome' END AS warning
@@ -822,18 +813,16 @@ def _least_reviewed(rows):
 
 
 def someday_tasks(c):
-    """H0's someday tasks, in their list's order, each with `reviewed_at` and its due date as `tickle_on`, as a project has."""
+    """H0's someday tasks, in their list's order, each with `reviewed_at` and its due date as `tickle_on`."""
     return c.execute(f"""SELECT {TASK_COLS}, t.due_date AS tickle_on,
           (SELECT r.reviewed_at FROM task_reviews r WHERE r.task_id = t.id) AS reviewed_at
         {TASK_FROM} WHERE {MAYBE} ORDER BY {PLAIN_ORDER}""").fetchall()
 
 
 def someday_to_review(c, today):
-    """Someday / maybe for the weekly review, H0 someday tasks and someday projects together, least recently reviewed
-    first; one tickled to a later date is out of sight until then. Each row has a `kind`: "task" or "project"."""
-    rows = [{**dict(p), "kind": "project", "label": p["title"]} for p in projects(c, "someday")]
-    rows += [{**dict(t), "kind": "task"} for t in someday_tasks(c)]
-    return _least_reviewed(r for r in rows if not (r["tickle_on"] and r["tickle_on"] > today.isoformat()))
+    """Someday / maybe for the weekly review: H0 someday tasks, least recently reviewed first; one tickled to a later
+    date is out of sight until then."""
+    return _least_reviewed(t for t in someday_tasks(c) if not (t["tickle_on"] and t["tickle_on"] > today.isoformat()))
 
 
 def projects_to_review(c):
@@ -847,15 +836,6 @@ def projects_to_review(c):
 def mark_reviewed(c, id, now, table="project"):
     """A project (or with table="task", an H0 someday task) looked at in a weekly review, at `now`."""
     c.execute(f"INSERT OR REPLACE INTO {table}_reviews ({table}_id, reviewed_at) VALUES (?, ?)", (id, iso(now)))
-
-
-@atomic
-def set_project_tickle(c, id, tickle_on):
-    """A someday project's tickler date (a local ISO date), or None to clear it."""
-    if tickle_on:
-        c.execute("INSERT OR REPLACE INTO project_tickles (project_id, tickle_on) VALUES (?, ?)", (id, tickle_on))
-    else:
-        c.execute("DELETE FROM project_tickles WHERE project_id = ?", (id,))
 
 
 @atomic
@@ -903,11 +883,11 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=N
 
 def project_groups(c):
     """Every open project, for pickers (the task dropdown, the drop panel): [(label, projects, its "＋ New…" value)],
-    one group per project tab (Active, Waiting, Someday), each in its tab's drag order; even with none, a new project
-    can start in each: `__new__`, `__new__waiting`, `__new__someday` (task_fields_from_form() in app.py). Done and
+    one group per project tab (Active, Waiting), each in its tab's drag order; even with none, a new project
+    can start in each: `__new__`, `__new__waiting` (task_fields_from_form() in app.py). Done and
     abandoned ones are closed: revive one to file into it."""
     return [(s.capitalize(), c.execute("SELECT * FROM projects WHERE status = ? ORDER BY position, id", (s,)).fetchall(),
-             "__new__" + ("" if s == "active" else s)) for s in ("active", "waiting", "someday")]
+             "__new__" + ("" if s == "active" else s)) for s in ("active", "waiting")]
 
 
 def stalled_projects(c):
@@ -1109,14 +1089,6 @@ def delete_horizon(c, id):
 # H0 someday tasks whose tickler date (?, today) has come: back in the Inbox until dealt with.
 TICKLED = f"{MAYBE} AND t.due_date <= ?"
 
-
-@atomic
-def activate_tickled(c, today):
-    """Someday projects whose tickler date has come turn active (on top, their date cleared): the Inbox is a task
-    list, so a project comes back as a commitment, stalled until its next action is picked."""
-    for (id,) in c.execute("""SELECT p.id FROM project_tickles k JOIN projects p ON p.id = k.project_id
-            WHERE p.status = 'someday' AND k.tickle_on <= ?""", (today.isoformat(),)).fetchall():
-        update_project(c, id, status="active")
 
 
 # --- turning a task into a reference item -----------------------------------

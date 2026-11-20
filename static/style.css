@@ -366,14 +366,6 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .title-line > .balance .scale { height: 0; overflow: visible; }  /* the scale hangs below, so the slider itself centers on the title */
 .title-line > .warn { cursor: help; }
 .title-line form { margin: 0; display: contents; }
-/* A someday tickler date, quiet like the selects beside it: ⏳, the box, 📅; how it reads shows only while editing. */
-.title-line .tickler { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: var(--fs-m); }
-.tickler .date-field { flex: none; }
-.tickler .date-field input[name] { width: 8em; padding: 4px 1.8em 4px 6px; font-size: inherit; color: inherit; background: transparent; border-color: transparent; }
-.tickler .date-field input[name]:hover, .tickler .date-field input[name]:focus { border-color: var(--line); color: var(--fg); }
-.tickler .date-field .pick { padding: 2px; right: 1px; opacity: .6; }
-.tickler .hint { font-size: var(--fs-s); white-space: nowrap; }
-.tickler:not(:focus-within) .hint { display: none; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
 .row input { flex: 1 1 200px; width: auto; }
 .project textarea, .edit textarea, .project .md-editor, .edit .md-editor { margin-top: 6px; }
@@ -434,9 +426,6 @@ li.task { user-select: none; }
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
-/* A someday project's last review, and a tickler date still to come. */
-.task :is(.reviewed, .until) { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: var(--fs-s); white-space: nowrap; }
-.task .until + .reviewed { margin-left: 0; }
 /* The review cards' lists: rows as everywhere else (--fs-m, ink titles), each date faint at the right. */
 .review .plain { list-style: none; margin: 8px -6px 12px; padding: 0; font-size: var(--fs-m); }
 .review .plain > li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding: 4px 6px; border-radius: 6px; }
