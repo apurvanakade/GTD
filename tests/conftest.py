@@ -103,6 +103,8 @@ def seed(c):
     db.set_task_category(c, bins, "Home")
     db.set_task_category(c, mail, "Home")
     db.set_task_category(c, finished, "Discrete Math")
+    db.set_task_category(c, italian, "Languages")  # Someday's bands: "Languages", then "Other" for "juggle"
+    db.add_task(c, "juggle", ground=1, step="someday")
     return {"active": active, "stalled": stalled, "waiting": waiting, "someday": someday, "done": done,
             "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum,
             "measure": measure, "mail": mail}

@@ -619,12 +619,14 @@ def someday():
 
 def someday_groups(tasks):
     """Someday's sub-lists (Allen's themed someday lists): one per category, A to Z, then "Other" for those with none,
-    each as (key, name, rows) in the list's order. A row's label is its bare title, since its band names the category."""
+    each as (key, name, rows) in the list's order. A row's label is its bare title, since its band names the category.
+    The key (its fold's memory) is `c:` and the casefolded name, unique as a category has one spelling whatever the
+    case (db.set_task_category()); `none` for "Other", so a category named "Other" is a band of its own."""
     groups = {}
     for t in tasks:
         groups.setdefault(t["category"] or "", []).append({**dict(t), "label": t["title"]})
     names = sorted(groups, key=lambda n: (not n, n.casefold()))
-    return [(re.sub(r"\W+", "-", n.casefold()).strip("-") or "other", n or "Other", groups[n]) for n in names]
+    return [(f"c:{n.casefold()}" if n else "none", n or "Other", groups[n]) for n in names]
 
 
 @app.post("/someday/add")
