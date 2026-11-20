@@ -22,6 +22,14 @@
 .band > summary::before { content: "▸"; display: inline-block; width: 1.2em; }
 .band[open] > summary::before { content: "▾"; }  /* the glyph, not a rotation: a rotated ▸ sits off the text line */
 .band > summary b { font-weight: 600; font-size: var(--fs-xs); background: var(--soft); border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
+/* Someday, the longest page: its bands flow into columns as width allows (one under ~46rem, so beside the pinned panel
+   or on a phone), each band whole in one; rows and captions sit tighter; H0, true of every row, isn't repeated. */
+.someday-bands { columns: 2 22rem; column-gap: 28px; margin-top: 4px; }
+.someday-bands .band { break-inside: avoid; margin: 0 0 10px; }
+.someday-bands .band > summary { padding: 2px 0; }
+.someday-bands .task { padding-block: 2px; }
+.someday-bands :is(.proj, form.done, form.start, form.timing) { display: none; }  /* nor tick-off or timer: an idea isn't an action */
+.someday-bands .meta > :empty { display: none; }  /* ideas rarely have a date or repeat: no empty slots squeezing titles */
 
 * { box-sizing: border-box; }
 body {
@@ -423,6 +431,7 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 li.task { user-select: none; }
 .task .grip { cursor: grab; color: var(--muted); user-select: none; touch-action: none; opacity: .5; }
 .task:hover .grip { opacity: 1; }
+.grip { position: relative; top: .07em; }  /* ⠿'s ink sits high in its box: down to the circle's and the text's middle */
 /* A click anywhere on a row opens it, as its title would (static/app.js). */
 li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.dragging { opacity: .4; }
@@ -455,7 +464,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task.gone { text-decoration: line-through; }
 .task.gone > :not(.row-btn) { opacity: .35; }  /* Revive stays clear: it undoes the tick */
 .done button {
-  width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  display: block; width: 16px; height: 16px; padding: 0; border-radius: 50%;  /* the text's height; block, since inline it sat on a baseline, its form taller than the line */
   border: 1.5px solid var(--muted); background: transparent;
 }
 .done button:hover { border-color: var(--accent); background: var(--accent); }
