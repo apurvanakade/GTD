@@ -434,7 +434,7 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .done button, .task .start button { transition: background-color .15s, border-color .15s, color .15s; }
 .task .to-inbox button { transition: opacity .2s ease-out, background-color .15s, border-color .15s, color .15s; }  /* ↩ fades as the rest, and colors as ▶ */
 .task:is(:hover, :focus-within) .to-inbox button { transition-duration: .1s, .15s, .15s, .15s; }
-@media (prefers-reduced-motion: reduce) { .task, .task *, .context-list li, .context-list li *, .suggest a { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .task, .task *, .context-list li, .context-list li *, .suggest a, .someday-bands .band::details-content, .someday-bands .band > summary { transition: none !important; } }
 .task .title { color: var(--fg); flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }  /* basis 0: a long title wraps rather than pushing the buttons onto a line of their own */
 .task .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: var(--fs-s); color: var(--muted); }
 .task .name { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
