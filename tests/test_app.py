@@ -11,7 +11,7 @@ import dates
 import db
 import extcal
 import recur
-from app import BALANCE, HORIZON_STEPS, REVIEW_STEPS, app, local_input
+from app import BALANCE, HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, app, local_input
 from conftest import NOW, TODAY, seed
 
 OUT_OF_RANGE = ("in 99999999999 days", "in 99999 weeks", "in 999999 years", "in " + "9" * 5000 + " days", "9999-12-31", "12/31/9999")
@@ -1657,7 +1657,7 @@ def test_nav_groups_tabs_by_kind_of_list(client):
 def test_review_is_a_checklist_you_finish(client, conn):
     steps = REVIEW_STEPS
     html = client.get("/review").get_data(as_text=True)
-    assert html.count('class="dot') == len(steps) and 'class="dot done' not in html
+    assert all(f'href="/review?step={s}"' in html for s in steps) and 'class="done' not in html
     assert "No weekly reviews yet." in html
     client.post(f"/review/{steps[0]}")
     assert db.review_checked(conn) == {steps[0]}
@@ -1671,7 +1671,9 @@ def test_review_is_a_checklist_you_finish(client, conn):
     assert db.review_checked(conn) == set() and db.reviews(conn) == [] and r.headers["Location"] == "/review"
     for s in steps[:-1]:
         client.post(f"/review/{s}")
-    assert client.get("/review").get_data(as_text=True).count('class="dot done') == len(steps) - 1
+    html = client.get("/review").get_data(as_text=True)
+    assert html.count('class="done') == len(steps) - 1  # every step but the last ticked in the step list
+    assert '<button class="primary">Finish review</button>' in html  # the last one left finishes it
     assert db.reviews(conn) == []
     r = client.post(f"/review/{steps[-1]}", follow_redirects=True)
     html = r.get_data(as_text=True)
@@ -1689,38 +1691,42 @@ def step_card(html, step):
 
 def test_review_shows_one_step_at_a_time(client, conn):
     seed(conn)  # sweep is ticked
-    client.post("/review/collect")
+    client.post("/review/inbox")
     html = client.get("/review").get_data(as_text=True)
     assert html.count('class="step on') == 1
-    assert step_card(html, "inbox")[0] == "inbox"  # the first unticked step
-    assert 'href="/review?step=collect" class="dot done"' in html  # rail: ticked, then current
-    assert 'href="/review?step=inbox" class="dot on"' in html
-    key, card = step_card(client.get("/review?step=overdue").get_data(as_text=True), "overdue")
-    assert key == "overdue" and '<span class="count">1</span>' in card and "buy tiles" in card
+    assert step_card(html, "overdue")[0] == "overdue"  # the first unticked step
+    assert 'href="/review?step=inbox" class="done">Inbox to zero' in html  # step list: ticked, then current
+    assert 'href="/review?step=overdue" class="on" aria-current="step">Overdue<span class="n">1</span>' in html
+    assert '<button class="primary">Done</button>' in html and 'Done · undo' not in html
+    key, card = step_card(html, "overdue")
+    assert "buy tiles" in card and "Nothing to do." not in card
     key, card = step_card(client.get("/review?step=projects").get_data(as_text=True), "projects")
     assert "⚠ Stalled" in card  # no next action
-    key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
+    html = client.get("/review?step=inbox").get_data(as_text=True)
+    key, card = step_card(html, "inbox")
     assert 'href="/inbox"' in card  # dealt with on the Inbox page
-    r = client.post("/review/inbox")  # ticking moves on to the next unticked step (sweep is ticked)
+    assert 'Done · undo' in card and 'class="done on"' in html  # ticked: Done undoes it
+    r = client.post("/review/overdue")  # ticking moves on to the next unticked step
     assert r.headers["Location"] == "/review"
-    assert step_card(client.get("/review").get_data(as_text=True), "overdue")[0] == "overdue"
+    assert step_card(client.get("/review").get_data(as_text=True), "nexts")[0] == "nexts"
     for t in db.inbox_tasks(conn):
         db.abandon_task(conn, t["id"])
     assert db.counts(conn, TODAY)["inbox"] == 1  # a tickled someday task is back in it too
     for t in db.inbox_list(conn, TODAY):
         db.update_task(conn, t["id"], due_date=None)
     key, card = step_card(client.get("/review?step=inbox").get_data(as_text=True), "inbox")
-    assert '<span class="count clear">✓</span>' in card  # nothing to do
+    assert "Nothing to do." in card
     assert client.get("/review?step=bogus").status_code == 200  # falls back to the first unticked
 
 
 def test_review_prev_next_links(client, conn):
     html = client.get("/review?step=overdue").get_data(as_text=True)
-    assert 'href="/review?step=sweep" rel="prev"' in html and 'href="/review?step=nexts" rel="next"' in html
-    first = client.get("/review?step=collect").get_data(as_text=True)
-    assert 'rel="prev"' not in first and 'href="/review?step=inbox" rel="next"' in first
-    last = client.get("/review?step=horizons").get_data(as_text=True)
-    assert 'rel="next"' not in last and 'href="/review?step=creative" rel="prev"' in last
+    assert 'href="/review?step=inbox" rel="prev"' in html and 'href="/review?step=nexts" rel="next"' in html
+    assert 'rel="prev" title="Previous (left arrow)">‹ Inbox to zero<' in html  # named, not bare arrows
+    first = client.get("/review?step=inbox").get_data(as_text=True)
+    assert 'rel="prev"' not in first and 'href="/review?step=overdue" rel="next"' in first
+    last = client.get("/review?step=sweep").get_data(as_text=True)
+    assert 'rel="next"' not in last and 'href="/review?step=collect" rel="prev"' in last
 
 
 def test_review_past_reviews_as_a_streak(client, conn):
@@ -3022,9 +3028,11 @@ def test_a_someday_projects_tickler_date(client, conn):
     assert 'name="tickle_on"' not in client.get(f"/projects/{p}?embed=overlay").get_data(as_text=True)
 
 
-def test_review_follows_allens_order():
-    assert REVIEW_STEPS == ("collect", "inbox", "sweep", "overdue", "nexts", "ahead", "waiting", "projects",
-                            "checklists", "someday", "creative", "horizons")
+def test_review_starts_from_whats_captured():
+    """Allen's get current (split into actions and plans, from the inbox) first, get creative, get clear last."""
+    assert [p for p, _ in REVIEW_PHASES] == ["Actions", "Plans", "Ideas", "Loose ends"]
+    assert REVIEW_STEPS == ("inbox", "overdue", "nexts", "waiting", "ahead", "projects", "checklists",
+                            "someday", "creative", "horizons", "collect", "sweep")
 
 
 def test_review_projects_step(client, conn):
@@ -3042,11 +3050,12 @@ def test_review_projects_step(client, conn):
     db.set_project_outcome(conn, fresh, "fresh start")
     db.add_task(conn, "call", step="next", project_id=fresh)
     db.set_project_outcome(conn, db.add_project(conn, "parked", status="waiting"), "reply in")
-    c = card(client.get("/review?step=projects").get_data(as_text=True), "projects")
+    html = client.get("/review?step=projects").get_data(as_text=True)
+    c = card(html, "projects")
     assert re.findall(r'href="/projects/\d+"[^>]*>(?:⚠ )?([^<]*)</a>', c) == ["vague", "stuck", "fresh", "parked", "seen"]
     assert '"No next action">⚠ stuck' in c and '"No desired outcome">⚠ vague' in c
     assert "→ fence painted" in c and all(t in c for t in ("paint", "sand", "call")) and "prime" not in c  # next actions only
-    assert '<span class="count">4</span>' in c  # not looked at this week
+    assert 'Projects<span class="n">4</span>' in html  # not looked at this week, counted in the step list
     assert f'action="/projects/{stuck}/reviewed"' in c
 
 
@@ -3213,11 +3222,12 @@ def test_review_someday_step_lists_tasks_and_projects_and_hides_tickled_ones(cli
     db.add_task(conn, "hidden task", ground=1, step="someday", due_date="2026-12-01")
     back = db.add_task(conn, "back task", ground=1, step="someday", due_date="2026-10-22")
     db.mark_reviewed(conn, back, NOW - timedelta(days=3), table="task")
-    c = card(client.get("/review?step=someday").get_data(as_text=True), "someday")
+    html = client.get("/review?step=someday").get_data(as_text=True)
+    c = card(html, "someday")
     assert re.findall(r'href="/(?:tasks|projects)/\d+">([^<]*)</a>', c) == ["never task", "back task", "old proj"]
     assert c.index("<h3>Tasks</h3>") < c.index("never task") < c.index("<h3>Projects</h3>") < c.index("old proj")
     assert 'href="/someday"' in c and 'href="/projects/someday"' in c
-    assert "hidden task" not in c and '<span class="count">2</span>' in c
+    assert "hidden task" not in c and 'Someday / maybe<span class="n">2</span>' in html
     r = client.post(f"/tasks/{never}/reviewed", headers={"Referer": "/review?step=someday"})
     assert r.location.endswith("/review?step=someday")
     assert db.someday_tasks(conn)[-1]["reviewed_at"] == db.iso(NOW)

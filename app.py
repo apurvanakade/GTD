@@ -662,9 +662,19 @@ def done_bands(closed):
     return [b for b in out if b[2]]
 
 
-# The weekly review's steps, in Allen's order (get clear, get current, get creative); review.html has one card per key.
-REVIEW_STEPS = ("collect", "inbox", "sweep", "overdue", "nexts", "ahead", "waiting", "projects",
-                "checklists", "someday", "creative", "horizons")
+# The weekly review's steps in sections: Allen's get current split in two (actions, then plans), get creative (ideas),
+# and get clear (loose ends) moved last, so the review starts from what's already captured and gathering new loose
+# ends, often nothing, comes at the end. (section, ((key, name), …)); review.html lists them by name down its left
+# side and has one card per key.
+REVIEW_PHASES = (
+    ("Actions", (("inbox", "Inbox to zero"), ("overdue", "Overdue"), ("nexts", "Next actions"),
+                 ("waiting", "Waiting-fors"))),
+    ("Plans", (("ahead", "Look ahead"), ("projects", "Projects"), ("checklists", "Checklists"))),
+    ("Ideas", (("someday", "Someday / maybe"), ("creative", "New ideas"), ("horizons", "Horizons"))),
+    ("Loose ends", (("collect", "Collect loose ends"), ("sweep", "Mind sweep"))),
+)
+REVIEW_NAMES = {key: name for _, steps in REVIEW_PHASES for key, name in steps}
+REVIEW_STEPS = tuple(REVIEW_NAMES)
 
 
 @app.template_filter()
@@ -697,7 +707,8 @@ def review():
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=db.next_actions(c, today()), waiting=db.tasks_with_step(c, "waiting"),
                            checklists=db.checklists(c), unseen=unseen,
-                           steps=REVIEW_STEPS, step=step, checked=checked, past=past, weeks=weeks)
+                           phases=REVIEW_PHASES, names=REVIEW_NAMES, steps=REVIEW_STEPS, step=step,
+                           checked=checked, past=past, weeks=weeks)
 
 
 def unseen(rows):

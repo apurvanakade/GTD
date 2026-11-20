@@ -68,9 +68,9 @@ document.addEventListener('keydown', e => {
   if (e.key === '/') { e.preventDefault(); capture(); }
   if (e.key === 'f') { e.preventDefault(); document.querySelector('.search input').select(); }
   if (e.key === '?') { e.preventDefault(); document.querySelector('.help-dialog').showModal(); }
-  // ← → follow the page's own previous/next links (Review's steps).
+  // ← → follow the page's own previous/next links (the review step's footer).
   const rel = {ArrowLeft: 'prev', ArrowRight: 'next'}[e.key];
-  const step = rel && document.querySelector(`header.page a[rel=${rel}]`);
+  const step = rel && document.querySelector(`main a[rel=${rel}]`);
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });

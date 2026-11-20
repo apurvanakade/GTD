@@ -486,13 +486,37 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .steps li.next + li:not(.next) { margin-top: 6px; }
 .task .set-step button { min-width: 6.5em; }
 
-/* Decks (Review, Horizons): one card at a time, a rail of dots to move between them. Review's past weeks: a streak. */
+/* Decks (Review, Horizons): one card at a time. Review's past weeks: a streak. */
 .deck { list-style: none; padding-left: 0; }
 .deck > li:not(.on) { display: none; }
 .deck > li { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px 16px; margin-top: 12px; }
 .deck h2 { color: var(--fg); display: flex; align-items: center; gap: 10px; font-size: 1.1rem; text-transform: none; letter-spacing: 0; margin-bottom: 0; }
 .deck h2 + .hint { margin: 2px 0 0; font-size: var(--fs-s); }
-.review h2 + .hint { margin-left: calc(1.3em + 10px); max-width: 60ch; }
+.review h2 + .hint { max-width: 65ch; margin-bottom: 12px; }
+.review > li > h2 { margin-top: 14px; }
+/* Review: the steps by name down the left, the shown step's card on the right. */
+.review-page { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 32px; align-items: start; }
+.review-steps { position: sticky; top: 12px; margin-top: 12px; font-size: var(--fs-s); }
+.review-steps h3 { margin: 14px 0 4px; color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.review-steps h3:first-child { margin-top: 4px; }
+.review-steps ol { list-style: none; margin: 0; padding: 0; }
+.review-steps a { display: flex; align-items: center; gap: 8px; padding: 3px 8px; margin: 0 -8px; border-radius: 6px; color: var(--fg); text-decoration: none; }
+.review-steps a:hover { background: var(--soft); text-decoration: none; }
+.review-steps a::before { content: ""; flex: none; width: 10px; height: 10px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--muted); }
+.review-steps a.done { color: var(--muted); }
+.review-steps a.done::before { background: var(--accent); border-color: var(--accent); }
+.review-steps a.on { background: var(--soft); font-weight: 600; color: var(--fg); }
+.review-steps .n { margin-left: auto; color: var(--muted); font-weight: normal; font-variant-numeric: tabular-nums; }
+.review-steps .streak { max-width: calc(13 * 15px); }
+.step-foot { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--line); font-size: var(--fs-s); }
+.step-foot form { margin-left: auto; }
+.step-foot a { color: var(--muted); }
+.step-foot a:hover { color: var(--fg); }
+@media (max-width: 600px) {
+  .review-page { grid-template-columns: 1fr; gap: 0; }
+  .review-steps { position: static; order: 1; margin-top: 24px; }  /* the step first, the list under it */
+  .step-foot { flex-wrap: wrap; }
+}
 /* An area's balance: a track green at balanced, red toward too little and too much. Its page and H2's rows have the
    same slider (_balance.html); an unset one is faint. */
 :root { --balance: linear-gradient(90deg, color-mix(in srgb, var(--danger) 55%, var(--line)), color-mix(in srgb, var(--good) 55%, var(--line)) 50%, color-mix(in srgb, var(--danger) 55%, var(--line))); }
@@ -522,16 +546,6 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .guide li + li { margin-top: 4px; }
 .deck .count { display: block; font-size: 3rem; font-weight: 650; line-height: 1.1; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
 .deck .count.clear { color: var(--muted); }
-.review .tick button { width: 1.3em; height: 1.3em; padding: 0; border: 1.5px solid var(--muted); border-radius: 4px; font-size: 0.8em; line-height: 1; }
-.review .tick button:hover { border-color: var(--accent); }
-.review > li.ticked .tick button { border-color: var(--accent); background: var(--accent); color: var(--bg); }
-.button.slot { visibility: hidden; }
-.rail { display: flex; gap: 2px; align-items: center; }
-.rail .dot { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; }
-.rail .dot:hover { background: var(--soft); }
-.rail .dot::before { content: ""; width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid var(--muted); }
-.rail .dot.done::before { background: var(--accent); border-color: var(--accent); }
-.rail .dot.on::before { outline: 2px solid var(--accent); outline-offset: 2px; }
 .streak { display: flex; gap: 3px; flex-wrap: wrap; }
 .streak .wk { width: 12px; height: 12px; border-radius: 3px; background: var(--line); }
 .streak .wk.hit { background: var(--accent); }
