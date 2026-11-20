@@ -547,6 +547,8 @@ function keepPeeks() {
   let open = null;
   try { open = JSON.parse(sessionStorage.getItem(PEEKS)); sessionStorage.removeItem(PEEKS); } catch {}
   if (!open?.length) return;
+  document.documentElement.classList.add('peeks-restored');
+  requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.remove('peeks-restored')));
   open.forEach(id => { const b = document.querySelector(`li[data-id="${id}"] > button.peek`); if (b) peek(b, true); });
   const all = document.querySelector('button.peek-all');
   if (all && !document.querySelector('button.peek[aria-expanded="false"]')) all.textContent = 'Collapse all';
@@ -727,6 +729,12 @@ async function refreshNav() {
 // A click anywhere on a row opens it, as its title link would. Its buttons, links, fields, grip and folded-out
 // steps keep their own jobs, a click that ends a text selection selects, and a shift-click selects the row (move.js).
 document.addEventListener('click', e => {
+  const step = e.target.closest('.task .steps > li');  // a folded-out step: a click beside its link opens it too
+  if (step && !e.button && !e.shiftKey && !e.target.closest('a, button') && !String(getSelection())) {
+    const a = step.querySelector('a');
+    if (a) { if (e.metaKey || e.ctrlKey) open(a.href); else a.click(); }
+    return;
+  }
   const li = e.target.closest('li.task');
   if (!li || e.button || e.shiftKey || e.target.closest('a, button, input, select, textarea, label, form, .grip, .steps, .balance')
       || String(getSelection())) return;

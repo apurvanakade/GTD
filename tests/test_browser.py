@@ -263,8 +263,7 @@ def test_send_to_inbox_on_a_row_needs_hover(browser, page, live, conn):
     row = page.locator("li.task", has=page.locator("form.to-inbox")).first
     assert row.locator(".to-inbox button").evaluate("b => getComputedStyle(b).opacity") == "0"
     row.hover()
-    sync_api.expect(row.locator(".to-inbox button")).to_be_visible()
-    assert row.locator(".to-inbox button").evaluate("b => getComputedStyle(b).opacity") == "1"
+    sync_api.expect(row.locator(".to-inbox button")).to_have_css("opacity", "1")  # it eases in ("Hover motion")
     ctx = browser.new_context(has_touch=True, is_mobile=True, viewport={"width": 1024, "height": 768})
     touch = ctx.new_page()
     touch.goto(live + "/next")
@@ -483,8 +482,16 @@ def test_project_row_arrow_folds_out_its_steps(page, live):
         link = r.get_by_role("link", name=step, exact=True)
         assert not link.is_visible()
         r.locator("button.peek").click()
-        assert link.is_visible() and r.locator("button.peek").get_attribute("aria-expanded") == "true"
+        expect(link).to_be_visible()  # once it has started sliding open
+        assert r.locator("button.peek").get_attribute("aria-expanded") == "true"
         link.click()
+        assert task_overlay(page) == step
+        page.keyboard.press("Escape")
+        expect(page.locator("dialog.overlay")).to_have_count(0)
+        # A click beside the link, anywhere on the step's row, opens it too.
+        li = r.locator(".steps > li", has=page.get_by_role("link", name=step, exact=True))
+        box = li.bounding_box()
+        page.mouse.click(box["x"] + box["width"] - 4, box["y"] + box["height"] / 2)
         assert task_overlay(page) == step
         page.keyboard.press("Escape")
 
@@ -521,10 +528,13 @@ def test_expand_all_folds_out_every_project(page, live):
         steps, toggle = page.locator("ul.steps"), page.locator("button.peek-all")
         assert toggle.inner_text() == "Expand all" and not any(s.is_visible() for s in steps.all())
         toggle.click()
-        assert toggle.inner_text() == "Collapse all" and all(s.is_visible() for s in steps.all())
+        assert toggle.inner_text() == "Collapse all"
+        for s in steps.all():
+            expect(s).to_be_visible()  # once it has started sliding open
         assert set(page.locator("button.peek").all_inner_texts()) == {"▾"}
         toggle.click()
-        assert not any(s.is_visible() for s in steps.all())
+        for s in steps.all():
+            expect(s).to_be_hidden()  # once the fold has slid shut
         assert set(page.locator("button.peek").all_inner_texts()) == {"▸"}
 
 
