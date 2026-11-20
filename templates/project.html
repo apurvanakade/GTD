@@ -33,11 +33,8 @@
   <textarea name="notes" rows="2" placeholder="Notes, reference, links…">{{ p.notes }}</textarea>
   <p class="autosave hint" aria-live="polite"></p>
 </form>
-{% call add_form(url_for('project_add_task', id=p.id), 'Add a step', task=True) %}
-  <label>Step <select name="step" aria-label="Step">
-    {% for s in ['next', 'later', 'waiting'] %}<option{% if s == 'later' %} selected{% endif %}>{{ s }}</option>{% endfor %}
-  </select></label>
-{% endcall %}
+{{ add_form(url_for('capture'), 'Add a step', task=True, file_to=p.id, step='later',
+            keep={'project_id': p.id, 'project_title': p.title, 'project_status': p.status} if p.status in ('done', 'abandoned')) }}
 <ul class="tasks by-step" data-reorder="{{ url_for('project_order', id=p.id) }}">{% for t in tasks %}{{ row(t, project=False, set_step=True, grip=True) }}{% endfor %}</ul>
 {% set in_project = true %}{% include "_done_toggle.html" %}
 {% if times %}{{ tally('Time', times, cls='wide', fold=True) }}{% endif %}

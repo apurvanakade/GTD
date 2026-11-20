@@ -131,7 +131,7 @@
     A task add line (`task=True`), its kind select the `where` column; the task-only fields show only while the kind is
     action (style.css). #}
 {% macro add_under(h, kinds) %}
-  {% call add_form(url_for('horizon_add', id=h.id), 'Add a ' ~ kinds|join(' or ') ~ '…' if kinds|length == 2 else 'Add a goal, project or action…', cls='under', task=True) %}
+  {% call add_form(url_for('horizon_add', id=h.id), 'Add a ' ~ kinds|join(' or ') ~ '…' if kinds|length == 2 else 'Add a goal, project or action…', cls='under', task=True, file_to='h0', step='next') %}
   <label>Kind <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select></label>
   {% endcall %}
 {%- endmacro %}

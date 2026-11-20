@@ -305,6 +305,44 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   document.activeElement?.blur();
 });
+// A task add form's File to and Step (filing_fields() in _task.html): Step offers only what File to allows, as the
+// server renders it: a project's next, waiting, later; H0's next, waiting, someday; none for the inbox (or a new
+// one's "＋ New…", a project). A changed kind takes the step a move would (db._fit_step()): waiting stays, someday
+// stays H0's, anything else is a project's later or H0's next, so next is never picked for you. A someday or waiting
+// step leaves Repeats off, and a someday's date is its tickler. A task page reloads on a pick, rendered so already.
+const STEPS = {project: ['next', 'waiting', 'later'], h0: ['next', 'waiting', 'someday'], inbox: []};
+const stepKind = v => v === 'h0' ? 'h0' : /^(\d+|__new__\w*)$/.test(v) ? 'project' : 'inbox';
+function fitStep(f, moved) {
+  const to = f.elements.project_id, step = f.elements.step;
+  if (!(to instanceof HTMLSelectElement) || !(step instanceof HTMLSelectElement)) return;
+  const ok = STEPS[stepKind(to.value)];
+  if (moved) step.value = ok.includes(step.value) && (step.value === 'waiting' || ok === STEPS.h0 && step.value === 'someday')
+    ? step.value : ok === STEPS.h0 ? 'next' : 'later';
+  for (const o of step.options) o.hidden = o.disabled = !ok.includes(o.value);
+  step.disabled = step.closest('label').hidden = !ok.length;
+  const s = step.disabled ? '' : step.value, recur = f.elements.recur;
+  if (recur) {
+    recur.disabled = ['someday', 'waiting'].includes(s);
+    recur.title = recur.disabled ? `Not while ${s}` : '';
+  }
+  const word = f.querySelector('.due-word');
+  if (word) word.textContent = s === 'someday' ? 'Tickler' : 'Due';
+}
+document.addEventListener('change', e => {
+  const to = e.target, f = to.form;
+  if (!f || 'saveOnChange' in f.dataset || to.name !== 'project_id' || !(to instanceof HTMLSelectElement)) return;
+  const was = to.dataset.kind ?? stepKind([...to.options].find(o => o.defaultSelected)?.value ?? '');
+  to.dataset.kind = stepKind(to.value);
+  fitStep(f, to.dataset.kind !== was);
+});
+document.addEventListener('change', e => {
+  const f = e.target.form;
+  if (e.target.name === 'step' && f && !('saveOnChange' in f.dataset)) fitStep(f);
+});
+document.addEventListener('reset', e => {  // back to its preset
+  delete e.target.elements.project_id?.dataset.kind;
+  setTimeout(() => fitStep(e.target));
+});
 // A task page (form[data-save-on-change]) saves each field once it's changed: its selects reload the page, since what
 // it shows depends on them; its text boxes (category, due, repeats, remind; on Enter or on leaving) save in the background.
 // Title and notes are autosave.js's; "＋ New project…" waits for its name; a box whose 📅 picker is open waits for it.
