@@ -391,14 +391,21 @@ def task_move():
     """The drop panel on every task list: move the dropped open tasks (one row, or several shift-selected, in page
     order) to a task tab (H0's Next, Waiting or Someday: that step), a project (a new one too) or Reference, all or
     none. Into a project a task lands as a later step, since the project picks its next; a waiting task stays
-    waiting. Dropped where it already is, nothing changes. Called by fetch, which updates the page itself."""
+    waiting. Dropped where it already is, nothing changes. Called by fetch, which updates the page itself: 204, or
+    the flashes (on_calendar()) as JSON for it to toast. A page that redraws itself instead posts `reload`: always
+    204, and the redrawn page shows them."""
     c = conn()
+
+    def moved():
+        flashes = [] if request.form.get("reload") else get_flashed_messages()
+        return {"flashes": flashes} if flashes else ("", 204)
+
     tasks = [db.get_task(c, id) for id in request.form.getlist("id", type=int)]
     if not tasks or not all(t and t["state"] == "open" for t in tasks):  # e.g. a stale tab: finished since
         abort(400)
     if request.form.get("project_id") == "reference":  # not actionable: kept as a reference item instead
         db.task_to_reference(c, [t["id"] for t in tasks], now())
-        return "", 204
+        return moved()
     h0_step = H0_TARGETS.get(request.form.get("project_id"))  # a task tab: that H0 step
     with db.transaction(c):
         fields = {"project_id": None, "ground": 1} if h0_step else \
@@ -413,7 +420,7 @@ def task_move():
             step = h0_step or ("waiting" if t["step"] == "waiting" else "later")
             db.update_task(c, t["id"], today=today(), **fields, step=step)
             on_calendar(t, db.get_task(c, t["id"]))
-    return "", 204
+    return moved()
 
 
 H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the drop panel's task tabs: H0, that step

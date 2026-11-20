@@ -388,8 +388,8 @@ body.dragging-tasks .drop-panel, .pinned-panel .drop-panel { transform: none; vi
 .task, .context-list li, .suggest a { transition: background-color .22s ease-out; }
 .task:hover, .context-list li:hover, .suggest a:is(.on, :hover) { transition-duration: .09s; }
 .task.open .steps > li:hover { transition-duration: .3s, .3s, .09s; }  /* fast in, as a row's tint; the open slide keeps its own */
-.task :is(.grip, .date, .recur, .step, .set-step button), .context-list li .grip { transition: opacity .2s ease-out; }
-.task:is(:hover, :focus-within) :is(.grip, .date, .recur, .step, .set-step button), .context-list li:hover .grip { transition-duration: .1s; }
+.task :is(.grip, .step, .set-step button), .context-list li .grip { transition: opacity .2s ease-out; }
+.task:is(:hover, :focus-within) :is(.grip, .step, .set-step button), .context-list li:hover .grip { transition-duration: .1s; }
 .done button, .task .start button { transition: background-color .15s, border-color .15s, color .15s; }
 .task .to-inbox button { transition: opacity .2s ease-out, background-color .15s, border-color .15s, color .15s; }  /* ↩ fades as the rest, and colors as ▶ */
 .task:is(:hover, :focus-within) .to-inbox button { transition-duration: .1s, .15s, .15s, .15s; }

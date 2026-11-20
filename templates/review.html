@@ -59,7 +59,7 @@
     {% if overdue %}<ul class="plain">{% for t in overdue %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a> <span class="date">{{ t.due_date }}</span></li>{% endfor %}</ul>{% endif %}
   {% endcall %}
   {% call card('nexts', 'Read every next action. Tick off what\'s done, drop what\'s dead, and reword any that isn\'t a concrete step you could start now.') %}
-    {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a> <span class="date">{{ t.due_date or '' }}</span></li>{% endfor %}</ul>{% endif %}
+    {% if nexts %}<ul class="plain">{% for t in nexts %}<li><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a></li>{% endfor %}</ul>{% endif %}
     <p><a class="button" href="{{ url_for('next_view') }}">Next actions →</a></p>
   {% endcall %}
   {% call card('waiting', 'Check what has arrived. Nudge whoever is late, and give the rest a follow-up date.') %}

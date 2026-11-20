@@ -1042,14 +1042,18 @@ def test_a_failed_calendar_drag_reloads(page, live, conn):
 
 
 def test_tick_off_updates_the_calendar_dot(page, live):
-    """The Calendar's dot counts what's due today or overdue; ticking one off in the Agenda lowers it in place."""
+    """The Calendar's dot counts what's due today or overdue; ticking one off in the Agenda lowers it in place, and
+    its heading's count."""
     page.goto(live + "/calendar?view=agenda")
     dot = "(document.querySelector('nav a[href=\"/calendar\"] .badge')?.ariaLabel ?? '0')"  # a zero shows no dot
     n = int(page.evaluate(dot))
     assert n == page.locator("main li.task").count() and page.locator("nav a[href='/next'] .badge").count() == 0
+    head = page.locator("xpath=//ul[contains(@class, 'agenda')][li[contains(., 'vacuum')]]/preceding-sibling::h2[1]")
+    count = int(head.locator("b").inner_text())
     row(page, "vacuum").locator("form.done button").click()
     page.wait_for_selector("li.task.gone")
     page.wait_for_function(f"{dot} === '{n - 1}'")
+    assert head.locator("b").inner_text() == str(count - 1)
     # Two tick-offs whose /nav answers arrive out of order: the later refresh's counts stay.
     stale = []
     page.route("**/nav", lambda r: stale.append((r, r.fetch().text())) if not stale else r.continue_())

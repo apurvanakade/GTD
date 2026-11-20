@@ -35,19 +35,21 @@
     if (naming) { naming.target.classList.remove('naming'); naming.target.querySelector('input').value = ''; }
     naming = null;
   };
-  // Moved rows leave the list, their bands' counts drop and the nav's dots follow. Any row where the page asks (Waiting: a waiting step stays waiting), or a drop on a target whose tasks the page also
-  // lists (`data-stays`: H0 on Next), redraws the page instead.
+  // Moved rows leave the list, the nav's dots follow and the move's messages (a dated next action went to the
+  // calendar) show as toasts. Any row where the page asks (Waiting: a waiting step stays waiting), or a drop on a
+  // target whose tasks the page also lists (`data-stays`: H0 on Next), redraws the page instead: it posts `reload`,
+  // so the messages wait for the redrawn page.
   const move = async (rows, data) => {
+    const reload = 'reload' in panel.dataset || data.project_id === panel.dataset.stays;
     const form = new URLSearchParams(data);
     rows.forEach(li => form.append('id', li.dataset.id));
-    if (!await post(panel.dataset.move, form)) return;
-    if ('reload' in panel.dataset || data.project_id === panel.dataset.stays) return keepPeeks(), location.reload();  // a project tab's fold-outs stay open
-    for (const li of rows) {
-      const n = li.closest('details.band')?.querySelector('summary b');
-      if (n) n.textContent = Math.max(0, n.textContent - 1);
-      li.remove();
-    }
+    if (reload) form.set('reload', '1');
+    const r = await post(panel.dataset.move, form);
+    if (!r) return;
+    if (reload) return keepPeeks(), location.reload();  // a project tab's fold-outs stay open
+    rows.forEach(li => li.remove());
     refreshNav();
+    if (r.status !== 204) try { toast((await r.json()).flashes); } catch {}  // saved: only a message is lost
   };
   document.addEventListener('dragstart', e => {
     const li = e.target.closest?.('li[draggable]');  // by its grip only (app.js), not a title link's own drag

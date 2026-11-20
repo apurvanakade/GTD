@@ -538,9 +538,14 @@ def test_dating_a_next_action_says_it_went_to_the_calendar(client, conn):
     assert not any("calendar" in f for f in r.get_json()["flashes"])  # already dated: nothing new to say
     client.post(f"/tasks/{tid}", data={"due_date": ""}, headers={"X-Requested-With": "fetch"})
     assert ">call bank<" in client.get("/next").get_data(as_text=True)  # undated again: back on Next
-    item = db.add_task(conn, "dentist", due_date="2026-10-30")  # an inbox item, dropped on Next
-    client.post("/tasks/move", data={"id": item, "project_id": "h0"}, headers={"X-Requested-With": "fetch"})
-    assert "on the calendar, not Next: Fri Oct 30" in client.get("/inbox").get_data(as_text=True)
+    item = db.add_task(conn, "dentist", due_date="2026-10-30")  # an inbox item, dropped on Next: move.js toasts it
+    r = client.post("/tasks/move", data={"id": item, "project_id": "h0"}, headers={"X-Requested-With": "fetch"})
+    assert r.get_json()["flashes"] == ["Dated, so it's on the calendar, not Next: Fri Oct 30."]
+    assert "on the calendar" not in client.get("/inbox").get_data(as_text=True)  # shown once, then gone
+    item = db.add_task(conn, "vet", due_date="2026-10-31")  # from a page that redraws: the redraw shows it
+    r = client.post("/tasks/move", data={"id": item, "project_id": "h0", "reload": "1"}, headers={"X-Requested-With": "fetch"})
+    assert r.status_code == 204
+    assert "on the calendar, not Next: Sat Oct 31" in client.get("/inbox").get_data(as_text=True)
 
 
 ICS = """BEGIN:VCALENDAR
@@ -2660,7 +2665,7 @@ def test_reviving_one_step_of_a_closed_project_brings_the_project_back(client, c
     # So does an open task joining it.
     client.post(f"/projects/{pid}", data={"status": close})
     a = db.add_task(conn, "a")
-    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code == 204
+    assert client.post("/tasks/move", data={"id": a, "project_id": str(pid)}, headers=FETCH).status_code < 300  # with the unread flashes of the posts above
     assert db.get_project(conn, pid)["status"] == "someday"
     # A closed task joining it doesn't.
     client.post(f"/projects/{pid}", data={"status": close})

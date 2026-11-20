@@ -1,5 +1,6 @@
 // Every page's JS (base.html loads it after the page); GO, the go-keys' targets, is set inline before it.
-// A background save (tick-off, drag, filing). If it fails, reload so the page shows what was really saved.
+// A background save (tick-off, drag, filing): its response once saved, else false. If it fails, reload so the page
+// shows what was really saved.
 // Marked changed before it's sent, and tracked (postsSettled()), so an overlay closed at once still waits for it and
 // reloads what's under it.
 const posting = new Set();
@@ -9,7 +10,7 @@ function post(url, body) {
   const p = (async () => {
     try {
       const r = await fetch(url, {method: 'POST', headers: {'X-Requested-With': 'fetch'}, body});
-      if (r.ok) { projectsSaved(r); return true; }
+      if (r.ok) { projectsSaved(r); return r; }
     } catch {}
     location.reload();
     return false;
@@ -80,8 +81,8 @@ document.addEventListener('keydown', e => {
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
-// Done's bands: remember which you opened or folded, per page. Only a click is saved (delegated, since a filter
-// redraws the bands): a band that starts open fires 'toggle' too, which would freeze today's default.
+// Done's bands: remember which you opened or folded, per page. Only a click is saved: a band that starts open fires
+// 'toggle' too, which would freeze today's default.
 const foldKey = d => `fold:${location.pathname}:${d.dataset.band}`;
 const restoreBands = () => document.querySelectorAll('details.band').forEach(d => {
   try { const v = localStorage.getItem(foldKey(d)); if (v !== null) d.open = v === '1'; } catch {}
@@ -713,7 +714,7 @@ document.addEventListener('submit', async e => {
     action: f.action.replace(/complete$/, 'revive')});
   revive.append(Object.assign(document.createElement('button'), {title: 'Bring it back', textContent: 'Revive'}));
   li.append(revive);
-  const n = li.closest('details.band')?.querySelector('summary b');
+  const n = li.closest('ul.agenda')?.previousElementSibling?.querySelector(':scope.agenda-head > b');  // its Agenda heading's count
   if (n) n.textContent = Math.max(0, n.textContent - 1);
   // Its timer, if running, was stopped with it (complete_task()); a done task gets no stopped pill either.
   document.querySelectorAll(`.running-timer a[href="/tasks/${li.dataset.id}"]`).forEach(a => a.closest('.running-timer').remove());
