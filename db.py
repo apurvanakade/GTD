@@ -79,6 +79,14 @@ CREATE INDEX IF NOT EXISTS time_entries_task ON time_entries(task_id);
 -- Weekly review: the steps ticked so far, and the date of each finished review.
 CREATE TABLE IF NOT EXISTS review_checks (step TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, completed_on TEXT NOT NULL);
+-- The review's scratchpad (Collect loose ends, Mind sweep): one row. `cleared` is the text its last Clear removed,
+-- kept for Undo until the next Clear, an Undo, or the review's end.
+CREATE TABLE IF NOT EXISTS scratchpad (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  notes TEXT NOT NULL DEFAULT '',
+  cleared TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO scratchpad (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM scratchpad);
 -- When each project, and each H0 someday task, was last looked at in a weekly review (UTC, iso()). Tables of their
 -- own, not columns, so the live DB needs no ALTER.
 CREATE TABLE IF NOT EXISTS project_reviews (
@@ -1205,6 +1213,29 @@ def complete_review(c, today):
     """Record a finished review and clear the ticks for next week."""
     c.execute("INSERT INTO reviews (completed_on) VALUES (?)", (today.isoformat(),))
     c.execute("DELETE FROM review_checks")
+    c.execute("UPDATE scratchpad SET cleared = ''")  # Undo is for a slip during the review; the pad's text stays
+
+
+def scratchpad(c):
+    return c.execute("SELECT notes, cleared FROM scratchpad").fetchone()
+
+
+@atomic
+def update_scratchpad(c, id, notes):
+    c.execute("UPDATE scratchpad SET notes = ? WHERE id = ?", (notes, id))
+
+
+@atomic
+def clear_scratchpad(c):
+    """Empty the pad, keeping its text for Undo (an empty pad keeps what an earlier Clear kept)."""
+    c.execute("UPDATE scratchpad SET cleared = notes, notes = '' WHERE notes != ''")
+
+
+@atomic
+def undo_clear_scratchpad(c):
+    """Put the cleared text back, above anything typed since."""
+    c.execute("UPDATE scratchpad SET notes = cleared || CASE WHEN notes = '' THEN '' ELSE char(10) || notes END,"
+              " cleared = '' WHERE cleared != ''")
 
 
 def reviews(c):
@@ -1300,7 +1331,13 @@ def open_tasks(c):
 
 # --- autosave --------------------------------------------------------------
 
-TEXT_TABLES = {"tasks": update_task, "projects": update_project, "horizons": update_horizon, "reference": update_reference}
+TEXT_TABLES = {"tasks": update_task, "projects": update_project, "horizons": update_horizon, "reference": update_reference,
+               "scratchpad": update_scratchpad}
+TEXT_FIELDS = {"scratchpad": ("notes",)}  # the fields autosave keeps, by table; ("title", "notes") when not listed
+
+
+def text_fields(table):
+    return TEXT_FIELDS.get(table, ("title", "notes"))
 
 
 @atomic
@@ -1311,8 +1348,8 @@ def save_text(c, table, id, fields, base):
     norm = lambda s: (s or "").replace("\r\n", "\n").strip()
     if not c.in_transaction:  # no other save between the check and the write (inside one, its lock holds already)
         c.execute("BEGIN IMMEDIATE")
-    row = c.execute(f"SELECT title, notes FROM {table} WHERE id = ?", (id,)).fetchone()
+    row = c.execute(f"SELECT {', '.join(text_fields(table))} FROM {table} WHERE id = ?", (id,)).fetchone()
     if any(norm(row[k]) not in (norm(base.get(k)), norm(v)) for k, v in fields.items()):
-        return {k: row[k] for k in ("title", "notes")}  # nothing written; the outermost transaction ends it
+        return dict(row)  # nothing written; the outermost transaction ends it
     TEXT_TABLES[table](c, id, **fields)
     return None

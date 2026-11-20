@@ -20,6 +20,18 @@
     </footer>{% endif %}
   </li>
 {%- endmacro %}
+{#- The scratchpad, one for both loose-ends steps, on the shown card only (one editor on the page): it saves itself
+   (static/autosave.js), and keeps its text until you clear it. Clear keeps the text for Undo (db.clear_scratchpad()). #}
+{% macro pad(key) %}{% if key == step %}
+  <form method="post" class="scratchpad" data-autosave="{{ url_for('autosave', kind='scratchpad', id=1) }}">
+    <textarea name="notes" rows="10" placeholder="Dump everything here…" aria-label="Scratchpad">{{ scratchpad.notes }}</textarea>
+    <div class="pad-foot">{# left: the notes toolbar takes the right while the editor has focus #}
+      <button formaction="{{ url_for('scratchpad_clear') }}" title="Empty the scratchpad (Undo brings it back)">Clear</button>
+      {%- if scratchpad.cleared %}<button formaction="{{ url_for('scratchpad_undo') }}" title="Bring back the cleared text">Undo clear</button>{% endif %}
+      <p class="autosave hint" aria-live="polite"></p>
+    </div>
+  </form>
+{%- endif %}{% endmacro %}
 {% block actions %}{% if checked %}<form method="post" action="{{ url_for('review_reset') }}"><button title="Start over (untick every step)" aria-label="Start over">↺</button></form>{% endif %}{% endblock %}
 {% block body %}
 {#- New ideas: the page's add line, first on the page, as on Horizons. #}
@@ -94,8 +106,8 @@
     <p><a class="button" href="{{ url_for('horizons_view') }}">Horizons →</a></p>
   {% endcall %}
   {#- Loose ends #}
-  {% call card('collect', 'Gather what\'s lying around: desktop, downloads, email, notes, open tabs, paper, the last two weeks of your calendar. Capture every loose end into the Inbox.') %}{% endcall %}
-  {% call card('sweep', 'Empty your head: run through work, home, people, money, health, errands. Capture every open loop, however small, then clear the Inbox again.') %}{% endcall %}
+  {% call card('collect', 'Gather what\'s lying around: desktop, downloads, email, notes, open tabs, paper, the last two weeks of your calendar. Capture every loose end into the Inbox.') %}{{ pad('collect') }}{% endcall %}
+  {% call card('sweep', 'Empty your head: run through work, home, people, money, health, errands. Capture every open loop, however small, then clear the Inbox again.') %}{{ pad('sweep') }}{% endcall %}
 </ol>
 </div>
 </div>

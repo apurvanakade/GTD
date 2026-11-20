@@ -69,6 +69,9 @@ def seed(c):
     db.mark_reminded(c, 4, NOW)  # "quote from Bob": sent; "call mum" still to come
     db.complete_review(c, TODAY - timedelta(days=7))
     db.toggle_review_step(c, "sweep")  # this week's review under way
+    db.update_scratchpad(c, 1, "call the bank")  # the pad: cleared once (so Undo clear shows), then new text
+    db.clear_scratchpad(c)
+    db.update_scratchpad(c, 1, "book the dentist")
     dropped = db.add_project(c, "Dropped proj", status="someday")
     db.add_task(c, "given-up step", step="next", project_id=dropped)
     db.close_project(c, dropped, "abandoned")
