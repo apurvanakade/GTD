@@ -731,7 +731,7 @@ async function refreshNav() {
 // steps keep their own jobs, a click that ends a text selection selects, and a shift-click selects the row (move.js).
 document.addEventListener('click', e => {
   const step = e.target.closest('.task .steps > li');  // a folded-out step: a click beside its link opens it too
-  if (step && !e.button && !e.shiftKey && !e.target.closest('a, button') && !String(getSelection())) {
+  if (step && !e.button && !e.shiftKey && !e.target.closest('a, button, .grip') && !String(getSelection())) {
     const a = step.querySelector('a');
     if (a) { if (e.metaKey || e.ctrlKey) open(a.href); else a.click(); }
     return;

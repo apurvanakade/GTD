@@ -59,7 +59,7 @@
   });
   document.addEventListener('dragend', () => {
     panel.querySelectorAll('.over').forEach(t => t.classList.remove('over'));
-    dragged?.forEach(r => r.classList.remove('dragging'));
+    dragged?.forEach(r => { r.classList.remove('dragging'); r.removeAttribute('draggable'); });  // app.js's dragend skips a step
     dragged = null;
     if (!naming) close();
   });
