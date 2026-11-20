@@ -419,6 +419,13 @@ def task_move():
 H0_TARGETS = {"h0": "next", "waiting": "waiting", "someday": "someday"}  # the drop panel's task tabs: H0, that step
 
 
+@app.get("/tasks/file-to")
+def file_to():
+    """The File to menu a task row's → opens (file_menu() in _task.html, static/app.js): the drop panel's places, filed
+    to through task_move()."""
+    return render_template("file_menu.html", project_groups=db.project_groups(conn()))
+
+
 @app.post("/tasks/order")
 def tasks_order():
     """A task list's drag-and-drop (Inbox, Next, Waiting, Someday) sends its task ids in their new order."""

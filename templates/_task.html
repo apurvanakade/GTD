@@ -25,6 +25,8 @@
     {% if t.remind_at and not t.reminded_at and not closed %}<span class="remind" title="Reminder {{ t.remind_at|local_minute }}">🔔</span>
     {%- else %}<span class="remind"></span>{% endif %}
   </span>
+  {# → files it from the row, as its page's File to does (file_to_button()). #}
+  {% if not closed %}{{ file_to_button(t) }}{% endif %}
   {# ↩ back to the inbox, cleared to title and notes, to clarify from scratch; its slot stays on an inbox item. #}
   {% if not closed and not t.inbox %}<form method="post" action="{{ url_for('to_inbox', id=t.id) }}" class="to-inbox"><button title="Back to the inbox: clears project, step, dates, repeat, reminder and contexts" aria-label="Send to inbox">↩</button></form>
   {%- elif not closed %}<span class="to-inbox"></span>{% endif %}
@@ -70,7 +72,7 @@
 <ul class="steps">
   {% for t in steps %}
   <li{% if t.step == 'next' %} class="next"{% endif %} data-id="{{ t.id }}"><span class="grip" title="Drag to file it" aria-hidden="true">⠿</span><a href="{{ url_for('task_view', id=t.id) }}">{{ t.label }}</a>
-    <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span></li>
+    <span class="meta"><span>{{ t.step }}</span>{% if t.due_date %}<span class="date">{{ t.due_date }}</span>{% endif %}{% if t.recur %}<span title="{{ t.recur }}">↻</span>{% endif %}</span>{{ file_to_button(t) }}</li>
   {% else %}
   <li class="empty">No open steps.</li>
   {% endfor %}
@@ -159,6 +161,32 @@
   <div class="target new" data-project="{{ new }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
   {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}"><a href="{{ url_for('project_view', id=p.id) }}" draggable="false">{{ p.title }}</a></div>{% endfor %}</section>{% endfor %}
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item"><a href="{{ url_for('reference') }}" draggable="false">Reference</a></div></div>
+{% endmacro %}
+
+{# An open task row's → (row(), peek_steps()): opens the File to menu (file_menu(), static/app.js) under it. `data-at`
+   is where the task is now, in the menu's terms (a project's id; H0's h0, waiting or someday; nothing for an inbox
+   item), shown there as the current place. #}
+{% macro file_to_button(t) -%}
+{%- set at = t.project_id if t.project_id else ({'next': 'h0', 'waiting': 'waiting', 'someday': 'someday'}.get(t.step, '') if t.ground and not t.inbox else '') -%}
+<button type="button" class="file-to" data-at="{{ at }}" aria-haspopup="menu" title="File to…" aria-label="File to">→</button>
+{%- endmacro %}
+
+{# The File to menu (/tasks/file-to, fetched by static/app.js): the drop panel's places (task_targets, the project
+   tabs' projects, each tab with "＋ New project…", Reference) as buttons, under a box filtering them as you type. A
+   pick files the task as a drop there does (/tasks/move). No links: a name here only files. #}
+{% macro file_menu() %}
+<div class="file-menu-body" data-move="{{ url_for('task_move') }}">
+  <input class="file-filter" placeholder="File to…" aria-label="Filter the places" autocomplete="off">
+  <div class="file-list">
+    <section><h3>Tasks (no project)</h3>
+      {% for key, label in task_targets %}<button type="button" class="file-target" data-project="{{ key }}">{{ label }}</button>{% endfor %}</section>
+    {% for label, ps, new in project_groups %}<section><h3>{{ label }}</h3>
+      <button type="button" class="file-target new" data-project="{{ new }}">＋ New project…</button>
+      <input class="new-name" placeholder="name, then Enter" aria-label="New {{ label|lower }} project" autocomplete="off">
+      {% for p in ps %}<button type="button" class="file-target" data-project="{{ p.id }}">{{ p.title }}</button>{% endfor %}</section>{% endfor %}
+    <section><button type="button" class="file-target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</button></section>
+  </div>
+</div>
 {% endmacro %}
 
 {# The drop panel of every task list and project tab (static/move.js): it slides in while an open row (or a project

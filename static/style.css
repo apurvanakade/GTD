@@ -491,8 +491,39 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .task .to-inbox button { opacity: 0; }
 .task:is(:hover, :focus-within) .to-inbox button { opacity: 1; }
 .task .to-inbox button:hover { color: var(--accent); }
-/* With no hover (a phone, an iPad) ↩ would be an invisible tap target beside ▶: it goes, and the task page's ↩ does the job. */
-@media (hover: none) { .task .to-inbox { display: none; } }
+/* → (File to, its menu below) shows on hover as ↩ does, in a slot every open row keeps; a folded-out step's too. */
+.task .file-to { width: 1.6em; padding: 0; font-size: 1rem; line-height: 20px; color: var(--muted); opacity: 0;
+  transition: opacity .2s ease-out, background-color .15s, color .15s; }
+.task:is(:hover, :focus-within) > .file-to, .task .steps > li:is(:hover, :focus-within) > .file-to, .task .file-to[aria-expanded="true"] { opacity: 1; transition-duration: .1s, .15s, .15s; }
+.task .file-to:hover, .task .file-to[aria-expanded="true"] { color: var(--accent); }
+.task .steps > li > .file-to { margin-left: 4px; }
+/* With no hover (a phone, an iPad) ↩ and → would be invisible tap targets beside ▶: they go, and the task page does the job. */
+@media (hover: none) { .task :is(.to-inbox, .file-to) { display: none; } }
+
+/* The File to menu (a row's →, static/app.js): a card under the button, as the search's suggestions, with the drop
+   panel's groups; a filter box on top, the places scrolling below it. Placed by app.js; a popover, so in the top layer. */
+.file-menu {
+  position: fixed; inset: auto; margin: 0; width: 260px; padding: 0; flex-direction: column; overflow: hidden;
+  background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / .15);
+  font-size: var(--fs-m);
+}
+.file-menu:popover-open, .file-menu-body { display: flex; flex-direction: column; min-height: 0; }
+.file-menu-body { flex: 1 1 auto; }
+.file-menu .file-filter { flex: none; margin: 6px; width: auto; padding: 5px 8px; font-size: var(--fs-m); background: var(--bg); }
+.file-menu .file-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 4px 4px; }
+.file-menu section + section { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+.file-menu section[hidden] { display: none; }
+.file-menu h3 { margin: 4px 8px 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.file-menu .file-target { display: block; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; text-align: left; font-size: inherit;
+  color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-menu .file-target[hidden] { display: none; }
+.file-menu .file-target:hover, .file-menu .file-target.on { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--fg); }
+.file-menu .file-target.new, .file-menu .file-target[data-project="reference"] { color: var(--muted); }
+.file-menu .file-target.current { color: var(--muted); cursor: default; background: none; }
+.file-menu .file-target.current::after { content: "✓"; float: right; color: var(--accent); }
+.file-menu .new-name { display: none; margin: 2px 4px 4px; width: calc(100% - 8px); padding: 4px 8px; font-size: inherit; }
+.file-menu .naming .new-name { display: block; }
+.file-menu .naming .file-target.new { display: none; }
 /* ▶ (.start) always shows, so the timer starts from anywhere. */
 .task .start button:hover { color: var(--accent); }
 .task .timing button { color: var(--accent); }
@@ -761,7 +792,7 @@ textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line
   /* A row: grip and ✓ (or ▸), then the title across the line, leaving room for ▶ alone; a date, a button or a slider
      wraps below, right-aligned. Empty cells and hover-only controls (no hover here) take no room. */
   .tasks > li.task > :is(.title, .name) { flex: 1 1 calc(100% - 6rem); }
-  .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step), .task .to-inbox { display: none; }
+  .task :is(.date, .recur, .remind):empty, .tasks.by-step > .task :is(.step, .set-step), .task :is(.to-inbox, .file-to) { display: none; }
   .task :is(.proj, .ctx) { white-space: normal; }  /* a long project name wraps rather than widening the page */
   .tasks > li.task { justify-content: flex-end; }
   .task > .balance { flex-basis: 100%; max-width: none; margin: 0; }

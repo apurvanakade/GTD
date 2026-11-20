@@ -38,6 +38,120 @@ async function refreshProjects() {
     }
   } catch {}  // only the lists go stale
 }
+// Files task rows (a drop on the drop panel, move.js; a pick in a row's File to menu, below) at /tasks/move.
+// Moved rows leave the list, the nav's dots follow and the move's messages (a dated next action went to the
+// calendar) show as toasts. Any row where the page asks (Waiting: a waiting step stays waiting), a target whose tasks
+// the page also lists (`data-stays`: H0 on Next), or a page with no drop panel (the Agenda, a project page, Search:
+// a filed row may stay, changed) redraws the page instead: it posts `reload`, so the messages wait for the redrawn page.
+async function fileTasks(url, rows, data) {
+  const panel = document.querySelector('.drop-panel');
+  const reload = !panel || 'reload' in panel.dataset || data.project_id === panel.dataset.stays;
+  const form = new URLSearchParams(data);
+  rows.forEach(li => form.append('id', li.dataset.id));
+  if (reload) form.set('reload', '1');
+  const r = await post(url, form);
+  if (!r) return;
+  if (reload) return keepPeeks(), location.reload();  // a project tab's fold-outs stay open
+  rows.forEach(li => li.remove());
+  refreshNav();
+  if (r.status !== 204) try { toast((await r.json()).flashes); } catch {}  // saved: only a message is lost
+}
+// A task row's → (file_to_button() in _task.html) opens the File to menu under it: the drop panel's places
+// (file_menu(), fetched once per page from /tasks/file-to, again after it made a project), its own place marked and
+// not offered. Typing filters them; ↑ ↓ and Enter pick, as a click does; "＋ New project…" asks for the name first.
+// A pick files the row, or every shift-selected row with it (as a drag of a selected row does). Esc or a click
+// elsewhere closes it (a popover, so in the top layer, over an overlay too).
+(() => {
+  let menu = null, rows = [], button = null, html = null;
+  const load = async () => {
+    try { html ??= fetch('/tasks/file-to').then(r => r.ok ? r.text() : Promise.reject()); return await html; }
+    catch { html = null; return null; }
+  };
+  document.addEventListener('pointerover', e => { if (e.target.closest?.('button.file-to')) load(); });  // ready by the click
+  const targets = () => [...menu.querySelectorAll('.file-target:not([hidden], :disabled)')];
+  const light = t => {  // the place Enter picks, kept in view in the list (not scrollIntoView, which may scroll the page)
+    menu.querySelectorAll('.file-target.on').forEach(o => o.classList.remove('on'));
+    if (!t) return;
+    t.classList.add('on');
+    const list = menu.querySelector('.file-list'), at = t.getBoundingClientRect(), box = list.getBoundingClientRect();
+    if (at.top < box.top) list.scrollTop -= box.top - at.top + 24;  // and its group's heading
+    else if (at.bottom > box.bottom) list.scrollTop += at.bottom - box.bottom;
+  };
+  const filter = () => {
+    const q = menu.querySelector('.file-filter').value.trim().toLowerCase();
+    menu.querySelectorAll('.file-target').forEach(t => t.hidden = q ? t.matches('.new') || !t.textContent.toLowerCase().includes(q) : false);
+    menu.querySelectorAll('section').forEach(s => s.hidden = !s.querySelector('.file-target:not([hidden])'));
+    light(q ? targets()[0] : null);
+  };
+  const place = () => {  // under the button, its right edge on the button's; above it when there's more room there
+    const b = button.getBoundingClientRect(), gap = 4, edge = 8;
+    const below = innerHeight - b.bottom - gap - edge, above = b.top - gap - edge, up = below < 260 && above > below;
+    menu.style.maxHeight = (up ? above : below) + 'px';
+    menu.style.left = Math.max(edge, Math.min(b.right - menu.offsetWidth, innerWidth - menu.offsetWidth - edge)) + 'px';
+    menu.style.top = up ? '' : b.bottom + gap + 'px';
+    menu.style.bottom = up ? innerHeight - b.top + gap + 'px' : '';
+  };
+  const pick = t => {
+    if (!t || t.disabled) return;
+    if (t.matches('.new')) {  // the name first, in the box under it
+      menu.querySelectorAll('section.naming').forEach(s => s.classList.remove('naming'));
+      t.closest('section').classList.add('naming');
+      return t.nextElementSibling.focus({preventScroll: true});
+    }
+    const data = {project_id: t.dataset.project};
+    if (t.matches('.new-name')) Object.assign(data, {project_id: t.previousElementSibling.dataset.project, new_project: t.value.trim()});
+    const url = menu.querySelector('.file-menu-body').dataset.move, moving = rows;
+    if (data.new_project) html = null;  // the next menu lists the new project
+    menu.hidePopover();
+    fileTasks(url, moving, data);
+  };
+  const open = async b => {
+    const li = b.closest('li[data-id]');
+    const fresh = await load();
+    if (!fresh) return;
+    if (!menu) {
+      menu = Object.assign(document.createElement('div'), {className: 'file-menu', popover: 'auto'});
+      menu.setAttribute('role', 'menu');
+      document.body.append(menu);
+      menu.addEventListener('toggle', e => { if (e.newState === 'closed') button?.setAttribute('aria-expanded', 'false'); });
+      menu.addEventListener('click', e => pick(e.target.closest('.file-target')));
+      menu.addEventListener('input', e => { if (e.target.matches('.file-filter')) filter(); });
+      menu.addEventListener('keydown', e => {
+        if (e.key === 'Escape') return button?.focus({preventScroll: true});  // the popover closes itself
+        if (e.target.matches('.new-name')) {
+          if (e.key === 'Enter' && e.target.value.trim()) { e.preventDefault(); pick(e.target); }
+          return;
+        }
+        const all = targets(), at = all.indexOf(menu.querySelector('.file-target.on'));
+        const by = {ArrowDown: 1, ArrowUp: -1}[e.key];
+        if (by) { e.preventDefault(); light(all[(at + by + all.length) % all.length] ?? null); }
+        if (e.key === 'Enter') { e.preventDefault(); pick(all[at]); }
+      });
+    }
+    menu.innerHTML = fresh;
+    const here = menu.querySelector(`.file-target[data-project="${CSS.escape(b.dataset.at)}"]`);
+    if (b.dataset.at && here) { here.disabled = true; here.classList.add('current'); here.title = 'It’s here'; }
+    rows = li.classList.contains('selected') ? [...document.querySelectorAll('main li.selected[data-id]')].filter(r => r.querySelector('button.file-to')) : [li];
+    button = b;
+    b.setAttribute('aria-expanded', 'true');
+    menu.showPopover();
+    place();
+    menu.querySelector('.file-list').scrollTop = 0;
+    menu.querySelector('.file-filter').focus({preventScroll: true});
+  };
+  // A second click on its own → closes it: light dismiss closes it before the click, so the press notes it was open.
+  let wasOpen = false;
+  document.addEventListener('pointerdown', e => {
+    wasOpen = !!menu?.matches(':popover-open') && e.target.closest?.('button.file-to') === button;
+  }, true);
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button.file-to');
+    if (!b) return;
+    if (wasOpen) { wasOpen = false; if (menu.matches(':popover-open')) menu.hidePopover(); return; }
+    open(b);
+  });
+  ['resize', 'scroll'].forEach(k => addEventListener(k, () => { if (menu?.matches(':popover-open')) place(); }, {passive: true}));
+})();
 // The nav slides away while you scroll down and comes back when you scroll up, reach the top, or point at the top
 // edge. Touch scrolling (iPad) drives it too; the clamp ignores Safari's rubber band.
 (() => {
