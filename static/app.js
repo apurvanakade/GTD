@@ -493,7 +493,7 @@ document.addEventListener('change', e => {
       const all = [...menu.querySelectorAll('button:not([hidden])')], at = all.indexOf(document.activeElement);
       const by = {ArrowDown: 1, ArrowUp: -1}[e.key];
       if (by) { e.preventDefault(); all[(at + by + all.length) % all.length].focus({preventScroll: true}); }
-      if (e.key === '0') clearFilter();
+      if (e.key === '0') { clearFilter(); picks()[0]?.focus({preventScroll: true}); }
       const p = /^[1-9]$/.test(e.key) && picks()[e.key - 1];
       if (p) { p.focus({preventScroll: true}); toggle(p); }
     });

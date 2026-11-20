@@ -490,7 +490,7 @@ def tasks_order():
 
 # The context filter: the checkboxes on Site info (static/app.js), kept in the `contexts` cookie as ids joined by "-".
 # It holds across pages but only thins the working lists: Next, Waiting and the Calendar. Not the Inbox,
-# where everything lands, nor Someday (its tasks have no contexts), the project pages, the review or the nav's dots.
+# where everything lands, nor Someday (its ideas aren't picked by context; a task's contexts are kept), the project pages, the review or the nav's dots.
 FILTERED_VIEWS = ("next_view", "waiting", "calendar_view")
 
 

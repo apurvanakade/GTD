@@ -3508,7 +3508,7 @@ def test_context_filter_is_global_but_for_the_working_lists_only(client, conn):
     assert ">measure wall<" in next_html and ">Home: sort mail<" not in next_html
     assert 'class="ctx-filter"' in next_html and "@morning" in next_html
     assert ">parcel from Ann<" not in main("/waiting")
-    someday = main("/someday?tickled=1")  # not filtered: someday tasks have no contexts
+    someday = main("/someday?tickled=1")  # not filtered: Someday doesn't need it, though "learn Italian" keeps morning
     assert ">learn Italian<" in someday and ">write a book<" in someday and 'class="ctx-filter"' not in someday
     cal = main("/calendar?m=2026-10")
     assert ">buy tiles<" in cal and "call mum<" not in cal
