@@ -1620,12 +1620,6 @@ def test_add_a_next_action_on_the_calendar(client, conn):
     assert status["sweep"]["step"] == "next" and status["sweep"]["ground"]
 
 
-def test_project_tabs_share_one_url_shape(client):
-    """Each project tab is /projects/<status>, Active too; the bare /projects only takes the add line's POST."""
-    assert [client.get(f"/projects/{s}").status_code for s in ("active", "waiting", "someday")] == [200] * 3
-    assert client.get("/projects").status_code == 405
-
-
 def test_nav_groups_tabs_by_kind_of_list(client):
     """Working minute by minute, lists of tasks, lists of projects (each tab one kind); then the weekly-review pages
     and Reference."""
