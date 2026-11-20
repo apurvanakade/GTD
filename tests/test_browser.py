@@ -1683,9 +1683,10 @@ def test_someday_bands_count_what_leaves_in_place(page, live, conn):
     count = lambda key: page.locator(f'details.band[data-band="{key}"] > summary > b').inner_text()
     assert (count("c:languages"), count("none")) == ("2", "2")  # "Other": the seed's juggle and sail
     assert not page.locator(".someday-bands li.task :is(form.done, form.start)").first.is_visible()
-    row(page, "learn Italian").click(modifiers=["Shift"], position={"x": 400, "y": 10})
-    row(page, "juggle").click(modifiers=["Shift"], position={"x": 400, "y": 10})
-    row(page, "sail").click(modifiers=["Shift"], position={"x": 400, "y": 10})
+    # x 300: beside the title, short of the → and ↩ at the end of a row indented under its band
+    row(page, "learn Italian").click(modifiers=["Shift"], position={"x": 300, "y": 10})
+    row(page, "juggle").click(modifiers=["Shift"], position={"x": 300, "y": 10})
+    row(page, "sail").click(modifiers=["Shift"], position={"x": 300, "y": 10})
     with page.expect_response(lambda r: r.url.endswith("/tasks/move")) as saved:
         drag_to_panel(page, row(page, "juggle"), '[data-project="h0"]')
     assert saved.value.ok  # 200: a toast that sail, dated, went to the calendar

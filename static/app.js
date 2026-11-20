@@ -216,7 +216,10 @@ const foldKey = d => `fold:${location.pathname}:${d.dataset.band}`;
 const restoreBands = () => document.querySelectorAll('details.band').forEach(d => {
   try { const v = localStorage.getItem(foldKey(d)); if (v !== null) d.open = v === '1'; } catch {}
 });
+// Opened as loaded, not by a click: no slide or drop-in (style.css) until the page has painted.
+document.documentElement.classList.add('bands-restored');
 restoreBands();
+requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.remove('bands-restored')));
 document.addEventListener('click', e => {
   const summary = e.target.closest('details.band > summary');
   if (!summary || e.target.closest('a')) return;
