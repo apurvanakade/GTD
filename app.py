@@ -639,10 +639,10 @@ def someday_add():
 
 @app.post("/tasks/<int:id>/reviewed")
 def task_reviewed(id):
-    """The review's someday step: this H0 someday task has been looked at now."""
+    """The review's someday step: this H0 someday task has been looked at now (or, again, not: toggle_reviewed())."""
     db.get_task(conn(), id) or abort(404)
-    db.mark_reviewed(conn(), id, now(), table="task")
-    return back("review")
+    answer = toggle_reviewed(id, "task")
+    return answer if fetched() else back("review")
 
 
 # --- reference -------------------------------------------------------------
@@ -756,23 +756,45 @@ def review():
                            open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=db.next_list(c), waiting=db.tasks_with_step(c, "waiting"),
-                           checklists=db.checklists(c), unseen=unseen, scratchpad=db.scratchpad(c),
+                           checklists=db.checklists(c), seen=seen, unseen=unseen, scratchpad=db.scratchpad(c),
                            phases=REVIEW_PHASES, names=REVIEW_NAMES, steps=REVIEW_STEPS, step=step,
                            checked=checked, past=past)
 
 
+def seen(r):
+    """Whether the review has looked at this project or someday task in the last week (its ✓ shows it)."""
+    return seen_at(r["reviewed_at"])
+
+
+def seen_at(utc):
+    return bool(utc) and (today() - date.fromisoformat(local_date(utc))).days < 7
+
+
+def toggle_reviewed(id, table):
+    """The review's ✓: marks it reviewed now; if it already was this week (a blue ✓), undoes that instead, back to
+    a review before this week, or none. Answers how it now reads."""
+    c = conn()
+    with db.transaction(c):
+        if not seen_at(db.reviewed_at(c, id, table)):
+            db.mark_reviewed(c, id, now(), table=table)
+        else:
+            while seen_at(db.unmark_reviewed(c, id, table)):
+                pass
+    at = db.reviewed_at(c, id, table)
+    return {"seen": seen_at(at), "ago": ago(at)}  # for app.js, which marks it in place
+
+
 def unseen(rows):
     """How many of these (projects, someday tasks) the review hasn't looked at in the last week."""
-    return sum(not (r["reviewed_at"] and (today() - date.fromisoformat(local_date(r["reviewed_at"]))).days < 7)
-               for r in rows)
+    return sum(not seen(r) for r in rows)
 
 
 @app.post("/projects/<int:id>/reviewed")
 def project_reviewed(id):
-    """The review's projects step: this project has been looked at now."""
+    """The review's projects step: this project has been looked at now (or, again, not: toggle_reviewed())."""
     db.get_project(conn(), id) or abort(404)
-    db.mark_reviewed(conn(), id, now())
-    return back("review")
+    answer = toggle_reviewed(id, "project")
+    return answer if fetched() else back("review")
 
 
 @app.template_filter()

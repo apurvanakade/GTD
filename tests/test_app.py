@@ -3201,7 +3201,9 @@ def test_review_projects_step(client, conn):
     db.set_project_outcome(conn, db.add_project(conn, "parked", status="waiting"), "reply in")
     html = client.get("/review?step=projects").get_data(as_text=True)
     c = card(html, "projects")
-    assert re.findall(r'href="/projects/\d+"[^>]*>(?:⚠ )?([^<]*)</a>', c) == ["vague", "stuck", "fresh", "parked", "seen"]
+    # Flagged first, then in the tabs' order (Active's, then Waiting's): a ✓ never moves a row, so the list stays put.
+    assert re.findall(r'href="/projects/\d+"[^>]*>(?:⚠ )?([^<]*)</a>', c) == ["vague", "stuck", "fresh", "seen", "parked"]
+    assert c.count('class="icon seen"') == 1  # seen's ✓, reviewed this week, is marked
     assert '"No next action">⚠ stuck' in c and '"No desired outcome">⚠ vague' in c
     assert "→ fence painted" in c and all(t in c for t in ("paint", "sand", "call")) and "prime" not in c  # next actions only
     assert 'Projects<span class="n">4</span>' in html  # not looked at this week, counted in the step list
@@ -3209,6 +3211,13 @@ def test_review_projects_step(client, conn):
     r = client.post(f"/projects/{stuck}/reviewed", headers={"Referer": "/review?step=projects"})
     assert r.status_code == 302 and r.location.endswith("/review?step=projects")
     assert db.get_project(conn, stuck)["reviewed_at"] == db.iso(NOW)
+    assert client.post(f"/projects/{fresh}/reviewed", headers=FETCH).json == {"seen": True, "ago": "today"}  # for app.js
+    assert db.get_project(conn, fresh)["reviewed_at"] == db.iso(NOW)
+    # A blue ✓ again undoes it: the review before comes back, or none.
+    assert client.post(f"/projects/{seen}/reviewed", headers=FETCH).json == {"seen": False, "ago": "never"}
+    assert db.get_project(conn, seen)["reviewed_at"] is None  # its only review was this week's
+    client.post(f"/projects/{fresh}/reviewed", headers=FETCH)
+    assert db.get_project(conn, fresh)["reviewed_at"] is None
     assert client.post("/projects/999/reviewed").status_code == 404
 
 
@@ -3363,14 +3372,22 @@ def test_review_someday_step_lists_tasks_and_hides_tickled_ones(client, conn):
     db.mark_reviewed(conn, back, NOW - timedelta(days=3), table="task")
     html = client.get("/review?step=someday").get_data(as_text=True)
     c = card(html, "someday")
-    # Never reviewed first, then the longest ago.
-    assert re.findall(r'href="/tasks/\d+">([^<]*)</a>', c) == ["never task", "old task", "back task"]
+    # In Someday's order (new on top), whenever each was reviewed: a ✓ never moves a row.
+    assert re.findall(r'href="/tasks/\d+">([^<]*)</a>', c) == ["back task", "never task", "old task"]
+    assert c.count('class="icon seen"') == 1  # back task's ✓, reviewed this week
     assert all(w in c for w in ("never", "5w ago", "3d ago"))
     assert 'href="/someday"' in c and "/projects/" not in c and "<h3>" not in c
     assert "hidden task" not in c and 'Someday / maybe<span class="n">2</span>' in html
     r = client.post(f"/tasks/{never}/reviewed", headers={"Referer": "/review?step=someday"})
     assert r.location.endswith("/review?step=someday")
     assert next(t for t in db.someday_tasks(conn) if t["id"] == never)["reviewed_at"] == db.iso(NOW)
+    assert client.post(f"/tasks/{old}/reviewed", headers=FETCH).json == {"seen": True, "ago": "today"}  # for app.js
+    reviewed = lambda id: next(t for t in db.someday_tasks(conn) if t["id"] == id)["reviewed_at"]
+    assert reviewed(old) == db.iso(NOW)
+    assert client.post(f"/tasks/{old}/reviewed", headers=FETCH).json == {"seen": False, "ago": "5w ago"}  # undone
+    assert reviewed(old) == db.iso(NOW - timedelta(days=40))
+    client.post(f"/tasks/{old}/reviewed", headers=FETCH)  # and redoes it
+    assert reviewed(old) == db.iso(NOW)
     assert client.post("/tasks/999/reviewed").status_code == 404
 
 

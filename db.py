@@ -97,6 +97,15 @@ CREATE TABLE IF NOT EXISTS task_reviews (
   task_id INTEGER PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
   reviewed_at TEXT NOT NULL
 );
+-- The reviews before each one's last, so the review's ✓ can be undone (unmark_reviewed()) back to the one before.
+CREATE TABLE IF NOT EXISTS project_review_history (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  reviewed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS task_review_history (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  reviewed_at TEXT NOT NULL
+);
 -- A project's desired outcome: what done looks like. A table of its own, like project_reviews.
 CREATE TABLE IF NOT EXISTS project_outcomes (
   project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -312,7 +321,7 @@ def send_to_inbox(c, id):
     if t is None or t["state"] != "open":
         return False
     update_task(c, id, project_id=None, ground=0, step=None, position=None, due_date=None, recur=None, remind_at=None)
-    for table in ("task_contexts", "task_areas", "task_reviews"):
+    for table in ("task_contexts", "task_areas", "task_reviews", "task_review_history"):
         c.execute(f"DELETE FROM {table} WHERE task_id = ?", (id,))
     return True
 
@@ -807,11 +816,6 @@ def projects(c, status="active"):
     return c.execute(f"{PROJECT_SELECT} WHERE p.status = ? ORDER BY p.position, p.id", (status,)).fetchall()
 
 
-def _least_reviewed(rows):
-    """Never reviewed first, then the longest ago."""
-    return sorted(rows, key=lambda r: (r["reviewed_at"] is not None, r["reviewed_at"] or ""))
-
-
 def someday_tasks(c):
     """H0's someday tasks, in their list's order, each with `reviewed_at` and its due date as `tickle_on`."""
     return c.execute(f"""SELECT {TASK_COLS}, t.due_date AS tickle_on,
@@ -820,22 +824,44 @@ def someday_tasks(c):
 
 
 def someday_to_review(c, today):
-    """Someday / maybe for the weekly review: H0 someday tasks, least recently reviewed first; one tickled to a later
-    date is out of sight until then."""
-    return _least_reviewed(t for t in someday_tasks(c) if not (t["tickle_on"] and t["tickle_on"] > today.isoformat()))
+    """Someday / maybe for the weekly review: H0 someday tasks in Someday's order (a ✓ moves none); one tickled to a
+    later date is out of sight until then."""
+    return [t for t in someday_tasks(c) if not (t["tickle_on"] and t["tickle_on"] > today.isoformat())]
 
 
 def projects_to_review(c):
-    """The weekly review's project step: active and waiting projects, flagged ones (⚠) first, then least recently
-    reviewed first."""
-    rows = _least_reviewed(projects(c) + projects(c, "waiting"))
-    return sorted(rows, key=lambda p: not p["warning"])
+    """The weekly review's project step: active and waiting projects, flagged ones (⚠) first, then in their tabs'
+    order (a ✓ moves none)."""
+    return sorted(projects(c) + projects(c, "waiting"), key=lambda p: not p["warning"])
+
+
+def reviewed_at(c, id, table="project"):
+    """When a project (or with table="task", a task) was last looked at in a weekly review; None if never."""
+    r = c.execute(f"SELECT reviewed_at FROM {table}_reviews WHERE {table}_id = ?", (id,)).fetchone()
+    return r and r[0]
 
 
 @atomic
 def mark_reviewed(c, id, now, table="project"):
-    """A project (or with table="task", an H0 someday task) looked at in a weekly review, at `now`."""
+    """A project (or with table="task", an H0 someday task) looked at in a weekly review, at `now`; the review
+    before goes to its history, for unmark_reviewed()."""
+    c.execute(f"INSERT INTO {table}_review_history ({table}_id, reviewed_at) SELECT {table}_id, reviewed_at"
+              f" FROM {table}_reviews WHERE {table}_id = ?", (id,))
     c.execute(f"INSERT OR REPLACE INTO {table}_reviews ({table}_id, reviewed_at) VALUES (?, ?)", (id, iso(now)))
+
+
+@atomic
+def unmark_reviewed(c, id, table="project"):
+    """Undo the last review of a project (or task): the one before it, from its history, is its last again, or none.
+    Returns that one's time, or None."""
+    c.execute(f"DELETE FROM {table}_reviews WHERE {table}_id = ?", (id,))
+    before = c.execute(f"SELECT rowid, reviewed_at FROM {table}_review_history WHERE {table}_id = ?"
+                       " ORDER BY reviewed_at DESC, rowid DESC LIMIT 1", (id,)).fetchone()
+    if before is None:
+        return None
+    c.execute(f"DELETE FROM {table}_review_history WHERE rowid = ?", (before[0],))
+    c.execute(f"INSERT INTO {table}_reviews ({table}_id, reviewed_at) VALUES (?, ?)", (id, before[1]))
+    return before[1]
 
 
 @atomic
