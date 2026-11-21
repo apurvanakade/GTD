@@ -484,6 +484,7 @@ li.task:has(> .title, > .name > .title) { cursor: pointer; }
 .review-list > li + li { margin-top: 2px; }
 .review-list form { display: contents; }
 .review-list button.icon { min-width: 0; width: 26px; height: 26px; padding: 0; line-height: 1; }
+.review-list button.icon.seen { color: var(--accent); font-weight: 700; }  /* reviewed this week */
 .review-list :is(.outcome, .nexts) { flex-basis: 100%; margin: 0; padding-left: calc(26px + 8px); font-size: var(--fs-s); }
 .review-list .outcome { color: var(--muted); }
 .review-list .nexts { list-style: none; margin-top: 2px; }

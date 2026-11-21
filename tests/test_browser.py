@@ -1133,6 +1133,28 @@ def test_review_arrow_keys_move_between_steps(page, live):
     page.wait_for_url("**/review?step=nexts")
 
 
+def test_review_tick_marks_in_place(page, live, conn):
+    """A project's or someday task's ✓ marks it reviewed where it is (no reload, the row stays put, the count drops);
+    a blue one undoes it."""
+    page.goto(live + "/review?step=projects")
+    page.evaluate("window.stayed = true")
+    rows = page.locator("#projects .review-list > li")
+    order = rows.locator("> a").all_inner_texts()
+    count = int(page.locator(".review-steps a[aria-current=step] .n").inner_text())
+    tick = rows.first.locator("button.icon")
+    tick.click()
+    page.wait_for_function("document.querySelector('#projects .review-list button.icon').classList.contains('seen')")
+    assert rows.first.locator(".date[title='Last reviewed']").inner_text() == "today"
+    assert int(page.locator(".review-steps a[aria-current=step] .n").inner_text()) == count - 1
+    assert all(p["reviewed_at"] for p in db.projects_to_review(conn) if p["title"] == order[0].removeprefix("⚠ "))
+    tick.click()  # a blue ✓ undoes it
+    page.wait_for_function("!document.querySelector('#projects .review-list button.icon').classList.contains('seen')")
+    assert rows.first.locator(".date[title='Last reviewed']").inner_text() == "never"
+    assert int(page.locator(".review-steps a[aria-current=step] .n").inner_text()) == count
+    page.wait_for_function("document.querySelector('#projects .review-list button.icon:not(.seen)')")
+    assert page.evaluate("window.stayed") and rows.locator("> a").all_inner_texts() == order
+
+
 def test_review_step_list_sticks_below_the_shown_nav(page, live):
     """The step list is sticky; when the nav slides back on scrolling up, the list moves down under it, not behind it."""
     page.set_viewport_size({"width": 1200, "height": 500})

@@ -210,6 +210,27 @@ document.addEventListener('keydown', e => {
   if (step) location = step.href;
   if (GO[e.key]) location = GO[e.key];
 });
+// The review's ✓ on a project or someday task (form.reviewed): saved in the background and marked in place, so the
+// list neither reloads, scrolls nor reorders. A plain one turns blue (.seen, reviewed now); a blue one undoes that,
+// back to the review before. The answer says how it reads; the step list's count follows.
+document.addEventListener('submit', async e => {
+  const f = e.target;
+  if (!f.matches?.('form.reviewed')) return;
+  e.preventDefault();
+  const r = await post(f.action, new FormData(f));
+  if (!r) return;
+  const {seen, ago} = await r.json(), tick = f.querySelector('button');
+  if (seen === tick.classList.contains('seen')) return;
+  tick.classList.toggle('seen', seen);
+  tick.title = seen ? 'Reviewed this week (click to undo)' : 'Mark reviewed';
+  f.closest('li').querySelector('.date[title="Last reviewed"]').textContent = ago;
+  const link = document.querySelector('.review-steps a[aria-current=step]');
+  let n = link.querySelector('.n');
+  const left = (n ? +n.textContent : 0) + (seen ? -1 : 1);
+  if (!left) return n?.remove();
+  if (!n) link.append(n = Object.assign(document.createElement('span'), {className: 'n'}));
+  n.textContent = left;
+});
 // Done's and Someday's bands: remember which you opened or folded, per page. Only a click is saved: a band that starts open fires
 // 'toggle' too, which would freeze today's default.
 const foldKey = d => `fold:${location.pathname}:${d.dataset.band}`;
