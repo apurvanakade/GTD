@@ -131,14 +131,14 @@ def test_finishing_a_projects_next_action_stays_on_the_page(page, live, conn):
 def test_done_then_project_opens_the_project_to_pick_next(page, live, conn):
     page.goto(live + "/tasks/2?embed=overlay")
     page.get_by_role("button", name="Done and open project").click()
-    page.wait_for_url("**/projects/active?project=1")  # Projects, with its overlay
+    page.wait_for_url("**/projects?project=1")  # Projects, with its overlay
     frame = page.frame_locator("dialog.overlay iframe")
     assert frame.get_by_role("button", name="Make next").count() >= 1  # "lay tiles" can take over
     assert db.get_task(conn, 2)["state"] == "done"
 
 
 def test_plus_inbox_dialog_captures(page, live, conn):
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     page.click(".add-inbox")
     assert page.locator(".capture-dialog").evaluate("d => d.open")
     page.fill(".capture-dialog input[name=title]", "from the dialog")
@@ -231,7 +231,7 @@ def test_the_bookmarklet_popup_stays_open_to_show_a_warning(page, live, conn):
 
 
 def test_slash_opens_the_capture_dialog_and_f_focuses_search(page, live):
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     page.keyboard.press("f")
     assert page.evaluate("document.activeElement.name") == "q"
     page.locator("body").click(position={"x": 5, "y": 5})
@@ -458,18 +458,17 @@ def test_drag_reorders_a_task_list(page, live, conn):
     assert [t["title"] for t in db.inbox_tasks(conn)] == ["legacy orphan", "inbox item", "third"]
 
 
-def test_drag_reorders_waiting_projects(page, live, conn):
-    db.set_project_outcome(conn, db.add_project(conn, "Another wait", status="waiting"), "reply")  # every project tab shares the code
-    page.goto(live + "/projects/waiting")
+def test_drag_reorders_projects(page, live, conn):
+    page.goto(live + "/projects")
     page.locator("button.peek-all").click()  # open steps mustn't confuse the drag
-    titles = lambda: page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts()  # not the folded-out steps
-    assert titles() == ["Another wait", "Waiting proj"]
-    with page.expect_response(lambda r: r.url.endswith("/order/waiting")) as saved:
-        row(page, "Waiting proj").locator(":scope > .grip").drag_to(row(page, "Another wait"), target_position={"x": 40, "y": 4})
+    titles = lambda: [t.removeprefix("⚠ ") for t in page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts()]  # not the folded-out steps
+    assert titles() == ["Waiting proj", "Stalled", "Kitchen"]
+    with page.expect_response(lambda r: r.url.endswith("/projects/order")) as saved:
+        row(page, "Kitchen").locator(":scope > .grip").drag_to(row(page, "Waiting proj"), target_position={"x": 40, "y": 4})
     assert saved.value.status == 204
-    assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj", "Another wait"]
+    assert [p["title"] for p in db.projects(conn)] == ["Kitchen", "Waiting proj", "Stalled"]
     page.reload()
-    assert titles() == ["Waiting proj", "Another wait"]
+    assert titles() == ["Kitchen", "Waiting proj", "Stalled"]
 
 
 def test_slash_on_a_task_list_focuses_its_add_box(page, live):
@@ -481,8 +480,8 @@ def test_slash_on_a_task_list_focuses_its_add_box(page, live):
 
 
 def test_project_row_arrow_folds_out_its_steps(page, live):
-    for url, project, step in (("/projects/active", "Kitchen", "lay tiles"), ("/projects/waiting", "Waiting proj", "parked step")):
-        page.goto(live + url)
+    for project, step in (("Kitchen", "lay tiles"), ("Waiting proj", "parked step")):
+        page.goto(live + "/projects")
         r = row(page, project)
         link = r.get_by_role("link", name=step, exact=True)
         assert not link.is_visible()
@@ -503,7 +502,7 @@ def test_project_row_arrow_folds_out_its_steps(page, live):
 
 def test_closing_a_changed_step_keeps_the_folded_out_steps(page, live, conn):
     """The reload that shows the change goes back to the same view: what was folded out stays, for that reload only."""
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     peeks = page.locator("button.peek")
     row(page, "Kitchen").locator("button.peek").click()
     row(page, "Kitchen").get_by_role("link", name="lay tiles", exact=True).click()
@@ -528,7 +527,7 @@ def test_closing_a_changed_step_keeps_the_folded_out_steps(page, live, conn):
 
 
 def test_expand_all_folds_out_every_project(page, live):
-    for url in ("/projects/active", "/projects/waiting"):
+    for url in ("/projects",):
         page.goto(live + url)
         steps, toggle = page.locator("ul.steps"), page.locator("button.peek-all")
         assert toggle.inner_text() == "Expand all" and not any(s.is_visible() for s in steps.all())
@@ -716,8 +715,8 @@ def test_question_mark_shows_shortcuts_and_letters_navigate(page, live):
     page.keyboard.press("n")  # ignored while the overlay is open
     page.keyboard.press("Escape")
     assert not page.locator(".help-dialog").evaluate("d => d.open")
-    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("s", "/someday"), ("p", "/projects/active"),
-                      ("Shift+W", "/projects/waiting"), ("n", "/next")):
+    for key, path in (("i", "/inbox"), ("w", "/waiting"), ("s", "/someday"), ("p", "/projects"),
+                      ("n", "/next")):
         with page.expect_navigation():
             page.keyboard.press(key)
         assert page.url == live + path
@@ -872,9 +871,9 @@ def test_dropping_an_inbox_row_on_reference_files_it_there(page, live, conn):
 
 
 def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live, conn):
-    """Under Waiting (as under Active), "＋ New project…" makes a project of that status."""
+    """Dropped on "＋ New project…", a task waits for the name in the panel, then goes into the new project."""
     page.goto(live + "/inbox")
-    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__waiting"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__"]')
     name = page.locator(".drop-panel .naming input[name=new_project]")
     name.wait_for(state="visible")
     assert page.locator(".drop-panel input[name=new_project]:visible").count() == 1
@@ -883,7 +882,7 @@ def test_dropping_an_inbox_row_on_new_asks_for_the_name_in_the_panel(page, live,
     page.keyboard.press("Enter")
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
-    assert (p["title"], p["status"]) == ("Dragged", "waiting")
+    assert (p["title"], p["state"]) == ("Dragged", "open")
     page.locator(".drop-panel").wait_for(state="hidden")  # after its slide-out
     # Every project list on the page has it at once, without a reload.
     assert page.locator(".drop-panel .target", has_text="Dragged").count() == 1
@@ -914,7 +913,7 @@ def test_a_rows_arrow_files_it_from_the_file_to_menu(page, live, conn):
     expect(row(page, "inbox item").locator("button.file-to")).to_have_css("opacity", "0")  # on hover only, as ↩
     menu = open_file_menu(page, row(page, "inbox item"))
     assert page.evaluate("document.activeElement.className") == "file-filter"
-    assert menu.locator("h3").all_inner_texts() == ["TASKS (NO PROJECT)", "ACTIVE", "WAITING"]
+    assert menu.locator("h3").all_inner_texts() == ["TASKS (NO PROJECT)", "PROJECTS"]
     menu.locator(".file-target", has_text="Kitchen").click()
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")  # in place, no reload
     expect(menu).to_be_hidden()
@@ -933,7 +932,7 @@ def test_the_file_to_menu_filters_as_you_type_and_marks_where_the_task_is(page, 
     page.keyboard.type("waiting p")
     expect(menu.locator(".file-target:visible")).to_have_text(["Waiting proj"])
     expect(menu.locator(".file-target.on")).to_have_text("Waiting proj")
-    assert menu.locator("h3:visible").all_inner_texts() == ["WAITING"]
+    assert menu.locator("h3:visible").all_inner_texts() == ["PROJECTS"]
     page.keyboard.press("Enter")
     expect(bob.locator(".proj")).to_have_text("Waiting proj")
     t = db.get_task(conn, 4)
@@ -954,14 +953,14 @@ def test_the_file_to_menu_makes_a_new_project(page, live, conn):
     page.keyboard.type("Garden")  # no match, and "＋ New project…" hides while filtering
     expect(menu.locator(".file-target:visible")).to_have_count(0)
     menu.locator(".file-filter").fill("")
-    menu.locator('[data-project="__new__waiting"]').click()
+    menu.locator('[data-project="__new__"]').click()
     name = menu.locator(".naming .new-name")
     expect(name).to_be_focused()
     page.keyboard.type("Garden")
     page.keyboard.press("Enter")
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     p = db.get_project(conn, db.get_task(conn, 1)["project_id"])
-    assert (p["title"], p["status"]) == ("Garden", "waiting")
+    assert (p["title"], p["state"]) == ("Garden", "open")
     menu = open_file_menu(page, row(page, "legacy orphan"))  # the next menu lists it
     expect(menu.locator(".file-target", has_text="Garden")).to_have_count(1)
 
@@ -973,7 +972,7 @@ def test_the_file_to_menu_lists_a_project_made_on_the_drop_panel(page, live, con
     expect(menu.locator(".file-target", has_text="Dragged")).to_have_count(0)
     page.keyboard.press("Escape")
     expect(menu).to_be_hidden()
-    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__waiting"]')
+    drag_to_panel(page, row(page, "inbox item"), '[data-project="__new__"]')
     page.locator(".drop-panel .naming input[name=new_project]").wait_for(state="visible")
     page.keyboard.type("Dragged")
     page.keyboard.press("Enter")
@@ -992,7 +991,7 @@ def test_the_file_to_menu_on_a_page_without_a_drop_panel_and_a_folded_out_step(p
     menu.locator(".file-target", has_text="Waiting proj").click()
     expect(row(page, "buy tiles").locator(".proj")).to_have_text("Waiting proj")
     assert db.get_task(conn, 2)["project_id"] == 3
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     page.locator('li[data-id="1"] > button.peek').click()
     step = page.locator('.steps > li[data-id="3"]')  # "lay tiles"
     step.hover()
@@ -1009,7 +1008,7 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     panel.wait_for(state="hidden")
     page.locator(".pin-panel").click()
     panel.wait_for(state="visible")
-    assert panel.locator("h3").all_text_contents() == ["Tasks (no project)", "Active", "Waiting"]
+    assert panel.locator("h3").all_text_contents() == ["Tasks (no project)", "Projects"]
     drag_to_panel(page, row(page, "inbox item"), '[data-project="1"]')
     page.wait_for_function("!document.querySelector('li.task[data-id=\"1\"]')")
     assert panel.is_visible()  # still pinned after the drop
@@ -1028,10 +1027,10 @@ def test_pinned_project_panel_stays_open_until_hidden(page, live, conn):
     with page.expect_navigation():  # a task tab's name goes to its page
         panel.locator('[data-project="waiting"] a').click()
     assert page.url == live + "/waiting"
-    with page.expect_navigation():  # a project group's heading goes to its project tab
-        panel.locator("h3 a", has_text="Active").click()
-    assert page.url == live + "/projects/active"
-    panel.wait_for(state="visible")  # the project tabs have it too, for their steps
+    with page.expect_navigation():  # the projects' heading goes to the Projects tab
+        panel.locator("h3 a", has_text="Projects").click()
+    assert page.url == live + "/projects"
+    panel.wait_for(state="visible")  # the Projects tab has it too, for its steps
     page.go_back()  # Reference has none
     with page.expect_navigation():
         panel.locator('[data-project="reference"] a').click()
@@ -1072,8 +1071,8 @@ def test_dragging_between_h0_and_a_project_on_next(page, live, conn):
 def test_dragging_a_project_cards_step_files_it(page, live, conn):
     """On a project tab a folded-out step's ⠿ drags it to the drop panel; the page redraws (the project's next action
     may change), its fold-outs still open. The project's own order isn't touched."""
-    page.goto(live + "/projects/active")
-    order = [p["id"] for p in db.projects(conn, "active")]
+    page.goto(live + "/projects")
+    order = [p["id"] for p in db.projects(conn)]
     page.locator(".peek-all").click()
     step = page.locator('.steps > li[data-id="3"]')  # "lay tiles", in Kitchen
     with page.expect_navigation():
@@ -1081,7 +1080,7 @@ def test_dragging_a_project_cards_step_files_it(page, live, conn):
     t = db.get_task(conn, 3)
     assert (t["project_id"], t["step"]) == (2, "later")
     sync_api.expect(page.locator('li.task[data-id="2"] .steps > li[data-id="3"]')).to_be_visible()
-    assert [p["id"] for p in db.projects(conn, "active")] == order
+    assert [p["id"] for p in db.projects(conn)] == order
     with page.expect_navigation():  # shift-clicked steps go together, from any project
         page.locator('.steps > li[data-id="2"]').click(modifiers=["Shift"])  # "buy tiles"
         page.locator('.steps > li[data-id="3"]').click(modifiers=["Shift"])
@@ -1096,16 +1095,8 @@ def test_dragging_a_waiting_task_keeps_it_waiting(page, live, conn):
     assert (db.get_task(conn, 4)["project_id"], db.get_task(conn, 4)["step"]) == (2, "waiting")
 
 
-def test_waiting_projects_and_tasks_have_their_own_tabs(page, live, conn):
-    """Waiting projects drag to reorder on their tab; Waiting lists the waiting tasks, and the panel's Waiting files
-    a task there."""
-    db.set_project_outcome(conn, db.add_project(conn, "Visa", status="waiting"), "visa issued")
-    page.goto(live + "/projects/waiting")
-    assert page.locator("ul[data-reorder] > li.task > a.title").all_inner_texts() == ["Visa", "Waiting proj"]
-    with page.expect_response(lambda r: r.url.endswith("/order/waiting")) as saved:
-        row(page, "Waiting proj").locator(":scope > .grip").drag_to(row(page, "Visa"), target_position={"x": 40, "y": 4})
-    assert saved.value.status == 204
-    assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj", "Visa"]
+def test_waiting_lists_the_waiting_tasks(page, live, conn):
+    """Waiting lists the waiting tasks, H0's and projects' alike, and the panel's Waiting files a task there."""
     measure = conn.execute("SELECT id FROM tasks WHERE title = ?", ("measure wall",)).fetchone()[0]
     page.goto(live + "/next")
     drag_to_panel(page, row(page, "measure wall"), '[data-project="waiting"]')
@@ -1114,7 +1105,7 @@ def test_waiting_projects_and_tasks_have_their_own_tabs(page, live, conn):
     page.goto(live + "/waiting")
     assert page.locator("ul[data-reorder] > li.task > a.title").count() == 0  # no project rows here
     assert page.locator("ul[data-reorder] > li.task > .name > a.title").all_inner_texts() == [
-        "measure wall", "parcel from Ann", "quote from Bob"]
+        "measure wall", "parcel from Ann", "parked step", "quote from Bob"]
     # An H0 waiting task dropped on a project stays waiting.
     parcel = conn.execute("SELECT id FROM tasks WHERE title = 'parcel from Ann'").fetchone()[0]
     drag_to_panel(page, row(page, "parcel from Ann"), '[data-project="2"]')
@@ -1275,11 +1266,11 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     assert db.get_task(conn, measure)["title"] == "measure all" and row(page, "measure all").count() == 1
     # /tasks/2, a step: Projects, its project's overlay, the step's over it. Closing each drops its part of the URL.
     page.goto(live + "/tasks/2")
-    assert page.url == live + "/projects/active?project=1&task=2" and task_overlay(page) == "buy tiles"
+    assert page.url == live + "/projects?project=1&task=2" and task_overlay(page) == "buy tiles"
     assert page.locator("dialog.overlay").count() == 2
     page.keyboard.press("Escape")
     page.wait_for_function("document.querySelectorAll('dialog.overlay').length === 1")
-    assert page.url == live + "/projects/active?project=1"
+    assert page.url == live + "/projects?project=1"
     # A step opened from its project's overlay stacks over it; its ↗ goes back down to the project, not a second copy.
     project = page.frame_locator("dialog.overlay iframe")
     project.locator("li.task", has_text="lay tiles").locator(".title").click()
@@ -1295,7 +1286,7 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.wait_for_function("document.querySelector('dialog.overlay iframe')?.src.includes('/projects/1?')")
     assert page.locator("dialog.overlay").count() == 1 and page.url == live + "/next"
     page.keyboard.press("Control+ArrowUp")  # at once, before its page is in: waits for it
-    page.wait_for_url(live + "/projects/active")
+    page.wait_for_url(live + "/projects")
     assert page.locator("dialog.overlay").count() == 0
     # ✕ abandons and stays, as ✓ does: the overlay shows it abandoned, with Revive; closing reloads the page under it.
     page.goto(live + "/next")
@@ -1325,11 +1316,11 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     frame.locator(".flashes").wait_for()
     page.keyboard.press("Escape")
     page.wait_for_selector("dialog.overlay", state="detached")
-    # Esc on an open popover (Outcome reached) closes only the popover; the next Esc closes the overlay.
-    page.goto(live + "/projects/active?project=1")
+    # Esc on an open popover (✓ Done, with open steps) closes only the popover; the next Esc closes the overlay.
+    page.goto(live + "/projects?project=1")
     page.wait_for_selector("dialog.overlay[open]")
     frame = page.frame_locator("dialog.overlay iframe")
-    frame.get_by_role("button", name="Outcome reached").click()
+    frame.get_by_role("button", name="Done", exact=True).click()
     sync_api.expect(frame.locator("#reached")).to_be_visible()
     page.keyboard.press("Escape")
     sync_api.expect(frame.locator("#reached")).to_be_hidden()
@@ -1337,7 +1328,7 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     page.keyboard.press("Escape")
     page.wait_for_selector("dialog.overlay", state="detached")
     # Closed while a tick-off is still on its way, it waits for it, then reloads the page under it.
-    page.goto(live + "/projects/active?project=1")
+    page.goto(live + "/projects?project=1")
     page.wait_for_selector("dialog.overlay[open]")
     held = []
     page.route("**/tasks/2/complete", lambda r: held.append(r))
@@ -1384,18 +1375,18 @@ def test_clicking_anywhere_on_a_row_opens_it(page, live):
     page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)  # blank space right of the title
     assert task_overlay(page) == "measure wall" and page.url == live + "/next"
     page.keyboard.press("Escape")
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     r = row(page, "Kitchen")
     box = r.bounding_box()
     page.mouse.click(box["x"] + box["width"] * 0.7, box["y"] + box["height"] / 2)
     page.wait_for_selector("dialog.overlay[open]")  # a project opens in its overlay too
-    assert page.url == live + "/projects/active"
+    assert page.url == live + "/projects"
 
 
 def test_clicking_a_rows_button_does_not_open_it(page, live):
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     row(page, "Kitchen").locator("button.peek").click()
-    assert page.url == live + "/projects/active"
+    assert page.url == live + "/projects"
 
 
 def test_horizons_walk_and_link_in_place(page, live, conn):
@@ -1550,18 +1541,29 @@ def test_nav_hides_and_returns_with_touch_scrolling(browser, live):
     ctx.close()
 
 
-def test_project_status_select_saves_on_pick(page, live, conn):
+def test_project_page_closes_and_revives(page, live, conn):
+    """✓ asks first what its open steps become (a popover); ✕ abandons with them; ↺ revives. Each stays on the page."""
     page.goto(live + "/projects/1?embed=overlay")
-    assert page.get_by_role("button", name="Abandon").count() == 0 and page.get_by_role("button", name="Someday").count() == 0
+    assert page.get_by_label("Status").count() == 0
+    page.get_by_role("button", name="Done", exact=True).click()
+    popover = page.locator("#reached")
+    expect(popover).to_be_visible()
+    expect(popover.locator("h2")).to_have_text("Done, with 3 open steps")
+    popover.get_by_role("button", name="Not yet").click()
+    expect(popover).to_be_hidden()
+    assert db.get_project(conn, 1)["state"] == "open"
+    page.get_by_role("button", name="Done", exact=True).click()
     with page.expect_navigation():
-        page.get_by_label("Status").select_option("waiting")
-    assert db.get_project(conn, 1)["status"] == "waiting" and page.url == live + "/projects/1?embed=overlay"
+        popover.get_by_role("button", name="Mark done").click()
+    assert db.get_project(conn, 1)["state"] == "done" and page.url == live + "/projects/1?embed=overlay"
+    assert [db.get_task(conn, i)["state"] for i in (2, 3, 4)] == ["done"] * 3  # its open steps with it
     with page.expect_navigation():
-        page.get_by_label("Status").select_option("abandoned")
-    assert db.get_project(conn, 1)["status"] == "abandoned"
+        page.get_by_role("button", name="Revive").click()
+    assert db.get_project(conn, 1)["state"] == "open" and page.url == live + "/projects/1?embed=overlay"
     with page.expect_navigation():
-        page.get_by_label("Status").select_option("active")
-    assert db.get_project(conn, 1)["status"] == "active"
+        page.get_by_role("button", name="Abandon", exact=True).click()
+    assert db.get_project(conn, 1)["state"] == "abandoned"
+    expect(page.get_by_role("button", name="Done", exact=True)).to_have_count(0)
 
 
 def test_task_step_select_saves_on_pick(page, live, conn):
@@ -1584,16 +1586,16 @@ def test_project_time_split_folds_out(page, live):
     assert page.get_by_text("Show completed").is_visible()  # completed steps start hidden
 
 
-def test_a_select_saves_typed_notes_before_it_submits(page, live, conn):
-    """The server leaves title and notes to autosave, so picking a status mustn't lose what was just typed."""
+def test_a_button_saves_typed_notes_before_it_submits(page, live, conn):
+    """The server leaves title and notes to autosave, so abandoning mustn't lose what was just typed."""
     page.goto(live + "/projects/1?embed=overlay")
     page.locator("form[data-autosave] .md-editor").click()
     page.keyboard.press("ControlOrMeta+End")
     page.keyboard.type(" typed")
     with page.expect_navigation():
-        page.get_by_label("Status").select_option("waiting")
+        page.get_by_role("button", name="Abandon", exact=True).click()
     p = db.get_project(conn, 1)
-    assert (p["status"], p["notes"]) == ("waiting", "tiles\nand grout typed")
+    assert (p["state"], p["notes"]) == ("abandoned", "tiles\nand grout typed")
 
 
 def test_enter_in_the_title_saves_without_reloading(page, live, conn):
@@ -1891,7 +1893,7 @@ def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
     expect(nxt).to_be_disabled()
     dialog.get_by_role("button", name="Close").click()
     # A project has no arrows; a step opened over its project's overlay walks the project's steps.
-    page.goto(live + "/projects/active?project=1")
+    page.goto(live + "/projects?project=1")
     dialog.get_by_role("button", name="Close").wait_for()
     assert dialog.locator(".walk:visible").count() == 0
     page.frame_locator("dialog.overlay iframe").locator("main li.task .name a.title").first.click()
@@ -1899,7 +1901,7 @@ def test_overlay_arrows_walk_the_list_it_was_opened_from(page, live, conn):
     expect(dialog.last.get_by_role("button", name="Next")).to_be_enabled()
     # Opened by URL, as a reminder's tap does: the same list, and the URL stops naming it once it's moved on.
     first = db.project_tasks(conn, 1)[0]["id"]
-    page.goto(live + f"/projects/active?project=1&task={first}")
+    page.goto(live + f"/projects?project=1&task={first}")
     dialog.last.get_by_role("button", name="Next").click()
     page.wait_for_url(lambda u: f"task={first}" not in u and "project=1" in u)
 
@@ -2097,7 +2099,7 @@ def test_at_offers_contexts_and_the_task_page_picks_them(page, live, conn):
     title.dispatch_event("input")
     assert offer.count() == 0  # typed in full
     # In the capture dialog, over its top layer, right under the box; Esc leaves what's typed, in the open dialog.
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     page.keyboard.press("/")
     page.keyboard.press("Tab")  # from the category box to the title
     page.keyboard.type("buy @")
@@ -2154,28 +2156,20 @@ def test_a_context_typed_on_a_tasks_own_title(page, live, conn):
     assert db.get_task(conn, tid)["title"] == "Journal"
 
 
-def test_dragging_a_project_onto_a_nav_tab_moves_it(page, live, conn):
-    """A project row dropped on the nav's Active or Waiting (projects) tab gets that status; its own tab is no target."""
-    pid = db.add_project(conn, "Another wait", status="waiting")
-    db.set_project_outcome(conn, pid, "reply")  # no ⚠ in its title
-    page.goto(live + "/projects/waiting")
-    tab = lambda s: page.locator(f'nav a[data-status="{s}"]')
-    with page.expect_response(lambda r: r.url.endswith(f"/projects/{pid}/move")) as saved:
-        row(page, "Another wait").locator(":scope > .grip").drag_to(tab("active"))
-    assert saved.value.status == 204
-    page.wait_for_function(f"!document.querySelector('ul[data-reorder] > li.task[data-id=\"{pid}\"]')")
-    assert db.get_project(conn, pid)["status"] == "active"
-    assert db.projects(conn, "active")[0]["id"] == pid  # on top of its new list
-    assert [p["title"] for p in db.projects(conn, "waiting")] == ["Waiting proj"]  # the rest kept their order
-    row(page, "Waiting proj").locator(":scope > .grip").drag_to(tab("waiting"))  # its own tab: nothing happens
-    assert db.projects(conn, "waiting")[0]["title"] == "Waiting proj"
-    assert row(page, "Waiting proj").count() == 1
+def test_dragging_a_project_onto_done_closes_it(page, live, conn):
+    """A project row dropped on the nav's Done is done, its open steps with it, and leaves the list in place; no other
+    tab takes it."""
+    page.goto(live + "/projects")
+    order = [p["id"] for p in db.projects(conn)]
     row(page, "Waiting proj").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="someday"]'))  # a task tab
-    assert db.get_project(conn, 3)["status"] == "waiting" and row(page, "Waiting proj").count() == 1
-    with page.expect_response(lambda r: r.url.endswith("/projects/3/move")):  # Done closes it
+    row(page, "Waiting proj").locator(":scope > .grip").drag_to(page.locator('nav a[href="/projects"]'))  # its own
+    assert db.get_project(conn, 3)["state"] == "open" and row(page, "Waiting proj").count() == 1
+    with page.expect_response(lambda r: r.url.endswith("/projects/3/done")) as saved:
         row(page, "Waiting proj").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="done"]'))
+    assert saved.value.status == 204
     page.wait_for_function("!document.querySelector('ul[data-reorder] > li.task[data-id=\"3\"]')")
-    assert db.get_project(conn, 3)["status"] == "done"
+    assert db.get_project(conn, 3)["state"] == "done" and db.get_task(conn, 8)["state"] == "done"
+    assert [p["id"] for p in db.projects(conn)] == [i for i in order if i != 3]  # the rest kept their order
 
 
 def test_dragging_a_task_onto_a_nav_tab_moves_it(page, live, conn):
@@ -2192,8 +2186,8 @@ def test_dragging_a_task_onto_a_nav_tab_moves_it(page, live, conn):
     assert [t["id"] for t in db.inbox_list(conn, TODAY)] == [i for i in order if i != t["id"]]
     row(page, "legacy orphan").locator(":scope > .grip").drag_to(page.locator('nav a[data-drop="inbox"]'))
     assert row(page, "legacy orphan").count() == 1  # its own tab takes nothing
-    row(page, "legacy orphan").locator(":scope > .grip").drag_to(page.locator('nav a[data-status="waiting"]'))
-    assert row(page, "legacy orphan").count() == 1  # nor a project tab
+    row(page, "legacy orphan").locator(":scope > .grip").drag_to(page.locator('nav a[href="/projects"]'))
+    assert row(page, "legacy orphan").count() == 1  # nor the Projects tab
     # A project's step dropped on Waiting stays in its project, waiting.
     page.goto(live + "/next")
     tid = conn.execute("SELECT id FROM tasks WHERE title = 'measure wall'").fetchone()[0]
@@ -2207,10 +2201,10 @@ def test_dragging_a_task_onto_a_nav_tab_moves_it(page, live, conn):
 
 
 def test_dragging_a_step_onto_another_project_row_moves_it(page, live, conn):
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     page.locator(".peek-all").click()
     with page.expect_navigation():
-        page.locator('.steps > li[data-id="3"] > .grip').drag_to(page.locator('main ul[data-status] > li.task[data-id="2"] > .title'))
+        page.locator('.steps > li[data-id="3"] > .grip').drag_to(page.locator('main ul[data-projects-list] > li.task[data-id="2"] > .title'))
     t = db.get_task(conn, 3)
     assert (t["project_id"], t["step"]) == (2, "later")
     sync_api.expect(page.locator('li.task[data-id="2"] .steps > li[data-id="3"]')).to_be_visible()
@@ -2237,7 +2231,7 @@ def test_the_category_box_offers_categories(page, live, conn):
     assert page.locator("main li.task .title", has_text="Discrete Math: grade hw").count() == 1
     # Capture starts in the category box; Tab goes on to the title. A new one is offered from then on (the dialog
     # adds in the background, no reload).
-    page.goto(live + "/projects/active")
+    page.goto(live + "/projects")
     page.keyboard.press("/")
     page.keyboard.type("prob stats")  # stored, and offered from then on, title-cased
     page.keyboard.press("Tab")

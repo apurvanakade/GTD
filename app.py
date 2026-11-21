@@ -73,7 +73,7 @@ def template_globals():
             "timer": timer, "stopped": None if timer or embed else stopped_timer(), "embed": embed,
             "capture_line": CAPTURE_VIEWS.get(request.endpoint), "filtered_view": request.endpoint in FILTERED_VIEWS,
             "overlays": [] if embed else opened(),
-            "project_groups": db.project_groups(conn()),  # every task form's File to (the capture dialog's on every page)
+            "open_projects": db.open_projects(conn()),  # every task form's File to (the capture dialog's on every page)
             "app_url": GTD_URL or request.host_url.rstrip("/"),
             "contexts": db.contexts(conn()), "categories": db.categories(conn()), "filter_ids": [x["id"] for x in chosen_contexts()],
             "context_filter": [x["name"] for x in chosen_contexts()], "hidden_by_filter": g.get("hidden_by_filter", 0),
@@ -103,7 +103,7 @@ def stopped_timer():
         return e
 
 
-NEW = "__new__"  # project_select's "＋ New project…" options (_task.html): __new__, __new__waiting
+NEW = "__new__"  # project_select's "＋ New project…" option (_task.html)
 
 
 def form_value(name):
@@ -116,10 +116,10 @@ def form_ids():
     return [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()]
 
 
-def new_project_made(title, status):
+def new_project_made(title):
     """Every new project is made here, so a background save that made one tells its page (projects_changed())."""
     g.projects_changed = True
-    return db.add_project(conn(), title, status=status)
+    return db.add_project(conn(), title)
 
 
 @app.after_request
@@ -147,16 +147,15 @@ def task_fields_from_form(current=None):
         fields["notes"] = fields["notes"] or ""
     raw = request.form.get("project_id")
     # The box stays posted, hidden, once another project is picked: it counts only with its own "＋ New…" option.
-    new_project = form_value("new_project") if raw is None or raw.startswith(NEW) else None
-    if raw is not None and not (raw.startswith(NEW) and not new_project):  # "＋ New project…" with no name: unchanged
+    new_project = form_value("new_project") if raw is None or raw == NEW else None
+    if raw is not None and not (raw == NEW and not new_project):  # "＋ New project…" with no name: unchanged
         # The picker offers "h0": ground level, a deliberate choice of no project.
         fields["ground"] = int(raw == "h0")
         fields["project_id"] = int(raw) if raw.isdigit() else None
         if fields["project_id"] and not db.get_project(conn(), fields["project_id"]):
             abort(400)  # no such project
-    if new_project:  # typed into the "new project" box. Its group sets the status.
-        status = (raw or "").removeprefix(NEW)
-        fields["project_id"] = new_project_made(new_project, status=status if status in PROJECT_STATUSES else "active")
+    if new_project:  # typed into the "new project" box
+        fields["project_id"] = new_project_made(new_project)
         fields["ground"] = 0
     if request.form.get("step") in ("next", "waiting", "later", "someday"):  # a project's or H0's step; inbox items drop it
         fields["step"] = request.form["step"]
@@ -338,8 +337,8 @@ def landing(t):
     if t["step"] == "waiting":
         pages.add(url_for("waiting"))
     if t["project_id"]:
-        if t["step"] == "next" and not t["due_date"] and t["project_status"] == "active":
-            pages.add(url_for("next_view"))  # Next lists active projects' undated next actions too
+        if t["step"] == "next" and not t["due_date"] and t["project_state"] == "open":
+            pages.add(url_for("next_view"))  # Next lists open projects' undated next actions too
         return t["project_title"], pages | {url_for("project_view", id=t["project_id"])}
     if t["step"] == "next":
         return ("the calendar", pages) if t["due_date"] else ("Next", {url_for("next_view")})
@@ -471,9 +470,6 @@ def to_step(c, t, step):
         if t["step"] == step:
             return
         db.update_task(c, t["id"], today=today(), step=step)
-        p = db.get_project(c, t["project_id"])
-        if step == "next" and p["status"] != "active":
-            flash(f"A next action of {p['title']}, which is {p['status']}, so it isn't on Next.")
     else:
         tickled = t["step"] == "someday" and t["due_date"] and t["due_date"] <= today().isoformat()
         if t["ground"] and t["step"] == step and not tickled:
@@ -593,7 +589,7 @@ def next_view():
 
 @app.route("/waiting")
 def waiting():
-    """Waiting tasks, H0's and project steps, in one dragged order. Waiting projects have their own tab."""
+    """Waiting tasks, H0's and project steps, in one dragged order: a project waits by a waiting step."""
     c = conn()
     return render_template("waiting.html", tasks=filtered(db.tasks_with_step(c, "waiting")))
 
@@ -753,7 +749,7 @@ def review():
         step = next((s for s in REVIEW_STEPS if s not in checked), REVIEW_STEPS[0])
     past = [date.fromisoformat(d) for d in db.reviews(c)]  # newest first
     return render_template("review.html", projects=db.projects_to_review(c),
-                           open_steps={**db.open_steps(c), **db.open_steps(c, "waiting")},
+                           open_steps=db.open_steps(c),
                            overdue=db.overdue(c, today()), someday=db.someday_to_review(c, today()),
                            nexts=db.next_list(c), waiting=db.tasks_with_step(c, "waiting"),
                            checklists=db.checklists(c), seen=seen, unseen=unseen, scratchpad=db.scratchpad(c),
@@ -873,7 +869,7 @@ def search_suggest():
                          "meta": r["project_title"] or ""})
         elif kind == "project":
             out.append({"title": r["title"], "url": url_for("project_view", id=r["id"]), "kind": "project",
-                        "meta": "" if r["status"] == "active" else r["status"]})
+                        "meta": "" if r["state"] == "open" else r["state"]})
         elif kind == "reference":
             out.append({"title": r["title"], "url": url_for("reference_view", id=r["id"]), "kind": "reference",
                         "meta": ""})
@@ -995,57 +991,34 @@ def to_inbox(id):
 
 # --- projects --------------------------------------------------------------
 
-@app.route("/projects/<any(active, waiting):status>")
-def projects_view(status):
-    """A project tab: the active or waiting projects. Active offers the closed ones (?done=1)."""
+@app.route("/projects")
+def projects_view():
+    """The Projects tab: every open project. It offers the closed ones too (?done=1)."""
     c = conn()
-    show = status == "active" and request.args.get("done") == "1"
-    return render_template("projects.html", status=status, projects=db.projects(c, status), steps=db.open_steps(c, status),
+    show = request.args.get("done") == "1"
+    return render_template("projects.html", projects=db.projects(c), steps=db.open_steps(c),
                            show_done=show, toggle_url=toggle_url(show),
                            done_projects=[p for s in db.CLOSED for p in db.closed_projects(c, s)] if show else [])
 
 
-@app.post("/projects/order/<any(active, waiting):status>")
-def projects_order(status):
-    """A project tab's drag-and-drop sends the project ids in their new order."""
-    c = conn()
-    db.reorder_projects(c, status, form_ids())
+@app.post("/projects/order")
+def projects_order():
+    """The Projects tab's drag-and-drop sends the project ids in their new order."""
+    db.reorder_projects(conn(), form_ids())
     return ("", 204) if fetched() else back()
-
-
-@app.post("/projects/<int:id>/move")
-def project_move(id):
-    """A project row dropped on a nav tab (a project tab, Active or Waiting: that status; Done: closed as done, its open
-    steps with it, as its page's status select does); open projects only."""
-    c = conn()
-    p = db.get_project(c, id) or abort(404)
-    status = request.form.get("status")
-    if status not in (*PROJECT_STATUSES, "done") or p["status"] not in PROJECT_STATUSES:
-        abort(400)
-    if status == "done":
-        db.close_project(c, id, "done", now=now())
-    elif status != p["status"]:
-        db.update_project(c, id, status=status)
-    return ("", 204) if fetched() else back("projects_view", status="active")
 
 
 @app.post("/projects")
 def project_create():
-    """A project tab's add line: a project of that tab's status (the hidden `status`)."""
-    status = request.form.get("status")
+    """The Projects tab's add line: a new project, on top."""
     if title := form_value("title"):
-        new_project_made(title, status=status if status in PROJECT_STATUSES else "active")
-    return back("projects_view", status="active")
-
-
-PROJECT_STATUSES = ("active", "waiting")  # what the status select sets; done or abandoned closes it
+        new_project_made(title)
+    return back("projects_view")
 
 
 def project_list(p, **args):
-    """The list a project is on: its project tab, else Done."""
-    if p["status"] in PROJECT_STATUSES:
-        return url_for("projects_view", status=p["status"], **args)
-    return url_for("done", **args)
+    """The list a project is on: Projects while open, else Done."""
+    return url_for("projects_view" if p["state"] == "open" else "done", **args)
 
 
 def project_home(p, **args):
@@ -1057,21 +1030,9 @@ def project_home(p, **args):
 def project_view(id):
     c = conn()
     p = db.get_project(c, id) or abort(404)
-    if request.method == "POST":
-        fields = {}  # title and notes are autosave's, as on the task page
-        status = request.form.get("status")
-        if status in db.CLOSED and p["status"] not in db.CLOSED:  # with its open steps; it's on Done, revivable
-            db.close_project(c, id, status, now=now())
-            flash(f"{'Done' if status == 'done' else 'Abandoned'}: “{p['title']}”. It's on Done.")
-            return back()
-        with db.transaction(c):
-            if p["status"] in db.CLOSED and status in PROJECT_STATUSES:  # revived with its steps, then the status
-                db.revive_project(c, id)
-            if status in PROJECT_STATUSES:
-                fields["status"] = status
-            db.update_project(c, id, **fields)
-            if "outcome" in request.form:
-                db.set_project_outcome(c, id, request.form["outcome"])
+    if request.method == "POST":  # the desired outcome; title and notes are autosave's, as on the task page
+        if "outcome" in request.form:
+            db.set_project_outcome(c, id, request.form["outcome"])
         return back()
     if not request.args.get("embed"):  # a project opens over its list, like a task
         return redirect(project_home(p))
@@ -1080,17 +1041,23 @@ def project_view(id):
                            times=db.step_totals(c, id, now()), **completed(abandoned=True, project_id=id))
 
 
-@app.post("/projects/<int:id>/reached")
-def project_reached(id):
-    """✓ on a project's outcome: it's done, its open steps marked done or abandoned (`steps`), as asked."""
+@app.post("/projects/<int:id>/<any(done, abandon):how>")
+def project_close(id, how):
+    """A project's ✓ (done: its open steps marked done or abandoned, `steps`, as its page asked) or ✕ (abandoned, its
+    open steps with it), or a project row dropped on Done (done). Open projects only; it's on Done, revivable. A fetch
+    (the nav drop) gets 204 and no flash: the row leaves in place."""
     c = conn()
     p = db.get_project(c, id) or abort(404)
-    steps = request.form.get("steps", "done")
-    if steps not in ("done", "abandoned") or p["status"] not in ("active", "waiting"):
+    state = "done" if how == "done" else "abandoned"
+    steps = request.form.get("steps", state)
+    if steps not in db.CLOSED or p["state"] != "open":
         abort(400)
     n = len(db.project_tasks(c, id))
-    db.close_project(c, id, "done", steps, now())
-    flash(f"Done: “{p['title']}”" + (f", {n} open step{'s' * (n > 1)} {'marked done' if steps == 'done' else 'abandoned'}." if n else "."))
+    db.close_project(c, id, state, steps, now())
+    if fetched():
+        return "", 204
+    word = "marked done" if steps == "done" else "abandoned"
+    flash(f"{state.capitalize()}: “{p['title']}”" + (f", {n} open step{'s' * (n > 1)} {word}." if n else "."))
     return back()
 
 
@@ -1099,7 +1066,7 @@ def project_revive(id):
     c = conn()
     db.get_project(c, id) or abort(404)
     db.revive_project(c, id)
-    flash("Revived as active: pick its next action.")
+    flash("Revived: pick its next action.")
     return back()
 
 
@@ -1109,7 +1076,7 @@ def project_delete(id):
     p = db.get_project(c, id) or abort(404)
     if db.delete_project(c, id):
         flash(f"Deleted “{p['title']}”.")
-        return redirect(url_for("projects_view", status="active"))
+        return redirect(url_for("projects_view"))
     flash("Only a project that never had tasks can be deleted: mark it done or abandoned instead.")
     return back()
 
@@ -1451,7 +1418,7 @@ def horizon_url(h):
 
 def horizon_todo(tree):
     """{step: how many things on its card want attention}: an empty purpose or vision note, an area with no vision
-    line, a goal or area with a ⚠, an active or waiting project or an H0 action serving nothing."""
+    line, a goal or area with a ⚠, an open project or an H0 action serving nothing."""
     blank = lambda h: not (h["notes"] or "").strip()
     return {"purpose": int(blank(tree["purpose"])),
             "vision": int(blank(tree["vision"])) + sum(not a["h"]["vision"] for a in tree["areas"]),
@@ -1479,7 +1446,7 @@ def horizons_view():
 
 @app.post("/horizons/<int:id>/add")
 def horizon_add(id):
-    """A goal's or area's add line on Horizons: a new active project (`kind=project`), H0 next action (`action`) or,
+    """A goal's or area's add line on Horizons: a new project (`kind=project`), H0 next action (`action`) or,
     under an area, goal (`goal`), already linked here. The action's File to and Step are preset to H0 next: adding it
     here is the decision to do it."""
     c = conn()
@@ -1491,7 +1458,7 @@ def horizon_add(id):
         return back("horizons_view")
     with db.transaction(c):
         if kind == "project":
-            db.link_project(c, new_project_made(form_value("title"), status="active"), id)
+            db.link_project(c, new_project_made(form_value("title")), id)
         elif kind == "goal":
             db.set_goal_area(c, db.add_horizon(c, "goal", form_value("title")), id)
         else:  # filed as its File to and Step say (H0 next, preset); only an H0 task hangs here

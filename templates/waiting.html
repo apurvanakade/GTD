@@ -3,7 +3,7 @@
 {% block title %}Waiting for{% endblock %}
 {% block actions %}{{ context_chip() }}{% if tasks or context_filter %}{{ pin_button() }}{% endif %}{% endblock %}
 {% block body %}
-{# Waiting tasks, H0's and project steps, dragged to reorder. Waiting projects have their own tab. #}
+{# Waiting tasks, H0's and project steps, dragged to reorder: whatever waits on someone else. #}
 <div data-filtered>{% if tasks %}{{ task_list(tasks) }}{% elif context_filter %}{{ nothing_here() }}{% else %}<ul class="tasks"><li class="empty clear">Nothing delegated.</li></ul>{% endif %}</div>
 {% if tasks or context_filter %}{{ move_panel(current='waiting', reload=True) }}{% endif %}
 {% endblock %}

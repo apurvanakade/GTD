@@ -64,7 +64,7 @@ async function fileTasks(url, rows, data) {
   if (reload) form.set('reload', '1');
   const r = await post(url, form);
   if (!r) return;
-  if (reload) return keepPeeks(), location.reload();  // a project tab's fold-outs stay open
+  if (reload) return keepPeeks(), location.reload();  // the Projects tab's fold-outs stay open
   const bands = bandsOf(rows);
   rows.forEach(li => li.remove());
   recount(bands);
@@ -323,7 +323,7 @@ document.querySelector('.capture-dialog form')?.addEventListener('submit', async
     down = null;
   });
 })();
-// A field marked data-submit (the project page's status and outcome)
+// A field marked data-submit (the project page's outcome)
 // saves its form as soon as it's changed. A form[data-background]
 // (the Vision card's area lines) saves in the background instead, as it's left (a textarea: Enter is a new line).
 document.addEventListener('submit', e => {
@@ -337,7 +337,7 @@ document.addEventListener('submit', e => {
 // stays H0's, anything else is a project's later or H0's next, so next is never picked for you. A someday or waiting
 // step leaves Repeats off, and a someday's date is its tickler. A task page reloads on a pick, rendered so already.
 const STEPS = {project: ['next', 'waiting', 'later'], h0: ['next', 'waiting', 'someday'], inbox: []};
-const stepKind = v => v === 'h0' ? 'h0' : /^(\d+|__new__\w*)$/.test(v) ? 'project' : 'inbox';
+const stepKind = v => v === 'h0' ? 'h0' : /^(\d+|__new__)$/.test(v) ? 'project' : 'inbox';
 function fitStep(f, moved) {
   const to = f.elements.project_id, step = f.elements.step;
   if (!(to instanceof HTMLSelectElement) || !(step instanceof HTMLSelectElement)) return;
@@ -379,7 +379,7 @@ document.addEventListener('change', e => {
   if (el.matches('[data-submit]')) return f.requestSubmit();
   if ('background' in f.dataset) return post(f.action, new FormData(f));  // form[data-background]: saved in place
   if (!('saveOnChange' in f.dataset) || !el.name || ['title', 'notes'].includes(el.name)) return;
-  if (el.value.startsWith('__new__') || el.closest('.date-field.picking')) return;
+  if (el.value === '__new__' || el.closest('.date-field.picking')) return;
   if (el.tagName === 'SELECT' || el.name === 'new_project') return f.requestSubmit();
   const body = new URLSearchParams();
   for (const name of ['category', 'due_date', 'recur', 'remind_at']) {
@@ -826,7 +826,7 @@ if (clocks.length) setInterval(() => clocks.forEach(c => {
   c.textContent = hms(Math.max(0, Math.floor(s)));
 }), 1000);
 // Drag ⠿ to reorder a list: a project's steps, the tasks of Inbox, Next (each band), Waiting and Someday, or the projects
-// on the project tabs (active, waiting); the new order is saved in the background. Shift-selected rows (move.js) go as a
+// on the Projects tab; the new order is saved in the background. Shift-selected rows (move.js) go as a
 // block, if they're all in this list. Delegated, since a context filter redraws the lists (applyFilter above).
 // Rows dropped on the drop panel (move.js) or a nav tab (below) leave instead.
 (() => {
@@ -889,32 +889,29 @@ function movableTask(li) {
 function draggedTasks(li) {
   return li.classList.contains('selected') ? [...document.querySelectorAll('main li.selected')].filter(movableTask) : [li];
 }
-// Drop on a nav tab, and the dragged rows go where the tab means. Tasks (any task list's rows, a project tab's
+// Drop on a nav tab, and the dragged rows go where the tab means. Tasks (any task list's rows, the Projects tab's
 // folded-out steps, a calendar task) go to its `data-drop` (/tasks/to/<tab>, task_to_tab() in app.py): Timer times
 // it, Inbox sends it back, Next and Waiting make it that step (in its project, if any), Someday an H0 someday task,
-// Done completes it, Reference files it there. A project row (the project tabs) takes the tab's project status
-// (/projects/<id>/move): a project tab's `data-status`, or Done's `data-project-status` (Done lists both kinds). The
+// Done completes it, Reference files it there. A project row (the Projects tab) goes only to Done
+// (`data-project-drop`, Done lists both kinds), closed as done with its open steps (/projects/<id>/done). The
 // page's own tab takes nothing. Throughout the drag the nav shows (body.dragging-nav) and the tab under the pointer
 // lights.
 (() => {
   if (!document.querySelector('nav')) return;  // in a frame
   const body = document.body;
-  let drag = null;  // {rows, status}: status, a project row's, the one tab it can't be dropped on; none for tasks
+  let drag = null;  // {rows, project}: project, a project row's drag
   const unmark = () => document.querySelectorAll('nav a.over').forEach(a => a.classList.remove('over'));
   const target = e => {
     const a = drag && e.target.closest?.('nav a');
     if (!a || a.classList.contains('on')) return null;
-    if (drag.status) {
-      const status = a.dataset.status || a.dataset.projectStatus;
-      return status && status !== drag.status ? {a, status} : null;
-    }
+    if (drag.project) return 'projectDrop' in a.dataset ? {a, project: true} : null;
     const tab = a.dataset.drop;
     return tab && !(tab === 'timer' && drag.rows.length > 1) ? {a, tab} : null;
   };
   document.addEventListener('dragstart', e => {
     const el = e.target.closest?.('li[draggable], a.ev[data-id]');
     if (!el) return;
-    if (el.matches('main ul[data-status] > li')) drag = {rows: [el], status: el.parentElement.dataset.status};
+    if (el.matches('main ul[data-projects-list] > li')) drag = {rows: [el], project: true};
     else if (el.matches('.cal a.ev')) drag = {rows: [el]};
     else if (movableTask(el)) drag = {rows: draggedTasks(el)};
     else return;
@@ -931,16 +928,16 @@ function draggedTasks(li) {
     const t = target(e);
     if (!t) return;
     e.preventDefault();
-    (t.status ? projectsTo : tasksTo)(drag.rows, t.status || t.tab);
+    t.project ? projectsDone(drag.rows) : tasksTo(drag.rows, t.tab);
   });
   document.addEventListener('dragend', () => { unmark(); body.classList.remove('dragging-nav'); drag = null; });
-  const projectsTo = async (rows, status) => {
-    for (const li of rows) if (!await post(`/projects/${li.dataset.id}/move`, new URLSearchParams({status}))) return;
+  const projectsDone = async rows => {
+    for (const li of rows) if (!await post(`/projects/${li.dataset.id}/done`, new URLSearchParams())) return;
     rows.forEach(li => li.remove());
     refreshNav();
   };
   // A task list's rows leave it in place, its flashes toasted. Anything else redraws the page, the flashes waiting
-  // for it: a project tab's steps (their project's ⚠ may change; the fold-outs stay open), the calendar's tasks
+  // for it: the Projects tab's steps (their project's ⚠ may change; the fold-outs stay open), the calendar's tasks
   // (they may stay, recolored), the timer (its pill).
   const tasksTo = async (rows, tab) => {
     const inPlace = tab !== 'timer' && rows.every(li => li.matches('main ul.tasks > li.task'));
@@ -1114,7 +1111,7 @@ if (frameElement) {
     e.preventDefault();
     if (await post(by.formAction, new FormData(e.target, by))) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });
-  // Esc in the frame closes its overlay, unless a dialog or popover in it (Outcome reached) takes it; a toast doesn't.
+  // Esc in the frame closes its overlay, unless a dialog or popover in it (a project's ✓ Done) takes it; a toast doesn't.
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !document.querySelector('dialog[open], :popover-open:not(.flashes)')) frameElement.closest('dialog')?.querySelector('.close')?.click();
   });

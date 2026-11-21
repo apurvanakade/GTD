@@ -3,11 +3,10 @@
 {% macro badge(n, label, cls='') %}{% if n %} <b class="badge s{{ 1 if n < 3 else 2 if n < 6 else 3 }}{{ ' ' ~ cls if cls }}" title="{{ n }} {{ label }}" aria-label="{{ n }}"></b>{% endif %}{% endmacro %}
 <nav>
   {% set ep = request.endpoint %}
-  {% set status = (request.view_args or {}).get('status') %}
-  {# Three groups: working minute by minute, lists of tasks, lists of projects; each tab lists one kind.
-     Drop targets (static/app.js): `data-drop`, the tab a dragged task goes to (/tasks/to/<tab>); a project tab's
-     `data-status`, or Done's `data-project-status`, the status a dragged project row takes. Task rows go only to
-     task tabs, project rows only to project tabs; Done, listing both, takes both. #}
+  {# Three groups: working minute by minute, lists of tasks, the projects; each tab lists one kind.
+     Drop targets (static/app.js): `data-drop`, the tab a dragged task goes to (/tasks/to/<tab>); Done's
+     `data-project-drop`, where a dragged project row is closed as done. Task rows go only to task tabs; Done,
+     listing both, takes both. #}
   <span class="group">
     <a href="{{ url_for('timer_view') }}" class="{{ 'on' if ep == 'timer_view' }}" data-drop="timer">Timer</a>
     <a href="{{ url_for('calendar_view') }}" class="{{ 'on' if ep == 'calendar_view' }}">Calendar{{ badge(counts.agenda, 'due today or overdue' if counts.overdue else 'due today', 'hot' if counts.overdue) }}</a>
@@ -19,9 +18,7 @@
     <a href="{{ url_for('someday') }}" class="{{ 'on' if ep == 'someday' }}" data-drop="someday">Someday</a>
   </span>
   <span class="group">
-    <small class="caption">Projects</small>
-    <a href="{{ url_for('projects_view', status='active') }}" class="{{ 'on' if ep == 'projects_view' and status == 'active' }}" data-status="active">Active{{ badge(counts.flagged.active, 'need a next action or outcome', 'warn') }}</a>
-    <a href="{{ url_for('projects_view', status='waiting') }}" class="{{ 'on' if ep == 'projects_view' and status == 'waiting' }}" data-status="waiting">Waiting{{ badge(counts.flagged.waiting, 'need a desired outcome', 'warn') }}</a>
+    <a href="{{ url_for('projects_view') }}" class="{{ 'on' if ep == 'projects_view' }}">Projects{{ badge(counts.flagged, 'need a next action or outcome', 'warn') }}</a>
   </span>
   {#- Weekly-review pages and Reference: pushed right and muted, out of the daily tabs' way. On a nav too narrow for
       every tab they fold behind ⋯, a popover (style.css). #}
@@ -29,7 +26,7 @@
   <span class="aux" id="nav-more" popover>
     <a href="{{ url_for('review') }}" class="{{ 'on' if ep == 'review' }}">Review</a>
     <a href="{{ url_for('horizons_view') }}" class="{{ 'on' if ep in ('horizons_view', 'horizon_view') }}">Horizons</a>
-    <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}" data-drop="done" data-project-status="done">Done</a>
+    <a href="{{ url_for('done') }}" class="{{ 'on' if ep == 'done' }}" data-drop="done" data-project-drop>Done</a>
     <a href="{{ url_for('reference') }}" class="{{ 'on' if ep in ('reference', 'reference_view') }}" data-drop="reference">Reference</a>
   </span>
   <button type="button" class="theme-toggle icon" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
