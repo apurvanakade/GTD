@@ -1153,6 +1153,22 @@ def test_review_tick_marks_in_place(page, live, conn):
     assert int(page.locator(".review-steps a[aria-current=step] .n").inner_text()) == count
     page.wait_for_function("document.querySelector('#projects .review-list button.icon:not(.seen)')")
     assert page.evaluate("window.stayed") and rows.locator("> a").all_inner_texts() == order
+    assert tick.get_attribute("aria-label") == "Mark reviewed"
+    # Ticking the last unseen one shows the card's "Nothing to do."; undoing one takes it away.
+    page.goto(live + "/review?step=someday")
+    empty, n = page.locator("#someday > p.empty"), page.locator(".review-steps a[aria-current=step] .n")
+    assert not empty.count()
+    while (left := page.locator("#someday .review-list button.icon:not(.seen)")).count():
+        before = n.inner_text()
+        left.first.click()
+        page.wait_for_function(
+            f"(document.querySelector('.review-steps a[aria-current=step] .n')?.textContent ?? '0') != '{before}'")
+    assert empty.inner_text() == "Nothing to do." and not n.count()
+    seen = page.locator("#someday .review-list button.icon.seen").first
+    assert seen.get_attribute("aria-label") == "Reviewed this week (click to undo)"
+    seen.click()
+    page.wait_for_function("!document.querySelector('#someday > p.empty')")
+    assert n.inner_text() == "1"
 
 
 def test_review_step_list_sticks_below_the_shown_nav(page, live):

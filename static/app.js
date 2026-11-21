@@ -222,12 +222,17 @@ document.addEventListener('submit', async e => {
   const {seen, ago} = await r.json(), tick = f.querySelector('button');
   if (seen === tick.classList.contains('seen')) return;
   tick.classList.toggle('seen', seen);
-  tick.title = seen ? 'Reviewed this week (click to undo)' : 'Mark reviewed';
+  tick.title = tick.ariaLabel = seen ? 'Reviewed this week (click to undo)' : 'Mark reviewed';
   f.closest('li').querySelector('.date[title="Last reviewed"]').textContent = ago;
-  const link = document.querySelector('.review-steps a[aria-current=step]');
+  const link = document.querySelector('.review-steps a[aria-current=step]'), card = f.closest('li.step');
   let n = link.querySelector('.n');
   const left = (n ? +n.textContent : 0) + (seen ? -1 : 1);
-  if (!left) return n?.remove();
+  card.querySelector(':scope > p.empty')?.remove();  // the card's "Nothing to do." follows the count
+  if (!left) {
+    n?.remove();
+    const empty = Object.assign(document.createElement('p'), {className: 'empty', textContent: 'Nothing to do.'});
+    return card.querySelector(':scope > p.hint').after(empty);
+  }
   if (!n) link.append(n = Object.assign(document.createElement('span'), {className: 'n'}));
   n.textContent = left;
 });

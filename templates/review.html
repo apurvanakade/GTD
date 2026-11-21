@@ -23,7 +23,7 @@
 {#- A project's or someday task's ✓: accent once reviewed this week (seen()), when a click undoes it
    (toggle_reviewed()). static/app.js posts it in the background and marks it in place, so the list neither reloads
    (nor scrolls) nor reorders. #}
-{% macro tick(on) %}<button class="icon{{ ' seen' if on }}" title="{{ 'Reviewed this week (click to undo)' if on else 'Mark reviewed' }}" aria-label="Mark reviewed">✓</button>{% endmacro %}
+{% macro tick(on) %}{% set label = 'Reviewed this week (click to undo)' if on else 'Mark reviewed' %}<button class="icon{{ ' seen' if on }}" title="{{ label }}" aria-label="{{ label }}">✓</button>{% endmacro %}
 {#- The scratchpad, one for both loose-ends steps, on the shown card only (one editor on the page): it saves itself
    (static/autosave.js), and keeps its text until you clear it. Clear keeps the text for Undo (db.clear_scratchpad()). #}
 {% macro pad(key) %}{% if key == step %}
