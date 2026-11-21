@@ -1307,6 +1307,17 @@ def test_a_task_opens_in_an_overlay_over_the_page(page, live, conn):
     with page.expect_navigation():
         page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Delete for good").click()
     assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_task(conn, measure) is None
+    # So does a closed project's, one that never had a task.
+    empty = db.add_project(conn, "Unused plan")
+    db.close_project(conn, empty, "abandoned")
+    conn.commit()
+    page.goto(live + "/done")
+    page.locator("li.task", has_text="Unused plan").locator(".title").click()
+    page.wait_for_selector("dialog.overlay[open]")
+    page.once("dialog", lambda d: d.accept())
+    with page.expect_navigation():
+        page.frame_locator("dialog.overlay iframe").get_by_role("button", name="Delete for good").click()
+    assert page.url == live + "/done" and page.locator("dialog.overlay").count() == 0 and db.get_project(conn, empty) is None
     # A toast in the frame (an unreadable box's warning) doesn't take Esc: it still closes the overlay.
     page.goto(live + "/next?task=6")  # "bins"
     task_overlay(page)

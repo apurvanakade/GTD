@@ -25,7 +25,7 @@
       <button formaction="{{ url_for('project_close', id=p.id, how='abandon') }}" class="icon danger" title="Abandon, with its open steps (stays on Done, revivable)" aria-label="Abandon">✕</button>
     {% else %}{# done or abandoned: the same but for the name #}
       <button formaction="{{ url_for('project_revive', id=p.id) }}" class="icon" title="Bring it back, with its steps" aria-label="Revive">↺</button>
-      {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" formtarget="_top" class="icon danger" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this project for good?')">✕</button>{% endif %}
+      {% if deletable %}<button formaction="{{ url_for('project_delete', id=p.id) }}" data-close class="icon danger" title="Delete for good" aria-label="Delete for good" onclick="return confirm('Delete this project for good?')">✕</button>{% endif %}
     {% endif %}
   </div>
   <div class="title-line outcome">

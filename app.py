@@ -1072,13 +1072,15 @@ def project_revive(id):
 
 @app.post("/projects/<int:id>/delete")
 def project_delete(id):
+    """Deletes a project that never had a task for good; from its overlay (a fetch) the overlay then closes
+    (data-close, static/app.js), as a task's delete for good does."""
     c = conn()
     p = db.get_project(c, id) or abort(404)
     if db.delete_project(c, id):
         flash(f"Deleted “{p['title']}”.")
-        return redirect(url_for("projects_view"))
+        return ("", 204) if fetched() else redirect(url_for("done"))  # where closed projects are listed
     flash("Only a project that never had tasks can be deleted: mark it done or abandoned instead.")
-    return back()
+    return ("", 400) if fetched() else back()
 
 
 @app.post("/projects/<int:id>/order")

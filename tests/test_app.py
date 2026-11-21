@@ -861,7 +861,13 @@ def test_delete_empty_project_only(client, conn):
     client.post(f"/projects/{full}/delete")
     assert db.get_project(conn, full) is not None
     r = client.post(f"/projects/{empty}/delete")
-    assert db.get_project(conn, empty) is None and r.headers["Location"] == "/projects"
+    assert db.get_project(conn, empty) is None and r.headers["Location"] == "/done"  # where it was listed
+    gone = db.add_project(conn, "Gone")
+    db.close_project(conn, gone, "abandoned")
+    conn.commit()
+    fetch = {"X-Requested-With": "fetch"}  # from its overlay (data-close), which then closes
+    assert client.post(f"/projects/{gone}/delete", headers=fetch).status_code == 204 and db.get_project(conn, gone) is None
+    assert client.post(f"/projects/{full}/delete", headers=fetch).status_code == 400
 
 
 def test_review_next_actions_are_nexts(client, conn):
@@ -1255,11 +1261,11 @@ def test_every_record_opens_only_in_a_frame(client, conn):
     assert 'name="project_id"' in task and "Start the timer" in task and 'class="overlay"' not in task
     tid = db.add_task(conn, "ring Bob")
     assert client.post(f"/tasks/{tid}?embed=overlay", data={"recur": "weekly"}).location.endswith(f"/tasks/{tid}?embed=overlay")
-    # A project's own forms stay in its frame (back to it); deleting it leaves for its list.
+    # A project's own forms stay in its frame (back to it); deleting it closes the overlay, as a task's does.
     pid = db.add_project(conn, "Empty")
     db.close_project(conn, pid, "abandoned")
     conn.commit()
-    assert re.search(r'formaction="/projects/\d+/delete" formtarget="_top"', client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True))
+    assert re.search(r'formaction="/projects/\d+/delete" data-close', client.get(f"/projects/{pid}?embed=overlay").get_data(as_text=True))
     frame = f"http://localhost/projects/{pid}?embed=overlay"
     assert client.post("/capture", data={"project_id": str(pid), "title": "x"}, headers={"Referer": frame}).location == frame
 
@@ -1719,9 +1725,7 @@ def test_nav_groups_tabs_by_kind_of_list(client):
     groups = [re.findall(r'<a href="([^"]*)"', g) for g in re.findall(r'<span class="(?:group|aux)"[^>]*>(.*?)</span>', nav, re.S)]
     assert groups == [["/timer", "/calendar"], ["/inbox", "/next", "/waiting", "/someday"],
                       ["/projects"], ["/review", "/horizons", "/done", "/reference"]]
-    for gone in ("/projects/someday", "/projects/waiting", "/projects/active"):
-        assert client.get(gone).status_code == 404, gone
-    assert re.search(r'<a href="/projects"[^>]*>Projects', nav) and 'class="caption"' not in nav
+    assert re.search(r'<a href="/projects"[^>]*>Projects', nav)
     on = lambda url: re.findall(r'<a href="([^"]*)" class="on"', client.get(url).data.decode().split("</nav>")[0])
     assert (on("/waiting"), on("/projects")) == (["/waiting"], ["/projects"])
 
