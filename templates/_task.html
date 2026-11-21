@@ -50,8 +50,8 @@
 
 {# A done or abandoned project's row (Done, Projects' completed): ✓ or ✕ as a task row has, its date and Revive. #}
 {% macro closed_project(p) %}
-<li class="task"><span class="check" title="{{ 'Done' if p.status == 'done' else 'Abandoned' }}" aria-hidden="true">{{ '✓' if p.status == 'done' else '✕' }}</span><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>
-  <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to Active, with its steps">Revive</button></form></li>
+<li class="task"><span class="check" title="{{ 'Done' if p.state == 'done' else 'Abandoned' }}" aria-hidden="true">{{ '✓' if p.state == 'done' else '✕' }}</span><a class="title" href="{{ url_for('project_view', id=p.id) }}">{{ p.title }}</a><span class="meta"><span class="date">{{ p.completed_at|local_date if p.completed_at }}</span><span class="recur"></span><span class="remind"></span></span>
+  <form method="post" action="{{ url_for('project_revive', id=p.id) }}" class="row-btn"><button title="Back to Projects, with its steps">Revive</button></form></li>
 {% endmacro %}
 
 {# A task list (Inbox, Waiting, Someday), dragged by ⠿ to reorder (/tasks/order) or onto the drop panel. #}
@@ -140,10 +140,9 @@
 {# The drop panel's task targets, in the nav's order: H0 with that step (task_move() in app.py). #}
 {% set task_targets = [('h0', 'Next'), ('waiting', 'Waiting'), ('someday', 'Someday')] %}
 
-{# The one project list (db.project_groups(): the open projects, one group per project tab), as the task dropdown here
-   and as the drop panel in project_targets(). Each group starts with "＋ New project…" (value __new__ or
-   __new__waiting: a project of that status),
-   which reveals the name box beside it, in CSS; the server ignores it without a name. `keep` (a
+{# The one project list (db.open_projects(), in the Projects tab's order), as the task dropdown here and as the drop
+   panel in project_targets(). It starts with "＋ New project…" (value __new__), which reveals the name box beside
+   it, in CSS; the server ignores it without a name. `keep` (a
    task of a done or abandoned project, which no list offers, or that project's own add line) keeps its project
    selectable, so saving the task leaves it there and a step added there lands in it.
    Both mark their list `data-projects` (its kind), so refreshProjects() in static/app.js redraws every one of them
@@ -154,25 +153,25 @@
 <select name="project_id" aria-label="{{ 'File to' if filing else 'Project' }}" data-projects="select">
   <option value="">{{ 'inbox' if filing else 'project…' }}</option>
   <option value="h0"{% if selected == 'h0' %} selected{% endif %}>H0 · ground level (no project)</option>
-  {% for label, ps, new in project_groups %}<optgroup label="{{ label }}">
-    <option value="{{ new }}">＋ New project…</option>
-    {% for p in ps %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
-  </optgroup>{% endfor %}
+  <optgroup label="Projects">
+    <option value="__new__">＋ New project…</option>
+    {% for p in open_projects %}<option value="{{ p.id }}"{% if p.id == selected %} selected{% endif %}>{{ p.title }}</option>{% endfor %}
+  </optgroup>
   {% if reference %}<option value="reference">Reference</option>{% endif %}
-  {% if keep %}<optgroup label="{{ keep.project_status|capitalize }}"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
+  {% if keep %}<optgroup label="{{ keep.project_state|capitalize }}"><option value="{{ keep.project_id }}" selected>{{ keep.project_title }}</option></optgroup>{% endif %}
 </select>
 <input name="new_project" placeholder="new project" aria-label="New project" size="14">
 {% endmacro %}
 
-{# The drop panel's targets, as the nav: the task tabs, the project tabs' projects, then Reference; `current` (a
-   project id, 'waiting' or 'someday') is where the page's tasks already are, so it isn't offered. Every name is a
-   link: a tab's (Next, a project group's heading, Reference) goes to its page, a project's opens its overlay. #}
+{# The drop panel's targets, as the nav: the task tabs, the open projects, then Reference; `current` (a project id,
+   'waiting' or 'someday') is where the page's tasks already are, so it isn't offered. Every name is a link: a tab's
+   (Next, the Projects heading, Reference) goes to its page, a project's opens its overlay. #}
 {% macro project_targets(current=none) %}
 <div class="targets" data-projects="panel"><section class="group"><h3>Tasks (no project)</h3>
   {% for key, label in task_targets if key != current %}<div class="target" data-project="{{ key }}" title="H0: no project, on purpose"><a href="{{ url_for({'h0': 'next_view'}.get(key, key)) }}" draggable="false">{{ label }}</a></div>{% endfor %}</section>
-{% for label, ps, new in project_groups %}<section class="group"><h3><a href="{{ url_for('projects_view', status=label.lower()) }}" draggable="false">{{ label }}</a></h3>
-  <div class="target new" data-project="{{ new }}">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
-  {% for p in ps if p.id != current %}<div class="target" data-project="{{ p.id }}"><a href="{{ url_for('project_view', id=p.id) }}" draggable="false">{{ p.title }}</a></div>{% endfor %}</section>{% endfor %}
+<section class="group"><h3><a href="{{ url_for('projects_view') }}" draggable="false">Projects</a></h3>
+  <div class="target new" data-project="__new__">＋ New project…<input name="new_project" placeholder="name, then Enter" aria-label="New project" autocomplete="off"></div>
+  {% for p in open_projects if p.id != current %}<div class="target" data-project="{{ p.id }}"><a href="{{ url_for('project_view', id=p.id) }}" draggable="false">{{ p.title }}</a></div>{% endfor %}</section>
 <div class="target" data-project="reference" title="Not actionable: keep it as a reference item"><a href="{{ url_for('reference') }}" draggable="false">Reference</a></div></div>
 {% endmacro %}
 
@@ -184,8 +183,8 @@
 <button type="button" class="file-to" data-at="{{ at }}" aria-haspopup="menu" title="File to…" aria-label="File to">→</button>
 {%- endmacro %}
 
-{# The File to menu (/tasks/file-to, fetched by static/app.js): the drop panel's places (task_targets, the project
-   tabs' projects, each tab with "＋ New project…", Reference) as buttons, under a box filtering them as you type. A
+{# The File to menu (/tasks/file-to, fetched by static/app.js): the drop panel's places (task_targets, the open
+   projects with "＋ New project…", Reference) as buttons, under a box filtering them as you type. A
    pick files the task as a drop there does (/tasks/move). No links: a name here only files. #}
 {% macro file_menu() %}
 <div class="file-menu-body" data-move="{{ url_for('task_move') }}">
@@ -193,19 +192,19 @@
   <div class="file-list">
     <section><h3>Tasks (no project)</h3>
       {% for key, label in task_targets %}<button type="button" class="file-target" data-project="{{ key }}">{{ label }}</button>{% endfor %}</section>
-    {% for label, ps, new in project_groups %}<section><h3>{{ label }}</h3>
-      <button type="button" class="file-target new" data-project="{{ new }}">＋ New project…</button>
-      <input class="new-name" placeholder="name, then Enter" aria-label="New {{ label|lower }} project" autocomplete="off">
-      {% for p in ps %}<button type="button" class="file-target" data-project="{{ p.id }}">{{ p.title }}</button>{% endfor %}</section>{% endfor %}
+    <section><h3>Projects</h3>
+      <button type="button" class="file-target new" data-project="__new__">＋ New project…</button>
+      <input class="new-name" placeholder="name, then Enter" aria-label="New project" autocomplete="off">
+      {% for p in open_projects %}<button type="button" class="file-target" data-project="{{ p.id }}">{{ p.title }}</button>{% endfor %}</section>
     <section><button type="button" class="file-target" data-project="reference" title="Not actionable: keep it as a reference item">Reference</button></section>
   </div>
 </div>
 {% endmacro %}
 
-{# The drop panel of every task list and project tab (static/move.js): it slides in while an open row (or a project
+{# The drop panel of every task list and the Projects tab (static/move.js): it slides in while an open row (or a project
    card's folded-out step) is dragged, or stays while pinned by the header's File to button (pin_button()); dropping a
    row on a target moves the task there. The pin holds on every page; `reload`: the page redraws after a move instead
-   of dropping the row (Waiting, where a moved waiting step stays; the project tabs, where a filed step can change its
+   of dropping the row (Waiting, where a moved waiting step stays; the Projects tab, where a filed step can change its
    project's ⚠ and next action). #}
 {% macro pin_button() %}<button type="button" class="pin-panel" aria-pressed="false" title="Keep the places to file to open">File to</button>{% endmacro %}
 {% macro move_panel(current=none, reload=False, stays=none) %}
@@ -214,21 +213,21 @@
 <script src="{{ url_for('static', filename='move.js') }}"></script>
 {% endmacro %}
 
-{# A project as a card (the project tabs): ⠿ to drag, ▸ folds out its open steps, ⚠ when it lacks a next action
-   or a desired outcome (the tooltip says which; else it's the outcome). #}
+{# A project as a card (the Projects tab): ⠿ to drag, ▸ folds out its open steps, ⚠ when it lacks a next action (or
+   waiting-for) or a desired outcome (the tooltip says which; else it's the outcome). #}
 {% macro project_card(p, steps) %}
 <li class="task{{ ' flagged' if p.warning }}" data-id="{{ p.id }}"{% if p.warning or p.outcome %} title="{{ p.warning or p.outcome }}"{% endif %}>
-  {% if p.status in ('active', 'waiting') %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
+  {% if p.state == 'open' %}<span class="grip" title="Drag to reorder" aria-hidden="true">⠿</span>{% endif %}
   {{ peek_button() }}
   <a class="title" href="{{ url_for('project_view', id=p.id) }}">{% if p.warning %}⚠ {% endif %}{{ p.title }}</a>
   {{ peek_steps(steps.get(p.id, [])) }}
 </li>
 {% endmacro %}
 
-{# The project tabs: one list of tight project rows, dragged to reorder, or onto another project tab in the nav to
-   change status (static/app.js). #}
-{% macro project_list(ps, steps, status, empty) %}
-{% if ps %}<ul class="tasks" data-reorder="{{ url_for('projects_order', status=status) }}" data-status="{{ status }}">
+{# The Projects tab: one list of tight project rows, dragged to reorder, or onto Done in the nav to close as done
+   (static/app.js). #}
+{% macro project_list(ps, steps, empty) %}
+{% if ps %}<ul class="tasks" data-reorder="{{ url_for('projects_order') }}" data-projects-list>
   {% for p in ps %}{{ project_card(p, steps) }}{% endfor %}
 </ul>
 {% else %}<ul class="tasks"><li class="empty">{{ empty }}</li></ul>{% endif %}

@@ -12,16 +12,16 @@ import recur
 # On the server GTD_DB points to /var/lib/apps/gtd/gtd.db; locally `GTD dev` points it to dev.db.
 DB_PATH = os.environ.get("GTD_DB") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "gtd.db")
 
-# Waiting is a project status; an abandoned project is given up (on Done, revivable). A task has a state
-# (open, done, or abandoned: deleted but revivable) and, inside a project or H0, a step: an active project has at least
-# one "next" step, each chosen, its other open steps are "waiting" or "later"; an H0 task (ground level) is "next", "waiting" or
+# A project, like a task, has a state: open, done, or abandoned (given up; on Done, revivable). It has no status: what
+# it waits on is a waiting step. A task has a state and, inside a project or H0, a step: a project's are "next",
+# "waiting" or "later" (an open project needs a next or waiting one, each chosen); an H0 task (ground level) is "next", "waiting" or
 # "someday" (a single someday / maybe item). Inbox items (neither a project nor H0) have no step.
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
   notes TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'done', 'abandoned')),
+  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'done', 'abandoned')),
   position INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   completed_at TEXT
@@ -178,7 +178,7 @@ SCHEMA_VERSION = zlib.crc32(SCHEMA.encode()) & 0x7FFFFFFF
 
 # State changes via complete/abandon/revive. remind_at is a UTC ISO time; reminded_at is set once it has been sent.
 TASK_FIELDS = {"title", "notes", "step", "project_id", "due_date", "recur", "ground", "position", "remind_at"}
-PROJECT_FIELDS = {"title", "notes", "status"}
+PROJECT_FIELDS = {"title", "notes"}  # state changes via close_project/revive_project
 # Open tasks need a project unless deliberately marked H0 (ground level); the ones with neither are the inbox.
 INBOX = "t.state = 'open' AND t.project_id IS NULL AND NOT t.ground"
 # A task as every list shows it: its category, if any, before its title. `tk` is task_categories.
@@ -186,7 +186,7 @@ LABEL = "coalesce(tk.name || ': ', '') || t.title"
 CATEGORY_JOIN = "LEFT JOIN task_categories tk ON tk.task_id = t.id"
 # `contexts`: its context names, space-separated, in their dragged order; NULL with none. `category`: NULL with none;
 # `label`: LABEL, what lists show (the task page edits title and category apart).
-TASK_COLS = f"""t.*, tk.name AS category, {LABEL} AS label, p.title AS project_title, p.status AS project_status, ({INBOX}) AS inbox,
+TASK_COLS = f"""t.*, tk.name AS category, {LABEL} AS label, p.title AS project_title, p.state AS project_state, ({INBOX}) AS inbox,
   lp.position AS list_position, (SELECT group_concat(name, ' ') FROM (SELECT x.name FROM task_contexts tc
     JOIN contexts x ON x.id = tc.context_id WHERE tc.task_id = t.id ORDER BY x.position)) AS contexts"""
 TASK_FROM = f"""FROM tasks t LEFT JOIN projects p ON p.id = t.project_id LEFT JOIN list_positions lp ON lp.task_id = t.id
@@ -205,10 +205,10 @@ LIST_ORDER = {"inbox": PLAIN_ORDER, "next": NEXT_ORDER, "waiting": WAITING_ORDER
 
 # An H0 someday task: a single someday / maybe item. Its due date is its tickler: out of sight until then.
 MAYBE = "t.state = 'open' AND t.step = 'someday'"
-# Next actions: H0's and active projects'. Next lists only the undated ones, what can be done now; a dated one (every
+# Next actions: H0's and open projects'. Next lists only the undated ones, what can be done now; a dated one (every
 # repeat) is a calendar item, on the Calendar on its day and in the Agenda from then on (Allen's hard landscape).
-ACTIVE = "t.project_id IN (SELECT id FROM projects WHERE status = 'active')"
-NEXT = f"t.state = 'open' AND t.step = 'next' AND (t.ground OR {ACTIVE})"
+OPEN_PROJECT = "t.project_id IN (SELECT id FROM projects WHERE state = 'open')"
+NEXT = f"t.state = 'open' AND t.step = 'next' AND (t.ground OR {OPEN_PROJECT})"
 NEXT_LIST = f"{NEXT} AND t.due_date IS NULL"
 AGENDA = "t.state = 'open' AND t.due_date <= ?"  # the Agenda and the Calendar's nav dot: due today or overdue
 STEP_ORDER = """CASE WHEN t.step = 'next' THEN 0 WHEN t.step = 'waiting' THEN 1 WHEN t.step = 'later' THEN 2
@@ -363,13 +363,13 @@ def _reorder_list(c, which, moved):
 
 
 def _reopen_project(c, id):
-    """A done or abandoned project with an open task (a step revived) isn't closed any more: it comes back as
-    active, like a revived project."""
-    p = c.execute("""SELECT id FROM projects WHERE status IN ('done', 'abandoned')
+    """A done or abandoned project with an open task (a step revived) isn't closed any more: it comes back open,
+    like a revived project."""
+    p = c.execute("""SELECT id FROM projects WHERE state IN ('done', 'abandoned')
         AND id = (SELECT project_id FROM tasks WHERE id = ? AND state = 'open')""", (id,)).fetchone()
     if p:
-        c.execute("UPDATE projects SET status = 'active', completed_at = NULL, position = ? WHERE id = ?",
-                  (_top(c, "projects", "status = ?", "active"), p["id"]))
+        c.execute("UPDATE projects SET state = 'open', completed_at = NULL, position = ? WHERE id = ?",
+                  (_top(c, "projects", "state = ?", "open"), p["id"]))
 
 
 def _fit_step(fields, current=None, today=None):
@@ -516,12 +516,12 @@ def inbox_list(c, today):
 
 
 def next_list(c):
-    """The Next tab: the undated next actions, H0's and active projects', in its order. Dated ones are the calendar's."""
+    """The Next tab: the undated next actions, H0's and open projects', in its order. Dated ones are the calendar's."""
     return c.execute(f"{TASK_SELECT} WHERE {NEXT_LIST} ORDER BY {NEXT_ORDER}").fetchall()
 
 
 def overdue(c, today):
-    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.step IN ('next', 'waiting') AND (t.ground OR {ACTIVE}) AND t.due_date < ?
+    return c.execute(f"""{TASK_SELECT} WHERE t.state = 'open' AND t.step IN ('next', 'waiting') AND (t.ground OR {OPEN_PROJECT}) AND t.due_date < ?
         ORDER BY t.due_date""", (today.isoformat(),)).fetchall()
 
 
@@ -546,9 +546,8 @@ def counts(c, today):
         "overdue": one(f"SELECT count(*) FROM tasks t WHERE {AGENDA} AND t.due_date < ?", today.isoformat(), today.isoformat()),
         "waiting": one("SELECT count(*) FROM tasks WHERE state = 'open' AND step = 'waiting'"),
         "someday": one(f"SELECT count(*) FROM tasks t WHERE {MAYBE}"),
-        # Per project tab: the projects lacking a next action or a desired outcome.
-        "flagged": {s: one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL AND status = ?", s)
-                    for s in ("active", "waiting")},
+        # The Projects tab's: the open projects lacking a next action (or waiting-for) or a desired outcome.
+        "flagged": one(f"SELECT count(*) FROM ({PROJECT_SELECT}) WHERE warning IS NOT NULL"),
     }
 
 
@@ -679,7 +678,7 @@ def search(c, q):
         ORDER BY t.completed_at DESC""", args))[:SEARCH_LIMIT]
     where, args = _matching(q, ["title", "notes"])
     projects = c.execute(f"""SELECT * FROM projects WHERE {where}
-        ORDER BY status IN ('done', 'abandoned'), lower(title) LIMIT {SEARCH_LIMIT}""", args).fetchall()
+        ORDER BY state != 'open', lower(title) LIMIT {SEARCH_LIMIT}""", args).fetchall()
     horizons = c.execute(f"SELECT * FROM horizons WHERE {where} ORDER BY lower(title) LIMIT {SEARCH_LIMIT}", args).fetchall()
     references = c.execute(f"SELECT * FROM reference WHERE {where} ORDER BY lower(title) LIMIT {SEARCH_LIMIT}", args).fetchall()
     return {"tasks": tasks, "done": done, "projects": projects, "horizons": horizons, "references": references}
@@ -709,12 +708,12 @@ def suggest(c, q, limit=10):
         {CATEGORY_JOIN} ORDER BY t.state != 'open', t.completed_at DESC""").fetchall()  # no notes: only titles count
     rows = [("task", r) for r in tasks if r["state"] == "open"]
     rows += [("task", r) for r in _one_per_repeat(r for r in tasks if r["state"] != "open")]
-    rows += [("project", r) for r in c.execute("SELECT id, title, status FROM projects")]
+    rows += [("project", r) for r in c.execute("SELECT id, title, state FROM projects")]
     rows += [("horizon", r) for r in c.execute("SELECT id, title, level FROM horizons")]
     rows += [("reference", r) for r in c.execute("SELECT id, title FROM reference")]
     hits = [(fuzzy.score(q, r["title"]), kind, r) for kind, r in rows]
     hits = [h for h in hits if h[0] is not None]
-    closed = lambda kind, r: (kind == "task" and r["state"] != "open") or (kind == "project" and r["status"] in ("done", "abandoned"))
+    closed = lambda kind, r: kind in ("task", "project") and r["state"] != "open"
     hits.sort(key=lambda h: (not fuzzy.exact(q, h[2]["title"]), closed(h[1], h[2]), -h[0], h[2]["title"].lower()))
     return [(kind, r) for _, kind, r in hits[:limit]]
 
@@ -723,7 +722,7 @@ def suggest(c, q, limit=10):
 
 @atomic
 def add_project(c, title, **fields):
-    top = _top(c, "projects", "status = ?", fields.get("status", "active"))  # a new project goes to the top
+    top = _top(c, "projects", "state = ?", "open")  # a new project goes to the top
     id = _insert(c, "projects", PROJECT_FIELDS, {"title": title, **fields})
     c.execute("UPDATE projects SET position = ? WHERE id = ?", (top, id))
     return id
@@ -731,12 +730,6 @@ def add_project(c, title, **fields):
 
 @atomic
 def update_project(c, id, **fields):
-    if "status" in fields:
-        # A project changing lists goes to the top of the new one, rather than to its place in the old one.
-        c.execute("UPDATE projects SET completed_at = CASE WHEN ? = 'done' THEN coalesce(completed_at, datetime('now')) END,"
-                  " position = CASE WHEN status = ? THEN position"
-                  " ELSE (SELECT coalesce(min(position), 0) - 1 FROM projects WHERE status = ?) END WHERE id = ?",
-                  (fields["status"], fields["status"], fields["status"], id))
     _update(c, "projects", PROJECT_FIELDS, id, fields)
 
 
@@ -757,53 +750,53 @@ CLOSED = ("done", "abandoned")  # the same but for the name: either closes a pro
 
 
 @atomic
-def close_project(c, id, status, steps=None, now=None):
+def close_project(c, id, state, steps=None, now=None):
     """Close a project, done or abandoned: it and its open steps (marked `steps`, else as the project) close together
     (one shared completed_at, to the millisecond so no step closed on its own matches, tells revive which steps it
     took down), its timer is stopped and its time kept. Directly, not through complete_task(): a repeat spawns no
     next one. It leaves every list and picker for Done."""
     p = get_project(c, id)
-    if not p or p["status"] in CLOSED:
+    if not p or p["state"] in CLOSED:
         return
     running = timer_running(c)
     if running and running["project_id"] == id:
         timer_stop(c, now or datetime.now(timezone.utc))
     stamp = c.execute("SELECT strftime('%Y-%m-%d %H:%M:%f', 'now')").fetchone()[0]
     c.execute("UPDATE tasks SET state = ?, completed_at = ? WHERE project_id = ? AND state = 'open'",
-              (steps or status, stamp, id))
-    c.execute("UPDATE projects SET status = ?, completed_at = ?, position = NULL WHERE id = ?", (status, stamp, id))
+              (steps or state, stamp, id))
+    c.execute("UPDATE projects SET state = ?, completed_at = ?, position = NULL WHERE id = ?", (state, stamp, id))
 
 
 @atomic
 def revive_project(c, id):
-    """A done or abandoned project comes back as active, with the steps closed along with it as later steps (so
-    stalled, until a next action is picked)."""
+    """A done or abandoned project comes back open, on top, with the steps closed along with it as later steps (so
+    stalled, until a next action or waiting-for is picked)."""
     p = get_project(c, id)
-    if not p or p["status"] not in CLOSED:
+    if not p or p["state"] not in CLOSED:
         return
     c.execute("""UPDATE tasks SET state = 'open', step = 'later', completed_at = NULL
         WHERE project_id = ? AND state IN ('done', 'abandoned') AND completed_at = ?""", (id, p["completed_at"]))
-    c.execute("""UPDATE projects SET status = 'active', completed_at = NULL, position = ?
-        WHERE id = ?""", (_top(c, "projects", "status = ?", "active"), id))
+    c.execute("""UPDATE projects SET state = 'open', completed_at = NULL, position = ?
+        WHERE id = ?""", (_top(c, "projects", "state = ?", "open"), id))
 
 
-def closed_projects(c, status, limit=100, since=None):
+def closed_projects(c, state, limit=100, since=None):
     """Done (or abandoned) projects, newest first; with `since` (a datetime), only those closed since."""
-    return c.execute("""SELECT * FROM projects WHERE status = ? AND completed_at >= ?
-        ORDER BY completed_at DESC, id DESC LIMIT ?""", (status, stamp(since), limit)).fetchall()
+    return c.execute("""SELECT * FROM projects WHERE state = ? AND completed_at >= ?
+        ORDER BY completed_at DESC, id DESC LIMIT ?""", (state, stamp(since), limit)).fetchall()
 
 
 REVIEWED = "(SELECT r.reviewed_at FROM project_reviews r WHERE r.project_id = p.id) AS reviewed_at"
 
 
-# A project with its last review and desired outcome; `stalled` (active with no next action); `vague`
-# (active or waiting, i.e. committed, with no desired outcome); and `warning`, why it shows ⚠ (either or both), else NULL.
+# A project with its last review and desired outcome; `stalled` (open with neither a next action nor a waiting-for:
+# nothing moves it); `vague` (open with no desired outcome); and `warning`, why it shows ⚠ (either or both), else NULL.
 PROJECT_SELECT = f"""SELECT *, CASE WHEN stalled AND vague THEN 'No next action, no desired outcome'
     WHEN stalled THEN 'No next action' WHEN vague THEN 'No desired outcome' END AS warning
   FROM (SELECT p.*, {REVIEWED}, o.outcome,
-    (p.status = 'active' AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.project_id = p.id AND n.state = 'open'
-      AND n.step = 'next')) AS stalled,
-    (p.status IN ('active', 'waiting') AND o.outcome IS NULL) AS vague
+    (p.state = 'open' AND NOT EXISTS (SELECT 1 FROM tasks n WHERE n.project_id = p.id AND n.state = 'open'
+      AND n.step IN ('next', 'waiting'))) AS stalled,
+    (p.state = 'open' AND o.outcome IS NULL) AS vague
   FROM projects p LEFT JOIN project_outcomes o ON o.project_id = p.id) p"""
 
 
@@ -811,9 +804,9 @@ def get_project(c, id):
     return c.execute(f"{PROJECT_SELECT} WHERE p.id = ?", (id,)).fetchone()
 
 
-def projects(c, status="active"):
-    """Projects with the given status in the order dragged, new ones on top."""
-    return c.execute(f"{PROJECT_SELECT} WHERE p.status = ? ORDER BY p.position, p.id", (status,)).fetchall()
+def projects(c):
+    """The open projects (the Projects tab) in the order dragged, new ones on top."""
+    return c.execute(f"{PROJECT_SELECT} WHERE p.state = 'open' ORDER BY p.position, p.id").fetchall()
 
 
 def someday_tasks(c):
@@ -830,9 +823,9 @@ def someday_to_review(c, today):
 
 
 def projects_to_review(c):
-    """The weekly review's project step: active and waiting projects, flagged ones (⚠) first, then in their tabs'
-    order (a ✓ moves none)."""
-    return sorted(projects(c) + projects(c, "waiting"), key=lambda p: not p["warning"])
+    """The weekly review's project step: the open projects, flagged ones (⚠) first, then in Projects' order (a ✓
+    moves none)."""
+    return sorted(projects(c), key=lambda p: not p["warning"])
 
 
 def reviewed_at(c, id, table="project"):
@@ -874,17 +867,17 @@ def set_project_outcome(c, id, outcome):
 
 
 @atomic
-def reorder_projects(c, status, ids):
-    """Number the projects with this status in the given order; other projects' ids are ignored."""
-    c.executemany("UPDATE projects SET position = ? WHERE id = ? AND status = ?",
-                  [(n, id, status) for n, id in enumerate(ids)])
+def reorder_projects(c, ids):
+    """Number the open projects in the given order; closed projects' ids are ignored."""
+    c.executemany("UPDATE projects SET position = ? WHERE id = ? AND state = 'open'",
+                  [(n, id) for n, id in enumerate(ids)])
 
 
-def open_steps(c, status="active"):
-    """{project id: its open steps in project-page order}, for every project with the given status."""
+def open_steps(c):
+    """{project id: its open steps in project-page order}, for every open project."""
     steps = {}
-    for t in c.execute(f"""{TASK_SELECT} WHERE p.status = ? AND t.state = 'open' ORDER BY t.step = 'next' DESC, t.position, t.id DESC""",
-                       (status,)):
+    for t in c.execute(f"""{TASK_SELECT} WHERE p.state = 'open' AND t.state = 'open'
+            ORDER BY t.step = 'next' DESC, t.position, t.id DESC"""):
         steps.setdefault(t["project_id"], []).append(t)
     return steps
 
@@ -895,7 +888,7 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=N
     latest only. Without a project, the steps a closed project took down with it are left out (Done lists the project)."""
     where, args = "t.state = ? AND t.completed_at >= ?", [state, stamp(since)]
     if project_id is None:
-        where += " AND NOT (coalesce(p.status IN ('done', 'abandoned'), 0) AND t.completed_at = p.completed_at)"
+        where += " AND NOT (coalesce(p.state IN ('done', 'abandoned'), 0) AND t.completed_at = p.completed_at)"
     else:
         where += " AND t.project_id = ?"
         args.append(project_id)
@@ -907,17 +900,14 @@ def done_tasks(c, limit=100, project_id=None, ground=None, state="done", since=N
     return _one_per_repeat(rows) if once else rows
 
 
-def project_groups(c):
-    """Every open project, for pickers (the task dropdown, the drop panel): [(label, projects, its "＋ New…" value)],
-    one group per project tab (Active, Waiting), each in its tab's drag order; even with none, a new project
-    can start in each: `__new__`, `__new__waiting` (task_fields_from_form() in app.py). Done and
-    abandoned ones are closed: revive one to file into it."""
-    return [(s.capitalize(), c.execute("SELECT * FROM projects WHERE status = ? ORDER BY position, id", (s,)).fetchall(),
-             "__new__" + ("" if s == "active" else s)) for s in ("active", "waiting")]
+def open_projects(c):
+    """Every open project, for pickers (the task dropdown, the drop panel, File to), in the Projects tab's drag
+    order. Done and abandoned ones are closed: revive one to file into it."""
+    return c.execute("SELECT * FROM projects WHERE state = 'open' ORDER BY position, id").fetchall()
 
 
 def stalled_projects(c):
-    """Active projects with no next action -- the weekly review's main target."""
+    """Open projects with neither a next action nor a waiting-for -- the weekly review's main target."""
     return [p for p in projects(c) if p["stalled"]]
 
 
@@ -1051,10 +1041,10 @@ def link_task(c, task_id, horizon_id):
 
 
 # The open projects and H0 tasks the horizons' links show: closed ones drop out (their links stay, for a revive).
-LINKED_PROJECTS = f"""SELECT p.id, p.title, p.status, p.warning, p.outcome, ph.horizon_id, u.title AS under
+LINKED_PROJECTS = f"""SELECT p.id, p.title, p.warning, p.outcome, ph.horizon_id, u.title AS under
   FROM ({PROJECT_SELECT}) p LEFT JOIN project_horizons ph ON ph.project_id = p.id
   LEFT JOIN horizons u ON u.id = ph.horizon_id
-  WHERE p.status NOT IN {CLOSED} ORDER BY p.status != 'active', p.status != 'waiting', p.position, p.id"""
+  WHERE p.state = 'open' ORDER BY p.position, p.id"""
 LINKED_TASKS = f"""SELECT t.id, {LABEL} AS title, t.step, t.due_date, ta.area_id AS horizon_id, u.title AS under FROM tasks t
   LEFT JOIN task_areas ta ON ta.task_id = t.id LEFT JOIN horizons u ON u.id = ta.area_id
   LEFT JOIN list_positions lp ON lp.task_id = t.id {CATEGORY_JOIN}
@@ -1079,7 +1069,7 @@ def horizon_links(c, h):
 def horizon_tree(c):
     """Everything the Horizons page shows: {purpose, vision (their rows), goals, areas, projects, tasks}.
     Each goal and area is a dict: its row (`h`), a goal's area's title (`area`), what hangs under it (`goals`, an area's; `projects` and `tasks`, open
-    ones) and `warning`, why it's ⚠ ("" if not): a goal with nothing moving it (no active project or H0 next action),
+    ones) and `warning`, why it's ⚠ ("" if not): a goal with nothing moving it (no open project or H0 next action),
     serving no area, or with no "Done when…"; an area with nothing under it, or no standard. `projects` and `tasks`
     are every open project and H0 next or waiting action, each with `horizon_id` (None: loose, serving nothing)."""
     hs = horizons(c)
@@ -1091,7 +1081,7 @@ def horizon_tree(c):
     goals = []
     for g in hs["goal"]:
         ps, ts = under(projects, g["id"]), under(tasks, g["id"])
-        moving = any(p["status"] == "active" for p in ps) or any(t["step"] == "next" for t in ts)
+        moving = bool(ps) or any(t["step"] == "next" for t in ts)
         goals.append({"h": g, "area": area_titles.get(g["area_id"]), "projects": ps, "tasks": ts, "warning": warn(
             (not moving, "Nothing moving it"), (not g["area_id"], "Serves no area"), (not g["outcome"], "No desired outcome"))})
     areas = []

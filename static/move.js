@@ -1,8 +1,8 @@
-// The drop panel on every task list and project tab, for its cards' steps (move_panel() in _task.html): it slides in while an open row is dragged, or
+// The drop panel on every task list and the Projects tab, for its cards' steps (move_panel() in _task.html): it slides in while an open row is dragged, or
 // stays while pinned by the header's File to button; dropping the row on a task tab (Next, Waiting, Someday: H0), a project (or
 // Reference, "＋ New…") moves the task there (/tasks/move). A row's ⠿ grip drags it (app.js), so the same drag
 // reorders its list or moves it out. Shift-click selects rows (Esc clears); dragging
-// a selected row moves them all. On a project tab, a folded-out step dropped on another project's row moves there too.
+// a selected row moves them all. On the Projects tab, a folded-out step dropped on another project's row moves there too.
 // (The nav's tabs take dragged rows as well: app.js.)
 (() => {
   const panel = document.querySelector('.drop-panel'), root = document.documentElement, body = document.body, pin = document.querySelector('.pin-panel');
@@ -16,7 +16,7 @@
   pin?.addEventListener('click', () => pinned(!root.classList.contains('pinned-panel')));
   panel.querySelector('.unpin').addEventListener('click', () => pinned(false));  // the panel may cover the header's button
   // Open rows only (movableTask() in app.js, loaded after this, so called only once the page is in). A project
-  // card's folded-out steps (the project tabs) are all open.
+  // card's folded-out steps (the Projects tab) are all open.
   const ROW = 'li.task, .task .steps > li';
   const movable = li => movableTask(li);
   const unselect = () => document.querySelectorAll('main li.selected').forEach(li => li.classList.remove('selected'));
@@ -43,12 +43,12 @@
     e.dataTransfer.effectAllowed = 'move';
     body.classList.add('dragging-tasks');
   });
-  // On a project tab, folded-out steps dropped on another project's row join that project, as on its name in the panel.
+  // On the Projects tab, folded-out steps dropped on another project's row join that project, as on its name in the panel.
   const cardOf = e => {
-    const card = dragged && e.target.closest?.('main ul[data-status] > li.task[data-id]');
+    const card = dragged && e.target.closest?.('main ul[data-projects-list] > li.task[data-id]');
     return card && dragged.every(r => r.matches('.steps > li')) && !dragged.every(r => card.contains(r)) ? card : null;
   };
-  const uncard = keep => document.querySelectorAll('main ul[data-status] > li.over').forEach(c => c !== keep && c.classList.remove('over'));
+  const uncard = keep => document.querySelectorAll('main ul[data-projects-list] > li.over').forEach(c => c !== keep && c.classList.remove('over'));
   document.addEventListener('dragover', e => {
     const card = cardOf(e);
     uncard(card);
@@ -76,7 +76,7 @@
     const t = e.target.closest('.target');
     if (!t || !dragged) return;
     e.preventDefault();
-    if (!t.dataset.project.startsWith('__new__')) return move(dragged, {project_id: t.dataset.project});
+    if (t.dataset.project !== '__new__') return move(dragged, {project_id: t.dataset.project});
     // The panel stays open for the name; Enter moves it into a new project, Esc or clicking away cancels.
     naming = {rows: dragged, target: t};
     t.classList.add('naming');
@@ -89,7 +89,7 @@
     if (e.key === 'Escape') { e.preventDefault(); close(); }
     if (e.key === 'Enter' && name.value.trim()) {
       e.preventDefault();
-      move(naming.rows, {project_id: naming.target.dataset.project, new_project: name.value.trim()});  // its status
+      move(naming.rows, {project_id: naming.target.dataset.project, new_project: name.value.trim()});
       close();
     }
   });

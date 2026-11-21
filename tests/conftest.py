@@ -39,7 +39,7 @@ def seed(c):
     db.reorder_horizons(c, "area", [area, work])
     active = db.add_project(c, "Kitchen", notes="tiles\nand grout")
     stalled = db.add_project(c, "Stalled")
-    waiting = db.add_project(c, "Waiting proj", status="waiting")
+    waiting = db.add_project(c, "Waiting proj")  # moved only by a waiting-for
     db.set_project_outcome(c, waiting, "permit granted")
     done = db.add_project(c, "Done proj")  # marked done once its step is
     db.add_task(c, "inbox item", notes="from email")
@@ -50,7 +50,7 @@ def seed(c):
     vacuum = db.add_task(c, "vacuum", step="next", ground=1, recur="weekly", due_date="2026-10-22")
     db.add_task(c, "bins", step="next", ground=1, recur="every 2 weeks", due_date="2026-11-03")
     db.add_task(c, "call mum", step="next", ground=1, due_date="2026-10-24", remind_at="2026-10-23T13:00:00+00:00")
-    db.add_task(c, "parked step", step="next", project_id=waiting)
+    db.add_task(c, "parked step", step="waiting", project_id=waiting)
     db.add_task(c, "legacy orphan", step="next")
     finished = db.add_task(c, "old tiles", step="next", project_id=done)
     db.complete_task(c, finished, TODAY)

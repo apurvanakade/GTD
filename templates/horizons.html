@@ -42,7 +42,7 @@
       "A goal with ⚠ has nothing moving it, no area, or no finish line: fix it or drop it.",
     ],
     'examples': "“Get tenure by spring 2028.” · “Run a half-marathon by Oct 2027.” · “Save a 6-month emergency fund by June 2027.”",
-    'review': "Every quarter: Is each still the right goal? Does it have an active project moving it? Drop or rewrite the ones that don't fit any more.",
+    'review': "Every quarter: Is each still the right goal? Does it have a project moving it? Drop or rewrite the ones that don't fit any more.",
   },
   'area': {
     'what': "The ongoing roles and responsibilities you keep up, with no finish line: things that need to stay at a standard rather than get done. They're the checklist that keeps your projects complete: if an area has nothing going and needs attention, a project is missing.",
@@ -123,7 +123,7 @@
   {%- set goals = x.get('goals', []) %}
   {%- if goals or x.projects or x.tasks %}<ul class="kids">
     {%- for g in goals %}<li class="goal{{ ' flagged' if g.warning }}"><a href="{{ horizon_url(g.h) }}"{% if g.warning %} title="{{ g.warning }}"{% endif %}>{% if g.warning %}⚠ {% endif %}{{ g.h.title }}</a></li>{% endfor %}
-    {%- for p in x.projects %}<li class="project{{ ' flagged' if p.warning }}"><a href="{{ url_for('project_view', id=p.id) }}"{% if p.warning %} title="{{ p.warning }}"{% endif %}>{% if p.warning %}⚠ {% endif %}{{ p.title }}</a>{% if p.status != 'active' %} <span class="meta">{{ p.status }}</span>{% endif %}</li>{% endfor %}
+    {%- for p in x.projects %}<li class="project{{ ' flagged' if p.warning }}"><a href="{{ url_for('project_view', id=p.id) }}"{% if p.warning %} title="{{ p.warning }}"{% endif %}>{% if p.warning %}⚠ {% endif %}{{ p.title }}</a></li>{% endfor %}
     {%- for t in x.tasks %}<li class="action"><a href="{{ url_for('task_view', id=t.id) }}">{{ t.title }}</a>{% if t.step == 'waiting' %} <span class="meta">waiting</span>{% endif %}</li>{% endfor %}
   </ul>{% endif %}
 {%- endmacro %}
@@ -222,7 +222,7 @@
       <li{% if x in loose %} class="flagged"{% endif %}>
         {%- set warning = x.warning if kind == 'project' else '' %}
         <a href="{{ url_for('project_view' if kind == 'project' else 'task_view', id=x.id) }}"{% if warning %} title="{{ warning }}"{% endif %}>{% if warning %}⚠ {% endif %}{{ x.title }}</a>
-        {% if (x.status if kind == 'project' else x.step) not in ('active', 'next') %}<span class="meta">{{ x.status if kind == 'project' else x.step }}</span>{% endif %}
+        {% if kind != 'project' and x.step != 'next' %}<span class="meta">{{ x.step }}</span>{% endif %}
         {{ serves(kind, x) }}
       </li>{% endfor %}
     </ul>{% else %}<p class="empty">{{ 'No open projects.' if kind == 'project' else 'No single actions.' }}</p>{% endif %}

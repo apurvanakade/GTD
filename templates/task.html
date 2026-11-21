@@ -33,7 +33,7 @@
   {#- An inbox item, waiting to be filed, has no step; an H0 task is next, waiting or someday, a project's next,
       waiting or later. #}
   {% set link %}{% if t.project_id %}<a class="open-project" href="{{ url_for('project_view', id=t.project_id) }}" title="Open the project" aria-label="Open the project">↗</a>{% endif %}{% endset %}
-  {{ filing_fields('h0' if t.ground else t.project_id or '', t.step, keep=t if t.project_status in ('done', 'abandoned'),
+  {{ filing_fields('h0' if t.ground else t.project_id or '', t.step, keep=t if t.project_state in ('done', 'abandoned'),
                    open=t.state == 'open', reference=t.state == 'open', link=link) }}
   <div class="fields">
     {#- Each .when hint shows how its box reads, as you type (static/app.js, /parse/<kind>). #}
