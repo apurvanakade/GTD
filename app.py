@@ -906,7 +906,8 @@ def task_view(id):
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
     up = url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t)
-    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), up=up, **repeat_history(c, t))
+    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), entries=db.time_entries(c, task_id=id),
+                           up=up, **repeat_history(c, t))
 
 
 def repeat_history(c, t):
@@ -1185,6 +1186,7 @@ def agenda_view():
 # --- timer -----------------------------------------------------------------
 # Every time entry belongs to a task. Times are stored in UTC and shown in local time.
 
+@app.template_filter("local_input")
 def local_input(iso):
     """A stored UTC time as the local "YYYY-MM-DDTHH:MM" a datetime-local input shows."""
     return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%dT%H:%M")
@@ -1228,7 +1230,7 @@ def timer_view():
     monday = midnight(today() - timedelta(days=today().weekday()))
     return render_template("timer.html", entries=db.time_entries(c), open_tasks=db.open_tasks(c),
                            day=db.week_totals(c, midnight(today()), now()),
-                           week=db.week_totals(c, monday, now()), local_input=local_input)
+                           week=db.week_totals(c, monday, now()))
 
 
 @app.post("/timer/start")

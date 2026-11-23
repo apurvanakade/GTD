@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import filing_fields, date_input, context_picker, category_input, tally with context %}
+{% from "_task.html" import filing_fields, date_input, context_picker, category_input, tally, time_entries with context %}
 {% block title %}{{ t.label }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -52,6 +52,8 @@
   </div>
 </form>
 {{ context_picker(t) }}
+{#- Its time entries, editable as on the Timer page. #}
+{% if entries %}<section class="task-entries"><h2>Time entries</h2>{{ time_entries(entries, task=False) }}</section>{% endif %}
 {#- A repeat's past completions, folded: how often, how often this week, the time tracked; then each one. #}
 {% if history %}{% set time = history|sum(attribute=1) %}{{ tally('Done', history, cls='repeats', fold=True, total=history|length ~ '×',
   note=this_week ~ ' this week' ~ (' · ' ~ time|hm if time else '')) }}{% endif %}

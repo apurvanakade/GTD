@@ -1229,6 +1229,28 @@ def test_edit_and_delete_time_entries(client, conn):
     assert client.post("/timer/999", data={}).status_code == 404
 
 
+def test_task_page_edits_its_own_time_entries(client, conn):
+    t, other = (db.add_task(conn, n, step="next", ground=1) for n in ("x", "y"))
+    old = db.timer_start(conn, t, NOW - timedelta(hours=3))
+    db.timer_stop(conn, NOW - timedelta(hours=2))
+    db.timer_start(conn, other, NOW - timedelta(hours=2))
+    new = db.timer_start(conn, t, NOW - timedelta(hours=1))  # running, so listed first
+    page = client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
+    forms = re.findall(r'<form method="post" action="/timer/(\d+)" class="entry', page)
+    assert forms == [str(new), str(old)]  # only its own, the running one first
+    assert 'class="entry-task"' not in page and "Start this task again" not in page  # every row is this task's
+    assert f'formaction="/timer/{old}/delete"' in page
+    here = f"/tasks/{t}?embed=overlay"
+    new_start = local_input(iso(NOW - timedelta(hours=4)))
+    r = client.post(f"/timer/{old}", data={"start": new_start, "end": local_input(db.get_entry(conn, old)["end_time"])},
+                    headers={"Referer": here})
+    assert r.location.endswith(here) and local_input(db.get_entry(conn, old)["start_time"]) == new_start
+    assert client.post(f"/timer/{old}/delete", headers={"Referer": here}).location.endswith(here)
+    assert db.get_entry(conn, old) is None
+    db.delete_entry(conn, new)
+    assert "Time entries" not in client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)  # none: no heading
+
+
 def test_time_totals_on_task_project_and_timer_pages(client, conn):
     pid = db.add_project(conn, "Kitchen")
     a = db.add_task(conn, "measure", step="next", project_id=pid)
