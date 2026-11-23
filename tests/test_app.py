@@ -1034,6 +1034,9 @@ def test_repeat_page_lists_its_past_completions(client, conn):
     db.update_task(conn, t, today=TODAY, recur="every 2 days after done")
     other = db.add_task(conn, "Stretch", ground=True, step="next", recur="weekly", due_date="2026-10-01")
     db.complete_task(conn, other, TODAY, NOW)
+    filed = db.add_task(conn, "Workout", ground=True, step="next", recur="weekly", due_date="2026-10-01")
+    db.set_task_category(conn, filed, "Gym")  # the same title under another category is another repeat
+    db.complete_task(conn, filed, TODAY, NOW)
     conn.commit()
     html = client.get(f"/tasks/{t}?embed=overlay").data.decode()
     head, rows = re.search(r'<details class="tally repeats">\s*<summary><h2>Done\s*<b>3×</b>(.*?)</summary>(.*?)</details>', html, re.S).groups()
@@ -1045,6 +1048,7 @@ def test_repeat_page_lists_its_past_completions(client, conn):
     # done, has none.
     assert "<b>3×</b>" in client.get(f"/tasks/{done[0]}?embed=overlay").data.decode()
     assert "<b>1×</b>" in client.get(f"/tasks/{other + 1}?embed=overlay").data.decode()
+    assert "<b>1×</b>" in client.get(f"/tasks/{filed}?embed=overlay").data.decode()
     plain = db.add_task(conn, "Workout", ground=True, step="next")
     fresh = db.add_task(conn, "Run", ground=True, step="next", recur="weekly", due_date="2026-10-01")
     for id in (plain, fresh):
