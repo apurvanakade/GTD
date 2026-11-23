@@ -1412,12 +1412,15 @@ def test_horizons_walk_and_link_in_place(page, live, conn):
     sync_api.expect(guide.get_by_text("Do this")).to_be_visible()
     page.keyboard.press("Escape")
     sync_api.expect(guide).to_be_hidden()
-    box = page.locator(".visions textarea").nth(1)  # Work
-    box.fill("Teaching what I love")
+    box = page.locator(".visions .md-editor").nth(1)  # Work: live Markdown, as notes are
+    box.click()
+    page.keyboard.type("Teaching what I **love**")
+    sync_api.expect(box.locator("b")).to_have_text("**love**")
+    sync_api.expect(page.locator(".visions .md-tools").nth(1)).to_be_visible()  # its toolbar, while focused
     with page.expect_response("**/vision"):
-        box.press("Tab")  # saved as it's left
+        page.keyboard.press("Tab")  # saved as it's left
     assert page.url.endswith("?level=vision")
-    assert db.horizons(conn)["area"][1]["vision"] == "Teaching what I love"
+    assert db.horizons(conn)["area"][1]["vision"] == "Teaching what I **love**"
     page.goto(live + "/horizons?level=projects")
     page.locator(".linked li", has_text="Waiting proj").locator("select").select_option(label="Ship the kitchen")
     page.wait_for_load_state()

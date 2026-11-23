@@ -176,7 +176,7 @@
       {% for a in tree.areas %}
       <li class="task"><a class="title" href="{{ horizon_url(a.h) }}">{{ a.h.title }}</a>
         <form method="post" action="{{ url_for('horizon_vision', id=a.h.id) }}" data-background>
-          <textarea name="vision" rows="1" placeholder="In 3–5 years…" aria-label="{{ a.h.title }} in 3–5 years">{{ a.h.vision or '' }}</textarea>
+          <textarea name="vision" rows="1" data-md placeholder="In 3–5 years…" aria-label="{{ a.h.title }} in 3–5 years">{{ a.h.vision or '' }}</textarea>
         </form></li>
       {% else %}
       <li class="empty">No areas yet: add them on <a href="{{ url_for('horizons_view', level='area') }}">Areas</a>.</li>
