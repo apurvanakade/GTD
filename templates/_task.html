@@ -256,9 +256,11 @@
 {% endmacro %}
 
 
-{# Time as bars, as on the Timer page: a big total, then one accent bar per item, longest first.
+{# Time as bars, as on the Timer page: a big total, then one accent bar per item (none for an untimed one), in the
+   order given (longest first for totals, newest first for a repeat's history).
    `totals` are (label, seconds) pairs, or (label, seconds, task id) to make the label open that task.
-   fold=True (a project page): only the total shows; "Show split" unfolds the bars. #}
+   `total` replaces the summed time as the big total (a repeat's count); `note` follows it in muted text.
+   fold=True (a project page, a repeat's history): only the heading shows; its toggle unfolds the bars. #}
 {% macro tally(heading, totals, blank='', cls='', fold=False, total=none, note='') %}
 {% set tag = 'details' if fold else 'section' %}
 <{{ tag }} class="tally{{ ' ' ~ cls if cls }}">

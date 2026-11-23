@@ -2907,7 +2907,7 @@ def test_horizons_link_up_and_down(client, conn):
     page = lambda id: client.get(f"/horizons/{id}?embed=overlay").get_data(as_text=True)
     assert chips(page(home)) == {"goal": ["Ship the kitchen"], "task": ["vacuum"]}
     assert chips(page(goal)) == {"project": ["Kitchen"]} and f'<option value="{home}" selected>Serves Home</option>' in page(goal)
-    assert chips(page(work)) == {"project": ["Stalled"]} and 'title="No next action, no desired outcome"' in page(work)
+    assert chips(page(work)) == {"project": ["Stalled"], "task": ["descale kettle"]} and 'title="No next action, no desired outcome"' in page(work)
     assert "Stalled · now under Work</option>" in page(home)  # linking one here would move it
     link = lambda id, **f: client.post(f"/horizons/{id}/link", data=f, headers={"X-Requested-With": "fetch"})
     assert link(home, kind="project", add=stalled).status_code == 204  # moved: one parent
