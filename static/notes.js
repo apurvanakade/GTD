@@ -400,6 +400,8 @@ function editor(ta) {
     e.preventDefault();
     const t = getText(), i = offsetOf(box, 0) + 1;
     apply(t.slice(0, i) + (t[i] === " " ? "x" : " ") + t.slice(i + 1), getSel());
+    // Ticked without the focus, so no blur will fire the change below: fire it now (a Vision line saves on it).
+    if (document.activeElement !== ed) ta.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
   // Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list. A

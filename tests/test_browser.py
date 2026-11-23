@@ -1401,8 +1401,9 @@ def test_clicking_a_rows_button_does_not_open_it(page, live):
 
 
 def test_horizons_walk_and_link_in_place(page, live, conn):
-    """→ walks the levels; a card's guide waits behind its ?; an area's vision line saves as it's left; a "Serves …"
-    select saves on pick, and a goal's add line adds under it, both staying on the card."""
+    """→ walks the levels; a card's guide waits behind its ?; an area's vision line saves as it's left, or as its
+    checklist box is ticked without the focus; a "Serves …" select saves on pick, and a goal's add line adds under
+    it, both staying on the card."""
     page.goto(live + "/horizons?level=purpose")
     page.keyboard.press("ArrowRight")
     page.wait_for_url("**/horizons?level=vision")
@@ -1421,6 +1422,15 @@ def test_horizons_walk_and_link_in_place(page, live, conn):
         page.keyboard.press("Tab")  # saved as it's left
     assert page.url.endswith("?level=vision")
     assert db.horizons(conn)["area"][1]["vision"] == "Teaching what I **love**"
+    box.click()
+    page.keyboard.press("ControlOrMeta+a")
+    page.keyboard.type("- [ ] Office hours")
+    with page.expect_response("**/vision"):
+        page.get_by_role("heading", name="Area by area").click()  # left for the card, the caret with it
+    with page.expect_response("**/vision"):
+        box.locator(".box").click()  # ticked without the focus: saved all the same
+    sync_api.expect(box).not_to_be_focused()
+    assert db.horizons(conn)["area"][1]["vision"] == "- [x] Office hours"
     page.goto(live + "/horizons?level=projects")
     page.locator(".linked li", has_text="Waiting proj").locator("select").select_option(label="Ship the kitchen")
     page.wait_for_load_state()
