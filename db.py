@@ -1286,6 +1286,20 @@ def task_seconds(c, task_id, now):
                      (iso(now), task_id)).fetchone()[0]
 
 
+def repeat_history(c, t, now):
+    """A repeating task's past completions, newest first: [(completed_at, seconds tracked, task id)]. Its instances
+    are the done repeats with its title in its project (or H0, or the inbox), whatever their rule, so changing the
+    rule keeps the history; renaming it starts a new one. Empty for a task that doesn't repeat."""
+    if not t["recur"]:
+        return []
+    rows = c.execute(f"""SELECT t.id, t.completed_at,
+          coalesce((SELECT sum({SECONDS}) FROM time_entries e WHERE e.task_id = t.id), 0) AS secs
+        FROM tasks t WHERE t.state = 'done' AND coalesce(t.recur, '') != '' AND t.title = ? AND t.project_id IS ?
+          AND t.ground = ? ORDER BY t.completed_at DESC, t.id DESC""",
+                     (iso(now), t["title"], t["project_id"], t["ground"])).fetchall()
+    return [(r["completed_at"], round(r["secs"]), r["id"]) for r in rows]
+
+
 def step_totals(c, project_id, now):
     """[(task label, seconds, task id)] for a project's timed tasks, done ones included, most time first."""
     rows = c.execute(f"""SELECT t.id, {LABEL} AS title, sum({SECONDS}) AS secs FROM time_entries e

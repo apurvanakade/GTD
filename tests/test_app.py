@@ -1017,6 +1017,40 @@ def test_db_rejects_unknown_fields(conn):
         db.add_project(conn, "x", colour="red")
 
 
+def test_repeat_page_lists_its_past_completions(client, conn):
+    """A repeating task's page folds its history under its fields: how often it was done, how often this week
+    (from Monday, as the Timer's), the time tracked, then one line per completion, newest first, each opening that
+    instance. A changed rule keeps the history; another task's, or one that never repeated, isn't in it."""
+    t = db.add_task(conn, "Workout", ground=True, step="next", recur="weekly", due_date="2026-10-01")
+    done = []
+    for when, mins in (("2026-10-10 12:00:00", 30), ("2026-10-20 12:00:00", 0), ("2026-10-21 12:00:00", 60)):
+        if mins:
+            db.timer_start(conn, t, NOW - timedelta(minutes=mins))
+            db.timer_stop(conn, NOW)
+        done.append(t)
+        nxt = db.complete_task(conn, t, TODAY, NOW)
+        conn.execute("UPDATE tasks SET completed_at = ? WHERE id = ?", (when, t))
+        t = nxt
+    db.update_task(conn, t, today=TODAY, recur="every 2 days after done")
+    other = db.add_task(conn, "Stretch", ground=True, step="next", recur="weekly", due_date="2026-10-01")
+    db.complete_task(conn, other, TODAY, NOW)
+    conn.commit()
+    html = client.get(f"/tasks/{t}?embed=overlay").data.decode()
+    head, rows = re.search(r'<details class="tally repeats">\s*<summary><h2>Done\s*<b>3×</b>(.*?)</summary>(.*?)</details>', html, re.S).groups()
+    assert "2 this week · 1h 30m" in head
+    assert re.findall(r'class="who" href="/tasks/(\d+)">([^<]+)<', rows) == [
+        (str(done[2]), "Wed Oct 21"), (str(done[1]), "Tue Oct 20"), (str(done[0]), "Sat Oct 10")]
+    assert re.findall(r'class="dur">([^<]*)<', rows) == ["1h 00m", "", "0h 30m"]
+    # A done instance's page has it too; another repeat has its own; a task that doesn't repeat, or a repeat never
+    # done, has none.
+    assert "<b>3×</b>" in client.get(f"/tasks/{done[0]}?embed=overlay").data.decode()
+    assert "<b>1×</b>" in client.get(f"/tasks/{other + 1}?embed=overlay").data.decode()
+    plain = db.add_task(conn, "Workout", ground=True, step="next")
+    fresh = db.add_task(conn, "Run", ground=True, step="next", recur="weekly", due_date="2026-10-01")
+    for id in (plain, fresh):
+        assert 'class="tally' not in client.get(f"/tasks/{id}?embed=overlay").data.decode()
+
+
 def test_next_due_skipping_ahead_does_not_drift():
     # Overdue month-end and leap-day tasks keep their day when several periods are skipped.
     assert recur.next_due("monthly", date(2026, 1, 31), TODAY) == date(2026, 10, 31)

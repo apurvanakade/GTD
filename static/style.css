@@ -711,6 +711,11 @@ details.tally h2 { justify-content: flex-start; gap: 12px; }
 .split-toggle::after { content: "Show split"; }
 details.tally[open] .split-toggle::after { content: "Hide split"; }
 summary:hover .split-toggle { color: var(--fg); }
+.tally h2 .note { font-size: var(--fs-m); font-weight: normal; text-transform: none; letter-spacing: 0; color: var(--muted); }
+/* A repeating task's history (its page): each line is a completion, so the toggle names those. */
+.tally.repeats { margin-top: 20px; }
+.tally.repeats .split-toggle::after { content: "Show all"; }
+details.tally.repeats[open] .split-toggle::after { content: "Hide"; }
 .tally h2 b { font-size: 1.6rem; font-weight: 600; text-transform: none; color: var(--fg); letter-spacing: 0; font-variant-numeric: tabular-nums; }
 .tally ul { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 9em) 1fr auto; gap: 8px 12px; align-items: center; }
 .tally li { display: contents; }

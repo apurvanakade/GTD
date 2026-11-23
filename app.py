@@ -906,8 +906,16 @@ def task_view(id):
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
     up = url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t)
-    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()),
-                           up=up)
+    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), up=up, **repeat_history(c, t))
+
+
+def repeat_history(c, t):
+    """A repeating task's past completions for its page's tally: one (local date, seconds, task id) each, newest
+    first, and how many were this week (from Monday, as the Timer's)."""
+    done = [(date.fromisoformat(local_date(at)), secs, id) for at, secs, id in db.repeat_history(c, t, now())]
+    monday = today() - timedelta(days=today().weekday())
+    return {"history": [(short_date(d), secs, id) for d, secs, id in done],
+            "this_week": sum(d >= monday for d, _, _ in done)}
 
 
 def task_home(t, **args):
