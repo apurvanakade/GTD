@@ -1249,6 +1249,13 @@ def test_task_page_edits_its_own_time_entries(client, conn):
     assert db.get_entry(conn, old) is None
     db.delete_entry(conn, new)
     assert "Time entries" not in client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)  # none: no heading
+    r = db.add_task(conn, "journal", step="next", ground=1, recur="every day", due_date="2026-10-21")
+    past = db.timer_start(conn, r, NOW - timedelta(days=1))
+    db.timer_stop(conn, NOW - timedelta(days=1, minutes=-20))
+    client.post(f"/tasks/{r}/complete")
+    nxt = next(x["id"] for x in db.open_tasks(conn) if x["title"] == "journal")
+    page = client.get(f"/tasks/{nxt}?embed=overlay").get_data(as_text=True)
+    assert f'action="/timer/{past}"' in page  # a repeat's page lists its past instances' entries too
 
 
 def test_time_totals_on_task_project_and_timer_pages(client, conn):

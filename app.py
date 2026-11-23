@@ -906,8 +906,9 @@ def task_view(id):
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
     up = url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t)
-    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), entries=db.time_entries(c, task_id=id),
-                           up=up, **repeat_history(c, t))
+    history = repeat_history(c, t)  # a repeat's entries are its whole series': this instance's and its past ones'
+    entries = db.time_entries(c, task_ids=[id, *(i for _, _, i in history["history"])])
+    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), entries=entries, up=up, **history)
 
 
 def repeat_history(c, t):
