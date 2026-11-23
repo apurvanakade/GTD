@@ -11,7 +11,7 @@ import dates
 import db
 import extcal
 import recur
-from app import HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, app, local_input
+from app import HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, SERIES_ENTRIES, app, local_input
 from conftest import NOW, TODAY, seed
 
 def h0_next(conn):
@@ -1227,6 +1227,48 @@ def test_edit_and_delete_time_entries(client, conn):
     client.post(f"/timer/{eid}/delete")
     assert db.get_entry(conn, eid) is None
     assert client.post("/timer/999", data={}).status_code == 404
+
+
+def test_task_page_edits_its_own_time_entries(client, conn):
+    t, other = (db.add_task(conn, n, step="next", ground=1) for n in ("x", "y"))
+    old = db.timer_start(conn, t, NOW - timedelta(hours=3))
+    db.timer_stop(conn, NOW - timedelta(hours=2))
+    db.timer_start(conn, other, NOW - timedelta(hours=2))
+    new = db.timer_start(conn, t, NOW - timedelta(hours=1))  # running, so listed first
+    page = client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
+    forms = re.findall(r'<form method="post" action="/timer/(\d+)" class="entry', page)
+    assert forms == [str(new), str(old)]  # only its own, the running one first
+    assert 'class="entry-task"' not in page and "Start this task again" not in page  # every row is this task's
+    assert f'formaction="/timer/{old}/delete"' in page
+    here = f"/tasks/{t}?embed=overlay"
+    new_start = local_input(iso(NOW - timedelta(hours=4)))
+    r = client.post(f"/timer/{old}", data={"start": new_start, "end": local_input(db.get_entry(conn, old)["end_time"])},
+                    headers={"Referer": here})
+    assert r.location.endswith(here) and local_input(db.get_entry(conn, old)["start_time"]) == new_start
+    assert client.post(f"/timer/{old}/delete", headers={"Referer": here}).location.endswith(here)
+    assert db.get_entry(conn, old) is None
+    db.delete_entry(conn, new)
+    assert "Time entries" not in client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)  # none: no heading
+    r = db.add_task(conn, "journal", step="next", ground=1, recur="every day", due_date="2026-10-21")
+    past = db.timer_start(conn, r, NOW - timedelta(days=1))
+    db.timer_stop(conn, NOW - timedelta(days=1, minutes=-20))
+    client.post(f"/tasks/{r}/complete")
+    nxt = next(x["id"] for x in db.open_tasks(conn) if x["title"] == "journal")
+    page = client.get(f"/tasks/{nxt}?embed=overlay").get_data(as_text=True)
+    own, fold = page.split('<details class="series-entries">')
+    assert "Time entries" in own and f'action="/timer/{past}"' in fold  # its past instances' entries, folded
+    assert "Other instances' entries · 1<" in fold and "Latest" not in fold
+    now_ = db.timer_start(conn, nxt, NOW - timedelta(minutes=5))
+    page = client.get(f"/tasks/{r}?embed=overlay").get_data(as_text=True)  # a done instance's page
+    own, fold = page.split('<details class="series-entries">')
+    assert f'action="/timer/{past}"' in own and f'action="/timer/{now_}"' in fold  # the open instance's too
+    db.timer_stop(conn, NOW)
+    for i in range(SERIES_ENTRIES):  # more than the fold lists: it says so
+        db.timer_start(conn, nxt, NOW - timedelta(days=30, minutes=-i))
+        db.timer_stop(conn, NOW - timedelta(days=30, minutes=-i - 0.5))
+    fold = client.get(f"/tasks/{r}?embed=overlay").get_data(as_text=True).split('<details class="series-entries">')[1]
+    assert f"· {SERIES_ENTRIES}+<" in fold and f"Latest {SERIES_ENTRIES}<" in fold
+    assert fold.count('class="entry') == SERIES_ENTRIES
 
 
 def test_time_totals_on_task_project_and_timer_pages(client, conn):

@@ -1250,9 +1250,12 @@ def timer_last(c):
     return c.execute(f"{ENTRY_SELECT} WHERE e.end_time IS NOT NULL ORDER BY e.end_time DESC, e.id DESC LIMIT 1").fetchone()
 
 
-def time_entries(c, limit=200):
-    """The running entry first, then the rest, newest first."""
-    return c.execute(f"{ENTRY_SELECT} ORDER BY e.end_time IS NOT NULL, e.start_time DESC LIMIT ?", (limit,)).fetchall()
+def time_entries(c, limit=200, task_ids=None):
+    """The running entry first, then the rest, newest first; every task's, or only these tasks'. limit=None: all."""
+    ids = sorted(set(task_ids or ()))
+    where, args = (f"WHERE e.task_id IN ({','.join('?' * len(ids))})", ids) if task_ids is not None else ("", ())
+    return c.execute(f"{ENTRY_SELECT} {where} ORDER BY e.end_time IS NOT NULL, e.start_time DESC LIMIT ?",
+                     (*args, -1 if limit is None else limit)).fetchall()
 
 
 def get_entry(c, id):
@@ -1299,6 +1302,17 @@ def repeat_history(c, t, now):
           AND tk.name IS ? AND t.project_id IS ? AND t.ground = ? ORDER BY t.completed_at DESC, t.id DESC""",
                      (iso(now), t["title"], t["category"], t["project_id"], t["ground"])).fetchall()
     return [(r["completed_at"], round(r["secs"]), r["id"]) for r in rows]
+
+
+def repeat_instances(c, t):
+    """The ids of a repeating task's other instances, open and done, matched as repeat_history() matches them; empty
+    for a task that doesn't repeat."""
+    if not t["recur"]:
+        return []
+    rows = c.execute(f"""SELECT t.id FROM tasks t {CATEGORY_JOIN} WHERE t.state IN ('open', 'done')
+          AND coalesce(t.recur, '') != '' AND t.title = ? AND tk.name IS ? AND t.project_id IS ? AND t.ground = ?
+          AND t.id != ?""", (t["title"], t["category"], t["project_id"], t["ground"], t["id"])).fetchall()
+    return [r["id"] for r in rows]
 
 
 def step_totals(c, project_id, now):

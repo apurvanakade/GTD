@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_task.html" import filing_fields, date_input, context_picker, category_input, tally with context %}
+{% from "_task.html" import filing_fields, date_input, context_picker, category_input, tally, time_entries with context %}
 {% block title %}{{ t.label }}{% endblock %}
 {% block heading %}{% endblock %}
 {% block body %}
@@ -52,6 +52,14 @@
   </div>
 </form>
 {{ context_picker(t) }}
+{#- Its time entries, editable as on the Timer page; a repeat's other instances' folded under them. #}
+{% if entries or series %}<section class="task-entries"><h2>Time entries</h2>
+{% if entries %}{{ time_entries(entries, task=False) }}{% endif %}
+{% if series %}<details class="series-entries"><summary>Other instances' entries · {{ series|length }}{{ '+' if series_capped }}</summary>
+{{ time_entries(series, task=False) }}
+{% if series_capped %}<p class="empty" title="Older ones are on each instance's page, through Done below">Latest {{ series_limit }}</p>{% endif %}
+</details>{% endif %}
+</section>{% endif %}
 {#- A repeat's past completions, folded: how often, how often this week, the time tracked; then each one. #}
 {% if history %}{% set time = history|sum(attribute=1) %}{{ tally('Done', history, cls='repeats', fold=True, total=history|length ~ '×',
   note=this_week ~ ' this week' ~ (' · ' ~ time|hm if time else '')) }}{% endif %}

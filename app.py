@@ -906,7 +906,16 @@ def task_view(id):
     if not request.args.get("embed"):  # a task has no page of its own: its list, with it open over it
         return redirect(task_home(t, task=id))
     up = url_for("project_view", id=t["project_id"]) if t["project_id"] else task_home(t)
-    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), up=up, **repeat_history(c, t))
+    # Its time entries, all of them; a repeat's other instances' (open and done) folded under them, the latest
+    # SERIES_ENTRIES (older ones are on each instance's page, through History).
+    entries = db.time_entries(c, task_ids=[id], limit=None)
+    others = db.time_entries(c, task_ids=db.repeat_instances(c, t), limit=SERIES_ENTRIES + 1)
+    return render_template("task.html", t=t, seconds=db.task_seconds(c, id, now()), entries=entries,
+                           series=others[:SERIES_ENTRIES], series_capped=len(others) > SERIES_ENTRIES,
+                           series_limit=SERIES_ENTRIES, up=up, **repeat_history(c, t))
+
+
+SERIES_ENTRIES = 100  # a repeat's page: its other instances' latest entries
 
 
 def repeat_history(c, t):
@@ -1185,6 +1194,7 @@ def agenda_view():
 # --- timer -----------------------------------------------------------------
 # Every time entry belongs to a task. Times are stored in UTC and shown in local time.
 
+@app.template_filter("local_input")
 def local_input(iso):
     """A stored UTC time as the local "YYYY-MM-DDTHH:MM" a datetime-local input shows."""
     return datetime.fromisoformat(iso).astimezone().strftime("%Y-%m-%dT%H:%M")
@@ -1228,7 +1238,7 @@ def timer_view():
     monday = midnight(today() - timedelta(days=today().weekday()))
     return render_template("timer.html", entries=db.time_entries(c), open_tasks=db.open_tasks(c),
                            day=db.week_totals(c, midnight(today()), now()),
-                           week=db.week_totals(c, monday, now()), local_input=local_input)
+                           week=db.week_totals(c, monday, now()))
 
 
 @app.post("/timer/start")
