@@ -256,18 +256,21 @@
 {% endmacro %}
 
 
-{# Time as bars, as on the Timer page: a big total, then one accent bar per item, longest first.
+{# Time as bars, as on the Timer page: a big total, then one accent bar per item (none for an untimed one), in the
+   order given (longest first for totals, newest first for a repeat's history).
    `totals` are (label, seconds) pairs, or (label, seconds, task id) to make the label open that task.
-   fold=True (a project page): only the total shows; "Show split" unfolds the bars. #}
-{% macro tally(heading, totals, blank='', cls='', fold=False) %}
+   `total` replaces the summed time as the big total (a repeat's count); `note` follows it in muted text.
+   fold=True (a project page, a repeat's history): only the heading shows; its toggle unfolds the bars. #}
+{% macro tally(heading, totals, blank='', cls='', fold=False, total=none, note='') %}
 {% set tag = 'details' if fold else 'section' %}
 <{{ tag }} class="tally{{ ' ' ~ cls if cls }}">
-{% if fold %}<summary>{% endif %}<h2>{{ heading }} {% if totals %}<b>{{ totals|sum(attribute=1)|hm }}</b>{% endif %}
+{% if fold %}<summary>{% endif %}<h2>{{ heading }} {% if totals %}<b>{{ total if total is not none else totals|sum(attribute=1)|hm }}</b>{% endif %}
+  {%- if note %} <span class="note">{{ note }}</span>{% endif %}
   {%- if fold %} <span class="split-toggle"></span>{% endif %}</h2>{% if fold %}</summary>{% endif %}
-{% if totals %}{% set top = totals[0][1] or 1 %}<ul>
-  {% for item in totals %}{% set label, secs = item[0], item[1] %}<li title="{{ label }} · {{ secs|hm }}">
+{% if totals %}{% set top = totals|map(attribute=1)|max or 1 %}<ul>
+  {% for item in totals %}{% set label, secs = item[0], item[1] %}<li title="{{ label }}{{ ' · ' ~ secs|hm if secs }}">
     {%- if item|length > 2 %}<a class="who" href="{{ url_for('task_view', id=item[2]) }}">{{ label }}</a>{% else %}<span class="who">{{ label }}</span>{% endif -%}
-    <span class="bar"><i style="width: {{ (100 * secs / top)|round|int }}%"></i></span><span class="dur">{{ secs|hm }}</span></li>{% endfor %}
+    <span class="bar">{% if secs %}<i style="width: {{ (100 * secs / top)|round|int }}%"></i>{% endif %}</span><span class="dur">{{ secs|hm if secs }}</span></li>{% endfor %}
 </ul>{% else %}<p class="empty">{{ blank }}</p>{% endif %}
 </{{ tag }}>
 {% endmacro %}

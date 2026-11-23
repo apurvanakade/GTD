@@ -102,6 +102,10 @@ def seed(c):
     db.set_task_category(c, finished, "Discrete Math")
     db.set_task_category(c, italian, "Languages")  # Someday's bands: "Languages", then "Other" for "juggle"
     db.add_task(c, "juggle", ground=1, step="someday")
+    # A repeat done once, so its page (and the done instance's) shows the history; Work's upkeep, so it isn't loose.
+    kettle = db.add_task(c, "descale kettle", step="next", ground=1, recur="weekly", due_date="2026-11-10")
+    db.link_task(c, kettle, work)
+    db.complete_task(c, kettle, TODAY)
     return {"active": active, "stalled": stalled, "waiting": waiting, "done": done,
             "dropped": dropped, "area": area, "work": work, "goal": goal, "vacuum": vacuum,
             "measure": measure, "mail": mail}
