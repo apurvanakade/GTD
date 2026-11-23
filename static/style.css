@@ -745,6 +745,10 @@ a.who:hover { color: var(--fg); }
 .entry .actions { display: flex; gap: 2px; justify-content: flex-end; }
 .entry .actions button { padding: 2px 8px; font-size: var(--fs-s); }
 .history.one-task { grid-template-columns: auto auto minmax(4.5em, auto) auto; justify-content: start; }  /* a task page's: times only */
+/* A repeat's page: its other instances' entries, folded under its own. */
+.series-entries { margin-top: 8px; }
+.series-entries > summary { cursor: pointer; color: var(--muted); font-size: var(--fs-m); }
+.series-entries > summary:hover { color: var(--fg); }
 /* Too narrow for one line per entry: task + buttons, then project, then times. */
 @media (max-width: 720px) {
   .history { grid-template-columns: minmax(0, 1fr) auto; }

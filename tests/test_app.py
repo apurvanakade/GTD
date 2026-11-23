@@ -11,7 +11,7 @@ import dates
 import db
 import extcal
 import recur
-from app import HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, app, local_input
+from app import HORIZON_STEPS, REVIEW_PHASES, REVIEW_STEPS, SERIES_ENTRIES, app, local_input
 from conftest import NOW, TODAY, seed
 
 def h0_next(conn):
@@ -1255,7 +1255,20 @@ def test_task_page_edits_its_own_time_entries(client, conn):
     client.post(f"/tasks/{r}/complete")
     nxt = next(x["id"] for x in db.open_tasks(conn) if x["title"] == "journal")
     page = client.get(f"/tasks/{nxt}?embed=overlay").get_data(as_text=True)
-    assert f'action="/timer/{past}"' in page  # a repeat's page lists its past instances' entries too
+    own, fold = page.split('<details class="series-entries">')
+    assert "Time entries" in own and f'action="/timer/{past}"' in fold  # its past instances' entries, folded
+    assert "Other instances' entries · 1<" in fold and "Latest" not in fold
+    now_ = db.timer_start(conn, nxt, NOW - timedelta(minutes=5))
+    page = client.get(f"/tasks/{r}?embed=overlay").get_data(as_text=True)  # a done instance's page
+    own, fold = page.split('<details class="series-entries">')
+    assert f'action="/timer/{past}"' in own and f'action="/timer/{now_}"' in fold  # the open instance's too
+    db.timer_stop(conn, NOW)
+    for i in range(SERIES_ENTRIES):  # more than the fold lists: it says so
+        db.timer_start(conn, nxt, NOW - timedelta(days=30, minutes=-i))
+        db.timer_stop(conn, NOW - timedelta(days=30, minutes=-i - 0.5))
+    fold = client.get(f"/tasks/{r}?embed=overlay").get_data(as_text=True).split('<details class="series-entries">')[1]
+    assert f"· {SERIES_ENTRIES}+<" in fold and f"Latest {SERIES_ENTRIES}<" in fold
+    assert fold.count('class="entry') == SERIES_ENTRIES
 
 
 def test_time_totals_on_task_project_and_timer_pages(client, conn):
