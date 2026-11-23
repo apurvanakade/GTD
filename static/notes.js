@@ -1,6 +1,6 @@
 // Notes are plain Markdown text, re-rendered with styling as you type (adapted from the Journal's editor).
-// Each textarea[name=notes] is hidden and replaced by a contenteditable .md-editor that writes back into it,
-// so the form still submits the textarea. The rendered HTML's textContent must equal the raw text exactly
+// Each textarea[name=notes] (and any textarea[data-md]: the Vision card's area lines) is hidden and replaced by a
+// contenteditable .md-editor that writes back into it, so the form still submits the textarea. The rendered HTML's textContent must equal the raw text exactly
 // (markup only wraps, never adds or removes characters), because the caret is tracked as plain-text offsets.
 // A toolbar (shown while the editor has focus) adds formatting and checklists; a checklist's boxes tick with a click.
 
@@ -400,6 +400,8 @@ function editor(ta) {
     e.preventDefault();
     const t = getText(), i = offsetOf(box, 0) + 1;
     apply(t.slice(0, i) + (t[i] === " " ? "x" : " ") + t.slice(i + 1), getSel());
+    // Ticked without the focus, so no blur will fire the change below: fire it now (a Vision line saves on it).
+    if (document.activeElement !== ed) ta.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
   // Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list. A
@@ -419,6 +421,13 @@ function editor(ta) {
   ed.addEventListener("compositionstart", () => { composing = true; });
   ed.addEventListener("compositionend", () => { composing = false; edited(); });
   ed.addEventListener("input", () => { if (!composing) edited(); });
+  // Left changed: the textarea's change event, as a textarea of its own would fire (app.js saves a
+  // form[data-background] on it).
+  let focusText = start;
+  ed.addEventListener("focus", () => { focusText = ta.value; });
+  ed.addEventListener("blur", () => {
+    if (ta.value !== focusText) ta.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   ed.addEventListener("beforeinput", e => {
     const t = e.inputType;
     if (t === "historyUndo" || t === "historyRedo") { e.preventDefault(); step(t === "historyUndo" ? -1 : 1); }
@@ -484,7 +493,7 @@ function editor(ta) {
   paint(start);
 }
 
-document.querySelectorAll("textarea[name=notes]").forEach(editor);
+document.querySelectorAll("textarea[name=notes], textarea[data-md]").forEach(editor);
 const mod = e => document.body.classList.toggle("mod", e.metaKey || e.ctrlKey);
 addEventListener("keydown", mod);
 addEventListener("keyup", mod);

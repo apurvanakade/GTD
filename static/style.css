@@ -827,14 +827,14 @@ a.who:hover { color: var(--fg); }
 .horizon-links select { padding: 2px 6px; font-size: var(--fs-s); color: var(--muted); border-color: transparent; background: transparent; }
 .horizon-links select:hover { border-color: var(--line); color: var(--fg); }
 .title-line.serves .open-area { font-weight: 600; }
-/* The Vision card's area lines: the name, then its line across the row. */
+/* The Vision card's area lines: the name, then its line across the row, live Markdown (notes.js) as tall as its
+   text, a box only on hover or focus; the toolbar under it takes the gap to the next row. */
 .visions .task form { flex: 1 1 auto; margin: 0; }
 .visions .task .title { flex: 0 0 10em; }
-.visions textarea { width: 100%; border-color: transparent; background: transparent; padding: 3px 8px; }
-.visions textarea:is(:hover, :focus) { border-color: var(--line); }
-.visions .task { align-items: baseline; }
-/* An area's part of the vision: a paragraph, as tall as its text. */
-textarea[name=vision] { field-sizing: content; resize: none; min-height: 0; line-height: 1.45; }
+.visions .md-editor { border-color: transparent; background: transparent; padding: 3px 8px; line-height: 1.45; min-height: 0 !important; }
+.visions .md-editor:is(:hover, :focus) { border-color: var(--line); }
+.visions .md-editor > .p:last-of-type { margin-bottom: 0; }
+.visions .task { align-items: baseline; padding-bottom: 1.4em; }
 
 /* A phone: only for reading and capture. Every title gets its line, read across; everything else comes after it. */
 @media (max-width: 600px) {
