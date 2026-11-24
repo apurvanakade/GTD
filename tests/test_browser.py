@@ -1725,8 +1725,7 @@ def test_checklists_tick_continue_and_reset(page, live, conn):
     # ⌘Enter cycles a line, or every selected line, through the list states.
     pid = db.add_reference(conn, "Tools", notes="milk\n\n  - [x] eggs\n1. tea")
     page.goto(live + f"/reference/{pid}?embed=overlay")
-    ed.click()
-    page.keyboard.press("ControlOrMeta+Home")
+    ed.locator(".p").first.click()  # the first line (⌘Home doesn't go to the start on a Mac)
     page.keyboard.press("End")
     cycle = lambda: page.keyboard.press("ControlOrMeta+Enter")
     states = ["- milk", "- [ ] milk", "- [x] milk", "milk"]

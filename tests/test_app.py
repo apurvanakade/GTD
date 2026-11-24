@@ -530,13 +530,22 @@ def test_agenda_splits_overdue_from_today(client, conn):
         db.add_task(conn, title, step="next", ground=1, due_date=due)
     html = client.get("/calendar?view=agenda").get_data(as_text=True)
     assert re.findall(r'<h2 class="agenda-head[^"]*">(\w+) <b>(\d+)</b>', html) == [("Overdue", "2"), ("Today", "1")]
-    assert html.index(">Overdue") < html.index(">oldest<") < html.index(">late<") < html.index(">Today") \
+    assert html.index(">Overdue") < html.index(">oldest<") < html.index(">late<") < html.index(">Today <b>") \
         < html.index(">today one<")
     assert ">soon<" not in html
     (today_one,) = [t for t in db.agenda(conn, TODAY) if t["title"] == "today one"]
     db.complete_task(conn, today_one["id"], TODAY)
     html = client.get("/calendar?view=agenda").get_data(as_text=True)
     assert ">Today <b>" not in html and ">Overdue <b>2</b>" in html  # an empty heading isn't shown
+    # ‹ Today › step it a day at a time: another day lists only what's due that day, under its date
+    assert 'href="/calendar?view=agenda&amp;d=2026-10-21"' in html and 'href="/calendar?view=agenda&amp;d=2026-10-23"' in html
+    html = client.get("/calendar?view=agenda&d=2026-10-23").get_data(as_text=True)
+    assert re.findall(r'<h2 class="agenda-head([^"]*)">([^<]+) <b>(\d+)</b>', html) == [("", "Fri Oct 23", "1")]
+    assert ">soon<" in html and ">late<" not in html and 'value="2026-10-23"' in html  # the add line dates it that day
+    assert 'href="/calendar?view=agenda&amp;d=2026-10-22"' in html and 'href="/calendar?view=agenda&amp;d=2026-10-24"' in html
+    html = client.get("/calendar?view=agenda&d=2026-10-21").get_data(as_text=True)
+    assert re.findall(r'<h2 class="agenda-head([^"]*)">([^<]+) <b>(\d+)</b>', html) == [(" overdue", "Wed Oct 21", "1")]
+    assert ">Overdue <b>2</b>" in client.get("/calendar?view=agenda&d=2026-10-22").get_data(as_text=True)  # today's date: today's Agenda
 
 
 def test_dating_a_next_action_says_it_went_to_the_calendar(client, conn):

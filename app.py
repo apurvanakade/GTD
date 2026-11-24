@@ -1167,7 +1167,7 @@ def calendar_view():
     else:
         prev, next_ = (recur.add_months(first, d).strftime("%Y-%m") for d in (-1, 1))
     resp = make_response(render_template(
-        "calendar.html", agenda=None, first=first, week=week, span=span, end=end, weeks=weeks,
+        "calendar.html", agenda=None, day=None, first=first, week=week, span=span, end=end, weeks=weeks,
         by_day=by_day, events=events, calendars=[name for name, _ in calendars], cal_errors=dict(cal_errors),
         prev=prev, next=next_,
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
@@ -1176,16 +1176,26 @@ def calendar_view():
 
 
 @app.template_filter()
-def agenda_split(tasks):
-    """The Agenda's two lists: (Overdue, due before today), (Today, due today)."""
-    day = today().isoformat()
-    return [("Overdue", [t for t in tasks if t["due_date"] < day]), ("Today", [t for t in tasks if t["due_date"] == day])]
+def agenda_split(tasks, day):
+    """The Agenda's lists. Today's: (Overdue, due before today), (Today, due today). Another day's: that day's alone."""
+    if day != today():
+        return [(f"{day:%a %b} {day.day}", tasks)]
+    iso = day.isoformat()
+    return [("Overdue", [t for t in tasks if t["due_date"] < iso]), ("Today", [t for t in tasks if t["due_date"] == iso])]
 
 
 def agenda_view():
-    """The calendar's Agenda: every open task due today or overdue, from every list, oldest due first."""
+    """The calendar's Agenda: every open task due today or overdue, from every list, oldest due first.
+    ?d= shows another day instead (‹ Today › step it): the open tasks due that day."""
+    try:
+        day = date.fromisoformat(request.args.get("d", ""))
+    except ValueError:
+        day = today()
+    c = conn()
+    tasks = db.agenda(c, day) if day == today() else db.dated_tasks(c, day, day)
     resp = make_response(render_template(
-        "calendar.html", agenda=filtered(db.agenda(conn(), today())), week=None, span=0, 
+        "calendar.html", agenda=filtered(tasks), day=day, week=None, span=0,
+        prev=(day - timedelta(days=1)).isoformat(), next=(day + timedelta(days=1)).isoformat(),
         this_week=sunday(today()).isoformat(), this_month=today().strftime("%Y-%m")))
     resp.set_cookie("cal_view", "agenda", max_age=365 * 86400, samesite="Lax")
     return resp
