@@ -28,10 +28,11 @@
 {#- Every open task due today or overdue, from every list, under two headings: Overdue (oldest first), then Today;
     on another day (?d=), that day's open tasks under its date, red if it's past.
     Dated next actions live only here and on the calendar, so nothing due is ever out of sight. No drag. #}
-<div data-filtered>{% if agenda %}{% for heading, rows in agenda|agenda_split(day) %}{% if rows %}
-<h2 class="agenda-head{{ ' overdue' if heading == 'Overdue' or day.isoformat() < today }}">{{ heading }} <b>{{ rows|length }}</b></h2>
+<div data-filtered>{% for heading, rows in agenda|agenda_split(day) %}{% if rows or day.isoformat() != today %}
+<h2 class="agenda-head{{ ' overdue' if heading == 'Overdue' or day.isoformat() < today }}">{{ heading }}{% if rows %} <b>{{ rows|length }}</b>{% endif %}</h2>{% endif %}
+{%- if rows %}
 <ul class="tasks agenda">{% for t in rows %}{{ row(t) }}{% endfor %}</ul>{% endif %}{% endfor %}
-{%- elif context_filter %}{{ nothing_here() }}{% else %}<ul class="tasks"><li class="empty clear">Nothing due.</li></ul>{% endif %}</div>
+{%- if not agenda %}{% if context_filter %}{{ nothing_here() }}{% else %}<ul class="tasks"><li class="empty clear">Nothing due.</li></ul>{% endif %}{% endif %}</div>
 {% else %}
 {#- A day number opens this, on that day (the script below). #}
 <dialog class="day-dialog">

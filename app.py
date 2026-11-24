@@ -1179,7 +1179,7 @@ def calendar_view():
 def agenda_split(tasks, day):
     """The Agenda's lists. Today's: (Overdue, due before today), (Today, due today). Another day's: that day's alone."""
     if day != today():
-        return [(f"{day:%a %b} {day.day}", tasks)]
+        return [(short_date(day), tasks)]
     iso = day.isoformat()
     return [("Overdue", [t for t in tasks if t["due_date"] < iso]), ("Today", [t for t in tasks if t["due_date"] == iso])]
 
@@ -1190,6 +1190,8 @@ def agenda_view():
     try:
         day = date.fromisoformat(request.args.get("d", ""))
     except ValueError:
+        day = today()
+    if not (date.min < day and day.year <= dates.LAST_YEAR):  # as dates.parse: unreadable, and ‹ › can always step
         day = today()
     c = conn()
     tasks = db.agenda(c, day) if day == today() else db.dated_tasks(c, day, day)

@@ -546,6 +546,12 @@ def test_agenda_splits_overdue_from_today(client, conn):
     html = client.get("/calendar?view=agenda&d=2026-10-21").get_data(as_text=True)
     assert re.findall(r'<h2 class="agenda-head([^"]*)">([^<]+) <b>(\d+)</b>', html) == [(" overdue", "Wed Oct 21", "1")]
     assert ">Overdue <b>2</b>" in client.get("/calendar?view=agenda&d=2026-10-22").get_data(as_text=True)  # today's date: today's Agenda
+    html = client.get("/calendar?view=agenda&d=2026-10-30").get_data(as_text=True)  # an empty day still names itself
+    assert '<h2 class="agenda-head">Fri Oct 30</h2>' in html and "Nothing due." in html
+    html = client.get("/calendar?view=agenda&d=2027-01-01").get_data(as_text=True)  # another year's date says so
+    assert '<h2 class="agenda-head">Fri Jan 1 2027</h2>' in html
+    for edge in ("9999-12-31", "0001-01-01", "3001-01-01"):  # unreadable, as dates.parse has it: today's Agenda
+        assert ">Overdue <b>2</b>" in client.get(f"/calendar?view=agenda&d={edge}").get_data(as_text=True)
 
 
 def test_dating_a_next_action_says_it_went_to_the_calendar(client, conn):
