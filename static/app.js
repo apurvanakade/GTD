@@ -755,6 +755,17 @@ document.addEventListener('change', e => {
   text.dispatchEvent(new Event('input', {bubbles: true}));  // so the box's preview follows
   text.dispatchEvent(new Event('change', {bubbles: true}));  // and a task page saves it
 });
+// × empties its box (clear_button() in _task.html): the preview follows, and a task page saves it, as typing would. A
+// mouse press on it keeps the focus where it is, so a box being typed in isn't saved first, then cleared.
+document.addEventListener('mousedown', e => { if (e.target.closest('.date-field .clear')) e.preventDefault(); });
+document.addEventListener('click', e => {
+  const text = e.target.closest('.date-field .clear')?.parentElement.querySelector('input[name]');
+  if (!text || text.disabled) return;
+  text.value = '';
+  text.dispatchEvent(new Event('input', {bubbles: true}));
+  text.dispatchEvent(new Event('change', {bubbles: true}));
+  text.focus();
+});
 // The task page's Due, Repeats and Remind boxes: the hint beside each shows how it reads, live (/parse/<kind>). A
 // repeat's next date follows the Due box too. An untouched Remind box keeps "sent" (or nothing) instead.
 for (const hint of document.querySelectorAll('.hint.when')) {

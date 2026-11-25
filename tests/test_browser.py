@@ -296,6 +296,31 @@ def test_calendar_button_copies_the_picked_date_into_the_text_box(page, live, co
     assert db.get_task(conn, 2)["due_date"] == "2026-11-05"
 
 
+def test_x_clears_the_due_repeats_and_remind_boxes(page, live, conn):
+    """× in each box empties it and saves, as deleting the text would; it shows only while the box holds something."""
+    page.goto(live + "/tasks/2?embed=overlay")
+    for name, text in [("due_date", "2026-11-05"), ("recur", "weekly"), ("remind_at", "2026-11-05 09:00")]:
+        page.fill(f"input[name={name}]", text)
+        page.locator("main .md-editor").click()  # leaving the box saves it
+    def saved(**want):
+        for _ in range(50):
+            t = db.get_task(conn, 2)
+            if all(t[k] == v for k, v in want.items()):
+                return True
+            page.wait_for_timeout(50)
+        return False
+    assert saved(due_date="2026-11-05", recur="weekly")
+    clear = lambda name: page.locator(".date-field", has=page.locator(f"input[name={name}]")).locator(".clear")
+    for name in ["recur", "due_date", "remind_at"]:  # Repeats first: a rule with no date gets today's
+        sync_api.expect(clear(name)).to_be_visible()
+        clear(name).click()
+        assert page.input_value(f"input[name={name}]") == ""
+        sync_api.expect(clear(name)).to_be_hidden()
+        assert page.evaluate("document.activeElement.name") == name  # the box keeps the focus, to type anew
+    assert saved(due_date=None, recur=None, remind_at=None)
+    sync_api.expect(page.locator(".when[data-parse=due]")).to_have_text("")
+
+
 def test_a_typed_date_saves_when_the_picker_is_closed_without_a_pick(page, live, conn):
     page.goto(live + "/tasks/2?embed=overlay")
     page.fill("input[name=due_date]", "fri")
