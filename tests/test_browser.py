@@ -302,14 +302,13 @@ def test_x_clears_the_due_repeats_and_remind_boxes(page, live, conn):
     for name, text in [("due_date", "2026-11-05"), ("recur", "weekly"), ("remind_at", "2026-11-05 09:00")]:
         page.fill(f"input[name={name}]", text)
         page.locator("main .md-editor").click()  # leaving the box saves it
-    def saved(**want):
+    def saved(ok):
         for _ in range(50):
-            t = db.get_task(conn, 2)
-            if all(t[k] == v for k, v in want.items()):
+            if ok(db.get_task(conn, 2)):
                 return True
             page.wait_for_timeout(50)
         return False
-    assert saved(due_date="2026-11-05", recur="weekly")
+    assert saved(lambda t: t["due_date"] == "2026-11-05" and t["recur"] == "weekly" and t["remind_at"])
     clear = lambda name: page.locator(".date-field", has=page.locator(f"input[name={name}]")).locator(".clear")
     for name in ["recur", "due_date", "remind_at"]:  # Repeats first: a rule with no date gets today's
         sync_api.expect(clear(name)).to_be_visible()
@@ -317,7 +316,7 @@ def test_x_clears_the_due_repeats_and_remind_boxes(page, live, conn):
         assert page.input_value(f"input[name={name}]") == ""
         sync_api.expect(clear(name)).to_be_hidden()
         assert page.evaluate("document.activeElement.name") == name  # the box keeps the focus, to type anew
-    assert saved(due_date=None, recur=None, remind_at=None)
+    assert saved(lambda t: t["due_date"] is None and t["recur"] is None and t["remind_at"] is None)
     sync_api.expect(page.locator(".when[data-parse=due]")).to_have_text("")
 
 
