@@ -86,8 +86,23 @@
   <input name="{{ name }}" value="{{ value or '' }}" placeholder="{{ placeholder }}" aria-label="{{ label }}"{% if required %} required{% endif %}>
   <button type="button" class="pick" aria-label="Pick a {{ 'date and time' if type == 'datetime-local' else 'date' }}">📅</button>
   <input type="{{ type }}" class="picker" tabindex="-1" aria-hidden="true">
+  {{ clear_button() }}
 </span>
 {% endmacro %}
+
+{# The Repeats box, a date box's sibling: no picker, the same ×. Off while the step is someday or waiting: a disabled
+   box isn't posted, so its rule is kept for when the task becomes a next action. #}
+{% macro recur_input(value='', step=none) %}
+<span class="date-field">
+  <input name="recur" value="{{ value or '' }}" placeholder="weekly, every 2 weeks after done…" aria-label="Repeats"
+    {%- if step in ('someday', 'waiting') %} disabled title="Not while {{ step }}"{% endif %}>
+  {{ clear_button() }}
+</span>
+{% endmacro %}
+
+{# × empties the box beside it, shown only while it holds something (style.css); static/app.js clears it and saves it
+   as an edit would. Out of the Tab order, so Tab still goes box to box. #}
+{% macro clear_button() %}<button type="button" class="clear" tabindex="-1" aria-label="Clear" title="Clear">×</button>{% endmacro %}
 
 {# A task's contexts: one click each, saved in the background (static/app.js); a new one is named in the box. A form
    of its own, not the task form's: it saves on its own route, and leaves title, notes and dates alone. #}
@@ -129,7 +144,7 @@
   {{ filing_fields(file_to, step, keep=keep, before=where) }}
   <div class="fields">
     <label><span class="due-word">{{ 'Tickler' if step == 'someday' else 'Due' }}</span> {{ date_input(due, required=due_required) }} <span class="hint when" data-parse="due"></span></label>
-    <label>Repeats <input name="recur" placeholder="weekly, every 2 weeks after done…"{% if step in ('someday', 'waiting') %} disabled title="Not while {{ step }}"{% endif %}> <span class="hint when" data-parse="recur"></span></label>
+    <label>Repeats {{ recur_input(step=step) }} <span class="hint when" data-parse="recur"></span></label>
     <label>Remind {{ date_input(placeholder='tomorrow 9am, fri 14:00…', name='remind_at', label='Remind', type='datetime-local') }} <span class="hint when" data-parse="remind"></span></label>
   </div>
   <span class="contexts">{{ context_words() }}</span>
