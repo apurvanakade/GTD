@@ -1124,6 +1124,21 @@ def task_to_reference(c, ids, now):
     return items
 
 
+# --- turning a task into a project ------------------------------------------
+
+@atomic
+def task_to_project(c, id, pid, now):
+    """More than one step after all: an open task's new project `pid` (made by the caller, titled with its label and
+    with its notes) takes its Horizons link (goal or area), and the task goes: deleted, or abandoned when it has time on
+    it, so the time is kept."""
+    if row := c.execute("SELECT area_id FROM task_areas WHERE task_id = ?", (id,)).fetchone():
+        link_project(c, pid, row[0])
+    if task_seconds(c, id, now):
+        abandon_task(c, id, now)
+    else:
+        delete_task(c, id)
+
+
 # --- reference -------------------------------------------------------------
 
 REFERENCE_FIELDS = {"title", "notes"}
