@@ -1383,7 +1383,7 @@ def test_task_to_project(client, conn):
     area = db.add_horizon(conn, "area", "Home")
     t = db.add_task(conn, "fix shed", notes="roof leaks", category="diy")
     page = client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
-    assert f'formaction="/tasks/{t}/to-project"' in page
+    assert f'formaction="/tasks/{t}/to-project?embed=overlay"' in page  # the frame shows the project as an overlay
     r = client.post(f"/tasks/{t}/to-project?embed=overlay")
     p = [x for x in db.open_projects(conn) if x["title"] == "Diy: fix shed"][0]
     assert (p["notes"], db.get_task(conn, t)) == ("roof leaks", None)
