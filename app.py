@@ -116,10 +116,10 @@ def form_ids():
     return [int(i) for i in request.form.get("ids", "").split(",") if i.strip().isdigit()]
 
 
-def new_project_made(title):
+def new_project_made(title, **fields):
     """Every new project is made here, so a background save that made one tells its page (projects_changed())."""
     g.projects_changed = True
-    return db.add_project(conn(), title)
+    return db.add_project(conn(), title, **fields)
 
 
 @app.after_request
@@ -1008,12 +1008,16 @@ def to_inbox(id):
 
 @app.post("/tasks/<int:id>/to-project")
 def to_project(id):
-    """⤴: more than one step after all, so a blank project titled with the task's label (db.task_to_project()). The
-    frame shows the project, to add its steps, as File to's Reference shows the item."""
+    """⤴: more than one step after all, so a blank project (new_project_made()) titled with the task's label, with its
+    notes, which then takes the task's place (db.task_to_project()). The frame shows the project, to add its steps, as
+    File to's Reference shows the item."""
     c = conn()
-    db.get_task(c, id) or abort(404)
-    pid = db.task_to_project(c, id, now()) or abort(400)
-    g.projects_changed = True  # as new_project_made() marks it, though db.task_to_project() made it
+    t = db.get_task(c, id) or abort(404)
+    if t["state"] != "open":
+        abort(400)
+    with db.transaction(c):
+        pid = new_project_made(t["label"], notes=t["notes"])
+        db.task_to_project(c, id, pid, now())
     flash(f"Now a project: {db.get_project(c, pid)['title']}")
     return redirect(url_for("project_view", id=pid, embed=request.args.get("embed")))
 

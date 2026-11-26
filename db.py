@@ -1127,21 +1127,16 @@ def task_to_reference(c, ids, now):
 # --- turning a task into a project ------------------------------------------
 
 @atomic
-def task_to_project(c, id, now):
-    """More than one step after all: an open task becomes a blank project, on top, titled with its label (`Category:
-    title`), with its notes and its Horizons link (goal or area). The task goes: deleted, or abandoned when it has time
-    on it, so the time is kept. Returns the project's id, or None if the task isn't open."""
-    t = get_task(c, id)
-    if t is None or t["state"] != "open":
-        return None
-    pid = add_project(c, t["label"], notes=t["notes"])
+def task_to_project(c, id, pid, now):
+    """More than one step after all: an open task's new project `pid` (made by the caller, titled with its label and
+    with its notes) takes its Horizons link (goal or area), and the task goes: deleted, or abandoned when it has time on
+    it, so the time is kept."""
     if row := c.execute("SELECT area_id FROM task_areas WHERE task_id = ?", (id,)).fetchone():
         link_project(c, pid, row[0])
     if task_seconds(c, id, now):
         abandon_task(c, id, now)
     else:
         delete_task(c, id)
-    return pid
 
 
 # --- reference -------------------------------------------------------------
