@@ -25,7 +25,7 @@
     <button formaction="{{ url_for('complete', id=t.id) }}" class="icon" title="Done" aria-label="Done">✓</button>
     {% if t.project_id %}<button formaction="{{ url_for('complete_then_project', id=t.id) }}" formtarget="_top" class="icon" title="Done, then pick the project's next action" aria-label="Done and open project">✓→</button>{% endif %}
     {% if not t.inbox %}<button formaction="{{ url_for('to_inbox', id=t.id) }}" class="icon" title="Back to the inbox: clears project, step, dates, repeat, reminder and contexts" aria-label="Send to inbox">↩</button>{% endif %}
-    <button formaction="{{ url_for('to_project', id=t.id, embed=embed or None) }}" class="icon" title="Make it a project: a blank one, titled with this task" aria-label="Make it a project">⊞</button>
+    <button formaction="{{ url_for('to_project', id=t.id, embed=embed or None) }}" class="icon" title="Make it a project: a blank one, titled with this task" aria-label="Make it a project">⤴</button>
     <button formaction="{{ url_for('delete', id=t.id) }}" class="icon danger" title="Abandon (stays on Done, revivable)" aria-label="Abandon">✕</button>
     {% endif %}
   </div>

@@ -1008,7 +1008,7 @@ def to_inbox(id):
 
 @app.post("/tasks/<int:id>/to-project")
 def to_project(id):
-    """⊞: more than one step after all, so a blank project titled with the task's label (db.task_to_project()). The
+    """⤴: more than one step after all, so a blank project titled with the task's label (db.task_to_project()). The
     frame shows the project, to add its steps, as File to's Reference shows the item."""
     c = conn()
     db.get_task(c, id) or abort(404)

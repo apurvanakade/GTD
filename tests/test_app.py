@@ -1378,7 +1378,7 @@ def test_filing_a_task_to_reference_from_its_page(client, conn):
 
 
 def test_task_to_project(client, conn):
-    """⊞ on an open task's page makes it a blank project titled with its label (`Category: title`), its notes and
+    """⤴ on an open task's page makes it a blank project titled with its label (`Category: title`), its notes and
     Horizons link kept; the task goes (abandoned if it has time, so the time stays) and the frame shows the project."""
     area = db.add_horizon(conn, "area", "Home")
     t = db.add_task(conn, "fix shed", notes="roof leaks", category="diy")
