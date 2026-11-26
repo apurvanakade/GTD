@@ -1377,6 +1377,31 @@ def test_filing_a_task_to_reference_from_its_page(client, conn):
     assert r.location == f"/reference/{item['id']}?embed=overlay"
 
 
+def test_task_to_project(client, conn):
+    """⊞ on an open task's page makes it a blank project titled with its label (`Category: title`), its notes and
+    Horizons link kept; the task goes (abandoned if it has time, so the time stays) and the frame shows the project."""
+    area = db.add_horizon(conn, "area", "Home")
+    t = db.add_task(conn, "fix shed", notes="roof leaks", category="diy")
+    page = client.get(f"/tasks/{t}?embed=overlay").get_data(as_text=True)
+    assert f'formaction="/tasks/{t}/to-project"' in page
+    r = client.post(f"/tasks/{t}/to-project?embed=overlay")
+    p = [x for x in db.open_projects(conn) if x["title"] == "Diy: fix shed"][0]
+    assert (p["notes"], db.get_task(conn, t)) == ("roof leaks", None)
+    assert r.location == f"/projects/{p['id']}?embed=overlay"
+    assert db.open_projects(conn)[0]["id"] == p["id"]  # on top
+    assert db.project_tasks(conn, p["id"]) == []  # blank
+    h0 = db.add_task(conn, "paint fence", step="next", ground=1)
+    db.link_task(conn, h0, area)
+    db.timer_start(conn, h0, NOW - timedelta(hours=1))
+    db.timer_stop(conn, NOW)
+    client.post(f"/tasks/{h0}/to-project")
+    q = [x for x in db.open_projects(conn) if x["title"] == "paint fence"][0]
+    assert db.get_task(conn, h0)["state"] == "abandoned" and round(db.task_seconds(conn, h0, NOW)) == 3600
+    assert conn.execute("SELECT horizon_id FROM project_horizons WHERE project_id = ?", (q["id"],)).fetchone()[0] == area
+    assert client.post(f"/tasks/{h0}/to-project").status_code == 400  # an open task only
+    assert "to-project" not in client.get(f"/tasks/{h0}?embed=overlay").get_data(as_text=True)
+
+
 def test_reference_item_back_to_the_inbox(client, conn):
     """↩ on an item (its row, on Reference and Search, and its page) undoes filing a task to Reference: an inbox task with the title, the
     label's category and the notes, on top of the Inbox; the item goes. From its page, the frame shows the task."""

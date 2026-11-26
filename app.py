@@ -1006,6 +1006,18 @@ def to_inbox(id):
     return back()
 
 
+@app.post("/tasks/<int:id>/to-project")
+def to_project(id):
+    """⊞: more than one step after all, so a blank project titled with the task's label (db.task_to_project()). The
+    frame shows the project, to add its steps, as File to's Reference shows the item."""
+    c = conn()
+    db.get_task(c, id) or abort(404)
+    pid = db.task_to_project(c, id, now()) or abort(400)
+    g.projects_changed = True  # as new_project_made() marks it, though db.task_to_project() made it
+    flash(f"Now a project: {db.get_project(c, pid)['title']}")
+    return redirect(url_for("project_view", id=pid, embed=request.args.get("embed")))
+
+
 # --- projects --------------------------------------------------------------
 
 @app.route("/projects")
